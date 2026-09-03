@@ -17,6 +17,7 @@ add_library(
   src/core/planet_parameters.cpp
   src/core/validation.cpp
   src/core/version.cpp
+  src/diagnostics/reductions.cpp
 )
 target_compile_features(myplanetsim_core PUBLIC cxx_std_20)
 target_include_directories(
