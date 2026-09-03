@@ -1,0 +1,13 @@
+#pragma once
+
+#include <string_view>
+
+namespace mps::build_info {
+
+inline constexpr std::string_view git_revision = "@MPS_GIT_REVISION@";
+inline constexpr bool git_dirty = static_cast<bool>(@MPS_GIT_DIRTY_VALUE@);
+inline constexpr std::string_view compiler_id = "@CMAKE_CXX_COMPILER_ID@";
+inline constexpr std::string_view compiler_version = "@CMAKE_CXX_COMPILER_VERSION@";
+inline constexpr std::string_view build_type = "@CMAKE_BUILD_TYPE@";
+
+}  // namespace mps::build_info
