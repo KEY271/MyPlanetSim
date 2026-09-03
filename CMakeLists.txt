@@ -65,6 +65,7 @@ add_library(
   src/grid/cubed_sphere_grid.cpp
   src/grid/dual_topology.cpp
   src/io/checkpoint.cpp
+  src/io/frame.cpp
   src/io/run_metadata.cpp
   src/phase0/ode_experiment.cpp
   src/numerics/compatible_operators.cpp

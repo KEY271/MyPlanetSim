@@ -1,5 +1,7 @@
 #include <charconv>
 #include <chrono>
+#include <atomic>
+#include <csignal>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
@@ -7,18 +9,22 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "myplanetsim/config/experiment_config.hpp"
+#include "myplanetsim/control/control_request.hpp"
 #include "myplanetsim/diagnostics/reductions.hpp"
 #include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
 #include "myplanetsim/dynamics/shallow_water_driver.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
 #include "myplanetsim/io/checkpoint.hpp"
+#include "myplanetsim/io/frame.hpp"
 #include "myplanetsim/io/run_metadata.hpp"
 #include "myplanetsim/phase0/ode_experiment.hpp"
 #include "myplanetsim/transport/spherical_transport.hpp"
@@ -31,6 +37,9 @@ struct CommandLine {
   std::optional<std::filesystem::path> checkpoint_path;
   std::optional<std::filesystem::path> restart_path;
   std::optional<std::uint64_t> stop_after_step;
+  std::optional<std::filesystem::path> control_request_path;
+  bool event_stream_ndjson = false;
+  bool describe_control = false;
 };
 
 void print_usage(std::ostream& output) {
@@ -40,6 +49,9 @@ void print_usage(std::ostream& output) {
          << "  --checkpoint PATH          Write the final or stopped state\n"
          << "  --restart PATH             Continue from a checkpoint\n"
          << "  --stop-after-step N        Stop after absolute step N\n"
+         << "  --control-request PATH     Run a validated machine control request\n"
+         << "  --event-stream ndjson      Emit machine-readable lifecycle events\n"
+         << "  --describe-control         Describe the machine control protocol\n"
          << "  --help                     Show this help\n";
 }
 
@@ -60,6 +72,10 @@ void print_usage(std::ostream& output) {
       print_usage(std::cout);
       throw std::runtime_error("help requested");
     }
+    if (argument == "--describe-control") {
+      command_line.describe_control = true;
+      continue;
+    }
     if (index + 1 >= argc) {
       throw std::invalid_argument("missing value after " + std::string(argument));
     }
@@ -74,14 +90,100 @@ void print_usage(std::ostream& output) {
       command_line.restart_path = value;
     } else if (argument == "--stop-after-step") {
       command_line.stop_after_step = parse_step(value);
+    } else if (argument == "--control-request") {
+      command_line.control_request_path = value;
+    } else if (argument == "--event-stream") {
+      if (value != "ndjson") {
+        throw std::invalid_argument("unsupported --event-stream format");
+      }
+      command_line.event_stream_ndjson = true;
     } else {
       throw std::invalid_argument("unknown option: " + std::string(argument));
     }
+  }
+  if (command_line.describe_control) {
+    return command_line;
   }
   if (command_line.config_path.empty()) {
     throw std::invalid_argument("--config is required");
   }
   return command_line;
+}
+
+std::atomic_bool g_cancel_requested = false;
+
+void request_cancellation(const int) noexcept { g_cancel_requested.store(true); }
+
+bool cancellation_requested(void*) noexcept { return g_cancel_requested.load(); }
+
+[[nodiscard]] std::string json_escape(const std::string_view value) {
+  std::string escaped;
+  escaped.reserve(value.size());
+  for (const char character : value) {
+    if (character == '\\' || character == '"') {
+      escaped += '\\';
+      escaped += character;
+    } else if (character == '\n') {
+      escaped += "\\n";
+    } else if (character == '\r') {
+      escaped += "\\r";
+    } else {
+      escaped += character;
+    }
+  }
+  return escaped;
+}
+
+struct MachineEventWriter {
+  std::string run_id;
+  std::uint64_t sequence = 0;
+
+  void emit(const std::string_view type, const std::string_view fields = {}) {
+    std::cout << "{\"protocolVersion\":1,\"runId\":\""
+              << json_escape(run_id) << "\",\"sequence\":" << sequence++
+              << ",\"type\":\"" << type << '"';
+    if (!fields.empty()) {
+      std::cout << ',' << fields;
+    }
+    std::cout << "}\n" << std::flush;
+    if (!std::cout) {
+      throw std::runtime_error("failed while writing machine event stream");
+    }
+  }
+};
+
+struct MachineFrameContext {
+  std::filesystem::path directory;
+  std::string config_fingerprint;
+  mps::Index cells_per_panel = 0;
+  MachineEventWriter* events = nullptr;
+  std::uint64_t frame_sequence = 0;
+};
+
+void write_machine_frame(const mps::ShallowWaterState& state, void* context) {
+  auto& frame = *static_cast<MachineFrameContext*>(context);
+  const auto sequence = frame.frame_sequence++;
+  const std::string filename = "frame_" + std::to_string(sequence) + ".bin";
+  const auto path = frame.directory / filename;
+  mps::write_frame_file(path,
+                        {.cells_per_panel = frame.cells_per_panel,
+                         .time_s = state.time_s,
+                         .step = state.step,
+                         .config_fingerprint = frame.config_fingerprint},
+                        state);
+  frame.events->emit(
+      "frame.ready",
+      "\"frameSequence\":" + std::to_string(sequence) +
+          ",\"timeSeconds\":" + std::to_string(state.time_s) +
+          ",\"step\":" + std::to_string(state.step) +
+          ",\"relativePath\":\"" + json_escape(filename) + "\",\"byteLength\":" +
+          std::to_string(std::filesystem::file_size(path)));
+}
+
+void print_control_description() {
+  std::cout << "{\"protocolVersion\":1,\"supportedEdits\":[\"gaussian_depth\"],"
+               "\"maxEditCount\":64,\"maxEndTimeSeconds\":31536000,"
+               "\"maxTimeStepSeconds\":86400,\"maxFrameIntervalSteps\":1000000}\n";
 }
 
 void write_result(std::ostream& output, const mps::OdeResult& result,
@@ -263,8 +365,17 @@ int main(const int argc, const char* const argv[]) {
     return 0;
   }
 
+  std::unique_ptr<MachineEventWriter> machine_events;
   try {
     const auto command_line = parse_command_line(argc, argv);
+    if (command_line.describe_control) {
+      print_control_description();
+      return 0;
+    }
+    if (command_line.event_stream_ndjson &&
+        !command_line.control_request_path.has_value()) {
+      throw std::invalid_argument("--event-stream requires --control-request");
+    }
     const auto config = mps::load_experiment_config(command_line.config_path);
     const auto fingerprint = mps::config_fingerprint(config);
 
@@ -327,9 +438,41 @@ int main(const int argc, const char* const argv[]) {
         initial_state = mps::unflatten_shallow_water_state(
             checkpoint.time_s, checkpoint.step, checkpoint.state, grid.cell_count());
       }
+      mps::ExperimentConfig run_config = config;
+      std::optional<mps::ControlRequestV1> control_request;
+      if (command_line.control_request_path.has_value()) {
+        if (command_line.restart_path.has_value() || command_line.checkpoint_path.has_value()) {
+          throw std::invalid_argument(
+              "machine control mode does not accept checkpoint or restart options");
+        }
+        control_request =
+            mps::load_control_request(*command_line.control_request_path);
+        run_config = mps::apply_control_request(config, *control_request);
+        machine_events = std::make_unique<MachineEventWriter>();
+        machine_events->run_id = control_request->run_id;
+        machine_events->emit("run.accepted");
+      }
+      MachineFrameContext frame_context;
+      mps::ShallowWaterRunHooks hooks;
+      if (machine_events != nullptr) {
+        machine_events->emit("run.started");
+        frame_context = {.directory = run_config.output_directory,
+                         .config_fingerprint = mps::config_fingerprint(run_config),
+                         .cells_per_panel = run_config.grid.cells_per_panel,
+                         .events = machine_events.get()};
+        hooks = {.on_frame = write_machine_frame,
+                 .observer_context = &frame_context,
+                 .is_cancelled = cancellation_requested};
+        std::signal(SIGINT, request_cancellation);
+        std::signal(SIGTERM, request_cancellation);
+      }
       const auto start = std::chrono::steady_clock::now();
-      const auto result = mps::run_shallow_water(config, std::move(initial_state),
-                                                 command_line.stop_after_step);
+      const auto result = mps::run_shallow_water(
+          run_config, std::move(initial_state), command_line.stop_after_step,
+          control_request.has_value()
+              ? std::span<const mps::InitialConditionEditV1>(control_request->initial_edits)
+              : std::span<const mps::InitialConditionEditV1>{},
+          hooks);
       const mps::Real wall_time_s =
           std::chrono::duration<mps::Real>(std::chrono::steady_clock::now() - start)
               .count();
@@ -344,14 +487,45 @@ int main(const int argc, const char* const argv[]) {
                 .layout_id = std::string(mps::kShallowWaterCheckpointLayout),
             });
       }
-      write_shallow_water_snapshot(config, result);
-      write_shallow_water_diagnostics(config, result);
-      mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
-      write_shallow_water_result(std::cout, result, wall_time_s, grid.cell_count());
-      write_shallow_water_errors(std::cout, config, grid, result);
+      write_shallow_water_snapshot(run_config, result);
+      write_shallow_water_diagnostics(run_config, result);
+      if (machine_events != nullptr) {
+        std::ofstream metadata(
+            std::filesystem::path(run_config.output_directory) / "run-metadata.txt",
+            std::ios::trunc);
+        if (!metadata) {
+          throw std::runtime_error("unable to open machine run metadata");
+        }
+        mps::write_run_metadata(metadata, mps::make_run_metadata(run_config), run_config);
+        const auto& diagnostics = result.final_diagnostics;
+        machine_events->emit(
+            "diagnostics.sample",
+            "\"timeSeconds\":" + std::to_string(result.state.time_s) +
+                ",\"step\":" + std::to_string(result.state.step) +
+                ",\"mass\":" + std::to_string(diagnostics.mass) +
+                ",\"energy\":" + std::to_string(diagnostics.energy));
+        if (g_cancel_requested.load() && !result.reached_end_time) {
+          machine_events->emit("run.cancelled");
+        } else if (result.reached_end_time) {
+          machine_events->emit("run.completed");
+        } else {
+          machine_events->emit("run.cancelled");
+        }
+      } else {
+        mps::write_run_metadata(std::cout, mps::make_run_metadata(run_config), run_config);
+        write_shallow_water_result(std::cout, result, wall_time_s, grid.cell_count());
+        write_shallow_water_errors(std::cout, run_config, grid, result);
+      }
     }
     return 0;
   } catch (const std::exception& error) {
+    if (machine_events != nullptr) {
+      try {
+        machine_events->emit("run.failed", "\"code\":\"native_error\",\"message\":\"" +
+                             json_escape(error.what()) + "\"");
+      } catch (...) {
+      }
+    }
     std::cerr << "error: " << error.what() << '\n';
     return 1;
   }
