@@ -21,7 +21,7 @@ MyPlanetSim の目的は、観測値が十分にない架空惑星にも適用�
 まず比較基準となる堅牢な方式を作り、その後に長時間積分向けの方式を評価する。
 
 1. 基準実装: cell-centered finite volume、MUSCL 型再構築、Rusanov/HLL 型数値流束、SSP-RK3。拡散は大きいが、保存性と実装検証を優先する。
-2. 目標実装: 面法線質量流束を共有し、質量・トレーサ整合性、エネルギー、渦位の性質を改善した mimetic/compatible な方式。Phase 4 の比較結果を ADR（Architecture Decision Record）にして採否を決める。
+2. 目標実装: 面法線質量流束を共有し、質量・トレーサ整合性、エネルギー、渦位の性質を改善した mimetic/compatible な方式。Phase 2 の比較結果を ADR（Architecture Decision Record）にして採否を決める。
 
 最初から高次・複雑な方式だけを実装すると、格子計量、面接続、再構築、時間積分の誤差を切り分けにくい。低次の基準実装は、後の高次方式に対する独立した比較器として残す。
 
@@ -88,46 +88,9 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: 空の時間積分ループではなく、製造解を用いた小さな ODE が設計次数で収束し、CI で上記項目を自動実行できる。
 
-### Phase 1 — 平面 2D の受動輸送
+### Phase 1 — cubed-sphere 幾何と球面輸送
 
-実装するもの:
-
-- Cartesian periodic grid
-- 2D conservative advection、一次風上法、MUSCL + limiter、SSP-RK3
-- CFL による時間刻み制御と境界 halo
-
-検証するもの:
-
-- 一様場保持、一定速度による正弦波・cosine bell の一周期移流
-- 斜め移流で x/y 方向の対称性が崩れていないこと
-- 滑らかな解で一次法と二次法が期待収束率を示すこと
-- 閉領域のスカラー積分が丸め誤差程度に保存されること
-- limiter 有効時に新しい極値や負値を作らないこと
-- CFL 限界の上下で安定/不安定の挙動が説明どおりであること
-
-完了ゲート: 3 解像度以上の自動収束試験、保存量試験、positivity 試験が CI で合格する。
-
-### Phase 2 — 平面 2D shallow-water
-
-実装するもの:
-
-- 非線形 shallow-water 方程式の保存形
-- 非回転、f-plane、beta-plane の Coriolis 項
-- 乾燥域は当面対象外とし、正の層厚を守る flux/limiter
-- 数値粘性・フィルタを明示的な設定と診断に分離
-
-検証するもの:
-
-- 平坦底・一様水深の静止解を機械精度で維持すること（可変地形の lake-at-rest は Phase 7）
-- 微小振幅重力波の位相速度と振幅、解像度収束
-- geostrophic balance の定常保持と慣性振動
-- 放射対称な dam-break/height perturbation の対称性と正値性
-- 質量の丸め誤差レベルの保存、エネルギー誤差の有界性と解像度依存
-- 長時間積分で checkerboard、格子方向バイアス、負の水深が生じないこと
-
-完了ゲート: 解析可能な線形問題で収束し、保存量 budget の残差を全項に分解して説明できる。
-
-### Phase 3 — cubed-sphere 幾何と球面輸送
+コミット単位の実装順、数値方式、変更対象、受け入れ条件は [Phase 1 実装計画](phase-1-plan.md) に定める。
 
 実装するもの:
 
@@ -147,7 +110,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: 全球質量保存を保ち、少なくとも二次の滑らかな輸送試験で設計収束率を示す。回転軸を変えた結果が同等の誤差範囲に入る。
 
-### Phase 4 — cubed-sphere 全球 shallow-water
+### Phase 2 — cubed-sphere 全球 shallow-water
 
 実装するもの:
 
@@ -158,16 +121,16 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 検証するもの:
 
-- Williamson test 2（定常地衡流）と test 6（Rossby–Haurwitz wave）。山岳を含む test 5 は Phase 7 へ回す
+- Williamson test 2（定常地衡流）と test 6（Rossby–Haurwitz wave）。山岳を含む test 5 は Phase 5 へ回す
 - Galewsky–Scott–Polvani の不安定 jet を高解像度または公開参照解と比較
 - 質量、全エネルギー、ポテンシャルエンストロフィー、軸角運動量の時系列
 - grid imprinting、4-grid-wave、seam 反射、cube corner noise の有無
 - 解像度・時間刻みを別々に細分化し、空間誤差と時間誤差を分離
 - 基準方式と改良方式を同一条件で比較し、精度・保存性・コストを ADR に記録
 
-完了ゲート: 標準テストの数値解・収束曲線・保存量が再生成可能で、採用する水平離散化を根拠付きで固定できる。地形項そのものは Phase 7 まで正式機能にしない。
+完了ゲート: 標準テストの数値解・収束曲線・保存量が再生成可能で、採用する水平離散化を根拠付きで固定できる。地形項そのものは Phase 5 まで正式機能にしない。
 
-### Phase 5 — 鉛直 1D と hybrid sigma-pressure
+### Phase 3 — 鉛直 1D と hybrid sigma-pressure
 
 実装するもの:
 
@@ -186,7 +149,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: 鉛直演算子だけの unit/convergence テストが通り、水平力学から独立して質量・熱力学 budget を閉じられる。
 
-### Phase 6 — 地形なし乾燥 3D 静水圧力学コア
+### Phase 4 — 地形なし乾燥 3D 静水圧力学コア
 
 実装するもの:
 
@@ -206,7 +169,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: 地形なしの標準 3D テストが複数解像度で再現し、shallow-water 段階の水平誤差と新しい鉛直誤差を区別できる。
 
-### Phase 7 — 地形と下部境界
+### Phase 5 — 地形と下部境界
 
 実装するもの:
 
@@ -217,7 +180,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 検証するもの:
 
-- 平坦地形が Phase 6 と数値的に同一であること
+- 平坦地形が Phase 4 と数値的に同一であること
 - DCMIP 2-0-x 型の、山岳上で静止する静水圧大気に偽風が発生しないこと
 - 山の高さ・幅・鉛直解像度に対する pressure-gradient error の収束
 - Williamson test 5 の山岳付き shallow-water を回帰試験として再利用
@@ -227,7 +190,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: 静止大気の偽風と pressure-gradient error が解像度とともに減少し、山岳位置を変えても保存量と主要診断が同等になる。
 
-### Phase 8 — 理想化乾燥物理と気候統計
+### Phase 6 — 理想化乾燥物理と気候統計
 
 実装するもの:
 
@@ -245,7 +208,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: 単一 snapshot ではなく平均値とばらつきを伴うベンチマーク報告を自動生成できる。
 
-### Phase 9 — 架空惑星化
+### Phase 7 — 架空惑星化
 
 実装するもの:
 
@@ -255,7 +218,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 検証するもの:
 
-- Earth-like preset が Phase 8 の基準結果を変えないこと
+- Earth-like preset が Phase 6 の基準結果を変えないこと
 - 単位だけを整合的に変換した相似問題が同じ無次元解を与えること
 - `Omega -> 0`、弱い強制、半径変更などの極限で挙動が物理的期待と一致すること
 - パラメータ sweep で CFL、層厚、温度、風速が安全範囲を外れたとき明示的に停止すること
@@ -263,7 +226,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: コード変更なしに惑星設定を切替でき、各 preset が設定・診断・再現手順を伴う。
 
-### Phase 10 — 物理拡張と性能（基本コア完成後）
+### Phase 8 — 物理拡張と性能（基本コア完成後）
 
 候補:
 
@@ -301,14 +264,14 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 ## 5. 直近の実装順
 
-最初の実装スプリントでは Phase 0 と Phase 1 だけを対象にする。
+Phase 0 は完了済みであり、次の実装スプリントは Phase 1 だけを対象にする。
 
-1. CMake/C++20、test、format/lint、sanitizer の骨格を作る。
-2. `PlanetParameters`、`Grid2D`、`Field2D`、境界条件、診断 API を作る。
-3. 一次風上 + Forward Euler で定数保持と質量保存を確認する。
-4. SSP-RK3、MUSCL、limiter を一つずつ追加し、追加ごとに収束表を残す。
-5. 正弦波と cosine bell の一周期テストを CI 化する。
-6. Phase 1 report に精度、保存、CFL、実行時間を記録してから shallow-water の設計へ進む。
+1. cubed-sphere の面番号、向き、equiangular gnomonic 写像を ADR で固定する。
+2. 座標変換、panel topology、セル面積・辺長・接法線を実装して幾何恒等式を検証する。
+3. scalar halo exchange と共有辺 flux を実装し、全球 flux cancellation を検証する。
+4. prescribed wind による一次風上輸送と CFL 制御を実装する。
+5. MUSCL 再構築と limiter を追加し、滑らかな tracer の二次収束と極値保存を検証する。
+6. Williamson test 1 と Lauritzen et al. の標準ケースを CI/回帰テスト化し、Phase 1 report を作る。
 
 ## 6. 調査資料と計画への反映
 

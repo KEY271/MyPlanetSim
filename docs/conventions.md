@@ -70,7 +70,7 @@ components are never copied directly.
 - `i` is the fastest-varying index in row-major storage.
 - A halo of width `h` extends logical indices to `-h..nx+h-1` and
   `-h..ny+h-1`.
-- Global cubed-sphere panel order and edge orientation will be fixed by the Phase 3
+- Global cubed-sphere panel order and edge orientation will be fixed by the Phase 1
   geometry ADR; code must not infer it from enum integer values before then.
 
 `Field2D` owns storage but does not own coordinates or cell metrics. Algorithms that

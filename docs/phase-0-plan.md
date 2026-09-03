@@ -17,7 +17,7 @@ Phase 0 では流体方程式をまだ解かない。Phase 1 以降で数値誤�
 - version 付き checkpoint/restart
 - 製造解 ODE による時間収束試験と Phase 0 検証報告
 
-Phase 0 完了時の実行プログラムは、設定を読み、製造解 `dy/dt = -lambda*y` を積分し、解析解との誤差と metadata を出力できるものとする。2D 移流、shallow-water、cubed-sphere は Phase 1 以降で実装する。
+Phase 0 完了時の実行プログラムは、設定を読み、製造解 `dy/dt = -lambda*y` を積分し、解析解との誤差と metadata を出力できるものとする。cubed-sphere 幾何と球面輸送は Phase 1、全球 shallow-water は Phase 2 で実装する。
 
 ## 2. 現在地
 
@@ -75,7 +75,7 @@ output.directory
 
 ### 3.4 `Field2D` の最小責務
 
-`Field2D<Real>` は Cartesian logical field の保存領域だけを担当する。
+`Field2D<Real>` は panel-local logical field の保存領域だけを担当する。
 
 - interior size `(nx, ny)` と全周同幅 `halo` を constructor で確定
 - row-major の contiguous storage
@@ -548,14 +548,13 @@ P0.05 より前は preset が存在しないため、README にある `cmake -S 
 - [x] 診断値、乱数列、canonical metadata が同じ入力で再現する。
 - [x] checkpoint/restart 後の最終 state が連続実行と一致する。
 - [x] Phase 0 検証報告を記載し、再生成コマンドを示している。
-- [x] Phase 1 の 2D conservative advection に必要な基盤 API が揃っている。
+- [x] Phase 1 の cubed-sphere geometry と球面輸送に必要な基盤 API が揃っている。
 
 ## 9. Phase 0 から除外するもの
 
 次は Phase 0 完了のために実装しない。
 
-- Cartesian grid の座標・セル面積・flux divergence
-- 2D advection と CFL controller
+- cubed-sphere 上のadvectionとCFL controller
 - shallow-water 方程式
 - cubed-sphere geometry と panel exchange
 - hybrid sigma の `A/B` 配列
