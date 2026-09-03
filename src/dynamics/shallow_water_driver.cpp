@@ -8,6 +8,7 @@
 
 #include "myplanetsim/core/validation.hpp"
 #include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
+#include "myplanetsim/dynamics/shallow_water_diffusion.hpp"
 #include "myplanetsim/dynamics/shallow_water_rhs.hpp"
 
 namespace mps {
@@ -177,6 +178,9 @@ ShallowWaterResult run_shallow_water(
     Real time_step = stable_shallow_water_time_step(
         grid, state, config.planet.gravity_m_s2, config.shallow_water.cfl,
         config.run.time_step_s);
+    time_step = stable_diffusion_time_step(grid, config.shallow_water.diffusion_kind,
+                                           config.shallow_water.diffusion_coefficient,
+                                           time_step);
     time_step = std::min(time_step, config.run.end_time_s - state.time_s);
     const Real actual_cfl =
         shallow_water_cfl_number(grid, state, config.planet.gravity_m_s2, time_step);

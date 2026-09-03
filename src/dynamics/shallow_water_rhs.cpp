@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "myplanetsim/core/validation.hpp"
+#include "myplanetsim/dynamics/shallow_water_diffusion.hpp"
 #include "myplanetsim/dynamics/shallow_water_reconstruction.hpp"
 
 namespace mps {
@@ -99,6 +100,8 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
   }
   divide_by_area_and_project(grid, result.flux);
   divide_by_area_and_project(grid, result.pressure);
+  result.diffusion = shallow_water_diffusion_tendency(
+      grid, state, parameters.diffusion_kind, parameters.diffusion_coefficient);
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
     Vec3 pressure_geometry_correction{};
     for (const std::size_t edge_id : grid.cell_edges(grid.cell_id(cell))) {
@@ -118,10 +121,11 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
         -2.0 * project_tangent(cross(rotation_vector_rad_s, state.momentum[cell]),
                                grid.cells()[cell].center);
     result.total.depth[cell] = result.flux.depth[cell];
-    result.total.momentum[cell] =
-        project_tangent(result.flux.momentum[cell] + result.pressure.momentum[cell] +
-                            result.coriolis.momentum[cell],
-                        grid.cells()[cell].center);
+    result.total.momentum[cell] = project_tangent(
+        result.flux.momentum[cell] + result.pressure.momentum[cell] +
+            result.coriolis.momentum[cell] + result.diffusion.momentum[cell],
+        grid.cells()[cell].center);
+    result.total.depth[cell] += result.diffusion.depth[cell];
   }
   return result;
 }
