@@ -12,6 +12,7 @@
 #include <string_view>
 
 #include "myplanetsim/config/experiment_config.hpp"
+#include "myplanetsim/dynamics/shallow_water_driver.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
 #include "myplanetsim/io/checkpoint.hpp"
 #include "myplanetsim/io/run_metadata.hpp"
@@ -138,6 +139,47 @@ void write_transport_snapshot(const mps::ExperimentConfig& config,
   }
 }
 
+void write_shallow_water_result(std::ostream& output,
+                                const mps::ShallowWaterResult& result) {
+  output << std::setprecision(std::numeric_limits<mps::Real>::max_digits10)
+         << "result.integrator = ssprk3\n"
+         << "result.status = " << (result.reached_end_time ? "complete" : "stopped")
+         << '\n'
+         << "result.time_s = " << result.state.time_s << '\n'
+         << "result.step = " << result.state.step << '\n'
+         << "diagnostics.mass = " << result.final_diagnostics.mass << '\n'
+         << "diagnostics.energy = " << result.final_diagnostics.energy << '\n'
+         << "diagnostics.potential_enstrophy = "
+         << result.final_diagnostics.potential_enstrophy << '\n'
+         << "diagnostics.axial_angular_momentum = "
+         << result.final_diagnostics.axial_angular_momentum << '\n'
+         << "diagnostics.minimum_depth = " << result.final_diagnostics.minimum_depth
+         << '\n'
+         << "diagnostics.maximum_depth = " << result.final_diagnostics.maximum_depth
+         << '\n'
+         << "diagnostics.maximum_cfl = " << result.maximum_cfl << '\n';
+}
+
+void write_shallow_water_snapshot(const mps::ExperimentConfig& config,
+                                  const mps::ShallowWaterResult& result) {
+  const std::filesystem::path directory(config.output_directory);
+  std::filesystem::create_directories(directory);
+  std::ofstream output(directory / "shallow_water.csv", std::ios::trunc);
+  if (!output) {
+    throw std::runtime_error("unable to open shallow-water CSV snapshot");
+  }
+  output << "panel,i,j,depth_m,momentum_x,momentum_y,momentum_z\n";
+  const mps::CubedSphereGrid grid(config.grid.cells_per_panel, config.planet.radius_m);
+  output << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+  for (std::size_t index = 0; index < grid.cell_count(); ++index) {
+    const auto cell = grid.cell_id(index);
+    const auto momentum = result.state.momentum[index];
+    output << mps::panel_name(cell.panel) << ',' << cell.i << ',' << cell.j << ','
+           << result.state.depth[index] << ',' << momentum.x << ',' << momentum.y << ','
+           << momentum.z << '\n';
+  }
+}
+
 }  // namespace
 
 int main(const int argc, const char* const argv[]) {
@@ -174,7 +216,7 @@ int main(const int argc, const char* const argv[]) {
       }
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
       write_result(std::cout, result, command_line.integrator);
-    } else {
+    } else if (config.kind == mps::ExperimentKind::kSphereTransport) {
       if (command_line.integrator != mps::IntegratorKind::kSspRk3) {
         throw std::invalid_argument("sphere transport supports only ssprk3");
       }
@@ -196,6 +238,36 @@ int main(const int argc, const char* const argv[]) {
       write_transport_snapshot(config, result);
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
       write_transport_result(std::cout, result);
+    } else {
+      if (command_line.integrator != mps::IntegratorKind::kSspRk3) {
+        throw std::invalid_argument("shallow water supports only ssprk3");
+      }
+      const mps::CubedSphereGrid grid(config.grid.cells_per_panel,
+                                      config.planet.radius_m);
+      std::optional<mps::ShallowWaterState> initial_state;
+      if (command_line.restart_path.has_value()) {
+        auto checkpoint = mps::read_checkpoint_file(
+            *command_line.restart_path, fingerprint, mps::kShallowWaterCheckpointLayout,
+            4 * grid.cell_count());
+        initial_state = mps::unflatten_shallow_water_state(
+            checkpoint.time_s, checkpoint.step, checkpoint.state, grid.cell_count());
+      }
+      const auto result = mps::run_shallow_water(config, std::move(initial_state),
+                                                 command_line.stop_after_step);
+      if (command_line.checkpoint_path.has_value()) {
+        mps::write_checkpoint_file(
+            *command_line.checkpoint_path,
+            mps::Checkpoint{
+                .time_s = result.state.time_s,
+                .step = result.state.step,
+                .state = mps::flatten_shallow_water_state(result.state),
+                .config_fingerprint = fingerprint,
+                .layout_id = std::string(mps::kShallowWaterCheckpointLayout),
+            });
+      }
+      write_shallow_water_snapshot(config, result);
+      mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
+      write_shallow_water_result(std::cout, result);
     }
     return 0;
   } catch (const std::exception& error) {

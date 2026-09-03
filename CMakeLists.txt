@@ -53,6 +53,7 @@ add_library(
   src/diagnostics/shallow_water_diagnostics.cpp
   src/dynamics/shallow_water_state.cpp
   src/dynamics/shallow_water_flux.cpp
+  src/dynamics/shallow_water_driver.cpp
   src/dynamics/shallow_water_rhs.cpp
   src/geometry/cubed_sphere.cpp
   src/grid/cubed_sphere_field.cpp
@@ -95,6 +96,10 @@ if(BUILD_TESTING)
     COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase1_solid_body.cfg
   )
   add_test(
+    NAME smoke.phase2_shallow_water
+    COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase2_rest.cfg
+  )
+  add_test(
     NAME smoke.phase1_deformational
     COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase1_deformational.cfg
   )
@@ -108,6 +113,10 @@ if(BUILD_TESTING)
   )
   set_tests_properties(
     smoke.phase0_ode
+    PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
+  )
+  set_tests_properties(
+    smoke.phase2_shallow_water
     PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
   )
   add_test(NAME smoke.invalid_cli COMMAND my_planet_sim --unknown value)
