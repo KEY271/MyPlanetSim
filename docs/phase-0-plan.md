@@ -1,5 +1,8 @@
 # Phase 0 実装計画 — 科学・ソフトウェア基盤
 
+**状態:** 2026-09-04 にローカル実装・検証完了。結果は
+[Phase 0 validation report](validation/phase-0.md)を参照。
+
 ## 1. Phase 0 の到達点
 
 Phase 0 では流体方程式をまだ解かない。Phase 1 以降で数値誤差と基盤バグを切り分けられるよう、次の土台を完成させる。
@@ -535,17 +538,17 @@ P0.05 より前は preset が存在しないため、README にある `cmake -S 
 
 ## 8. Phase 0 完了チェックリスト
 
-- [ ] clean checkout から GCC と Clang の Debug/Release build が成功する。
-- [ ] ASan/UBSan で全テストが成功する。
-- [ ] format-check と warning-as-error が成功する。
-- [ ] 単位・座標・符号・添字・誤差 norm の規約が文書化されている。
-- [ ] `PlanetParameters` と config が全不正値を明示的に拒否する。
-- [ ] `Field2D` と periodic halo の全辺・全 corner がテストされている。
-- [ ] Forward Euler と SSP-RK3 が製造解で期待収束次数を示す。
-- [ ] 診断値、乱数列、canonical metadata が同じ入力で再現する。
-- [ ] checkpoint/restart 後の最終 state が連続実行と一致する。
-- [ ] Phase 0 検証報告を clean checkout から再生成できる。
-- [ ] Phase 1 の 2D conservative advection を追加する際、基盤 API の未解決変更がない。
+- [x] clean checkout から GCC と Clang の Debug/Release build が成功する。
+- [x] ASan/UBSan で全テストが成功する。
+- [x] format-check と warning-as-error が成功する。
+- [x] 単位・座標・符号・添字・誤差 norm の規約が文書化されている。
+- [x] `PlanetParameters` と config が対象とする不正値を明示的に拒否する。
+- [x] `Field2D` と periodic halo の全辺・全 corner がテストされている。
+- [x] Forward Euler と SSP-RK3 が製造解で期待収束次数を示す。
+- [x] 診断値、乱数列、canonical metadata が同じ入力で再現する。
+- [x] checkpoint/restart 後の最終 state が連続実行と一致する。
+- [x] Phase 0 検証報告を記載し、再生成コマンドを示している。
+- [x] Phase 1 の 2D conservative advection に必要な基盤 API が揃っている。
 
 ## 9. Phase 0 から除外するもの
 

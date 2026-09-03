@@ -9,6 +9,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [開発・検証計画](docs/plan.md): 数値方式の初期方針、開発段階、各段階の検証項目、完了条件、参考文献
 - [Phase 0 実装計画](docs/phase-0-plan.md): 科学・ソフトウェア基盤をコミット単位に分けた作業順と受け入れ条件
 - [科学・数値規約](docs/conventions.md): 単位、座標、添字、符号、誤差・保存量の共通定義
+- [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
 
 ## ビルドと実行
 
@@ -27,6 +28,9 @@ cmake --build build/dev --target format-check
 
 現在の実行ファイルは、Phase 0 の製造解 `dy/dt = -lambda*y` を積分し、
 解析解との誤差と再現用 metadata を出力します。
+
+Phase 0 の科学・ソフトウェア基盤はローカル検証を完了しています。次の開発対象は
+Phase 1 の平面2D受動輸送です。
 
 ## 将来のファイル構成
 

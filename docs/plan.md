@@ -68,6 +68,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 ### Phase 0 — 科学・ソフトウェア基盤
 
 コミット単位の実装順、変更対象、受け入れ条件は [Phase 0 実装計画](phase-0-plan.md) に定める。
+[検証報告](validation/phase-0.md)に示すローカルゲートは完了済みである。
 
 実装するもの:
 
