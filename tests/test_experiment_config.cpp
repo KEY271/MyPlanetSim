@@ -24,6 +24,32 @@ ode.decay_rate_s_1 = 2
 output.directory = output data
 )";
 
+constexpr std::string_view kValidTransportConfig = R"(
+experiment.kind = sphere_transport
+planet.radius_m = 2
+planet.rotation_rate_rad_s = 0.1
+planet.gravity_m_s2 = 3
+planet.gas_constant_j_kg_k = 4
+planet.heat_capacity_cp_j_kg_k = 5
+planet.reference_pressure_pa = 6
+run.start_time_s = 0
+run.end_time_s = 10
+run.time_step_s = 1
+run.random_seed = 7
+grid.cells_per_panel = 8
+grid.halo_width = 2
+transport.test_case = solid_body
+transport.initial_condition = gaussian_hill
+transport.scheme = linear
+transport.limiter = barth_jespersen
+transport.cfl = 0.5
+transport.rotation_axis_x = 1
+transport.rotation_axis_y = 2
+transport.rotation_axis_z = 3
+transport.angular_speed_rad_s = 0.25
+output.directory = output
+)";
+
 [[nodiscard]] mps::ExperimentConfig parse(const std::string_view text) {
   std::istringstream input{std::string(text)};
   return mps::parse_experiment_config(input);
@@ -73,6 +99,48 @@ MPS_TEST_CASE("configuration rejects invalid values") {
   const auto end_position = invalid.find("run.end_time_s = 1");
   invalid.replace(end_position, std::string("run.end_time_s = 1").size(),
                   "run.end_time_s = 0");
+  MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
+}
+
+MPS_TEST_CASE("transport configuration has a strict canonical round trip") {
+  const auto first = parse(kValidTransportConfig);
+  MPS_CHECK(first.kind == mps::ExperimentKind::kSphereTransport);
+  MPS_CHECK_EQ(first.grid.cells_per_panel, 8);
+  MPS_CHECK(first.transport.scheme == mps::TransportScheme::kLinear);
+  std::ostringstream output;
+  mps::write_experiment_config(output, first);
+  const auto second = parse(output.str());
+  MPS_CHECK_EQ(second.transport.cfl, first.transport.cfl);
+  MPS_CHECK_EQ(second.transport.rotation_axis_y, first.transport.rotation_axis_y);
+
+  MPS_CHECK_THROWS_AS(
+      parse(std::string(kValidTransportConfig) + "ode.initial_value = 1\n"),
+      std::runtime_error);
+}
+
+MPS_TEST_CASE("transport configuration rejects invalid numerical choices") {
+  auto invalid = std::string(kValidTransportConfig);
+  auto position = invalid.find("grid.cells_per_panel = 8");
+  invalid.replace(position, std::string("grid.cells_per_panel = 8").size(),
+                  "grid.cells_per_panel = 0");
+  MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
+
+  invalid = std::string(kValidTransportConfig);
+  position = invalid.find("transport.cfl = 0.5");
+  invalid.replace(position, std::string("transport.cfl = 0.5").size(),
+                  "transport.cfl = 1.1");
+  MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
+
+  invalid = std::string(kValidTransportConfig);
+  position = invalid.find("transport.rotation_axis_x = 1");
+  invalid.replace(position, std::string("transport.rotation_axis_x = 1").size(),
+                  "transport.rotation_axis_x = 0");
+  position = invalid.find("transport.rotation_axis_y = 2");
+  invalid.replace(position, std::string("transport.rotation_axis_y = 2").size(),
+                  "transport.rotation_axis_y = 0");
+  position = invalid.find("transport.rotation_axis_z = 3");
+  invalid.replace(position, std::string("transport.rotation_axis_z = 3").size(),
+                  "transport.rotation_axis_z = 0");
   MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
 }
 

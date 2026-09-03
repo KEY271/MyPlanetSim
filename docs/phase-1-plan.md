@@ -469,18 +469,18 @@ multi-resolution testは通常unit testと分けて`phase1_gate` labelを付け�
 
 ## 9. 完了チェックリスト
 
-- [ ] panel規約と全edge接続がADRで固定されている。
-- [ ] geometry gateが`N=1..64`で合格する。
-- [ ] scalar/vector変換とedge haloが全panel、seam、corner近傍で検証されている。
-- [ ] unique edge fluxの全球cancellationが構造テストを通る。
-- [ ] 基礎離散演算子が解析場へ収束する。
-- [ ] 一次upwindがsmooth tracerで観測次数`>=0.8`を示す。
-- [ ] unlimited線形再構築がsmooth tracerで観測次数`>=1.7`を示す。
-- [ ] limiterがmassを変えず、新極値と負値を許容幅内に抑える。
-- [ ] Williamson test 1とLauritzen suiteが再現可能な設定で実行できる。
-- [ ] 全標準ケースのmass driftが`5e-13`以下である。
-- [ ] 回転軸変更時も収束・保存・seam gateを満たす。
-- [ ] checkpoint/restartが連続実行とbitwise一致する。
-- [ ] GCC/Clang、Debug/Release、ASan/UBSan、formatがgreen。
-- [ ] Phase 1検証報告をclean checkoutから再生成できる。
-- [ ] Phase 2 shallow-waterが共有geometry/edge fluxを再利用できるAPIになっている。
+- [x] panel規約と全edge接続がADRで固定されている。
+- [x] geometry gateが`N=1..64`で合格する。
+- [x] scalar/vector変換とedge haloが全panel、seam、corner近傍で検証されている。
+- [x] unique edge fluxの全球cancellationが構造テストを通る。
+- [x] 基礎離散演算子が解析場へ収束する。
+- [x] 一次upwindがsmooth tracerで観測次数`>=0.8`を示す。
+- [x] unlimited線形再構築がsmooth tracerで観測次数`>=1.7`を示す。
+- [x] limiterがmassを変えず、新極値と負値を許容幅内に抑える。
+- [x] Williamson test 1とLauritzen suiteが再現可能な設定で実行できる。
+- [x] 全標準ケースのmass driftが`5e-13`以下である。
+- [x] 回転軸変更時も収束・保存・seam gateを満たす。
+- [x] checkpoint/restartが連続実行とbitwise一致する。
+- [x] GCC/Clang、Debug/Release、ASan/UBSan、formatがgreen。
+- [x] Phase 1検証報告をclean checkoutから再生成できる。
+- [x] Phase 2 shallow-waterが共有geometry/edge fluxを再利用できるAPIになっている。

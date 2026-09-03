@@ -91,6 +91,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 ### Phase 1 — cubed-sphere 幾何と球面輸送
 
 コミット単位の実装順、数値方式、変更対象、受け入れ条件は [Phase 1 実装計画](phase-1-plan.md) に定める。
+[検証報告](validation/phase-1.md)に示すローカルゲートは完了済みである。
 
 実装するもの:
 

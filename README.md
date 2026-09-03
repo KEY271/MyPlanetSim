@@ -11,6 +11,8 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 1 実装計画](docs/phase-1-plan.md): cubed-sphere 幾何と球面輸送をコミット単位に分けた作業順と受け入れ条件
 - [科学・数値規約](docs/conventions.md): 単位、座標、添字、符号、誤差・保存量の共通定義
 - [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
+- [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果
+- [cubed-sphere panel ADR](docs/adr/0001-cubed-sphere-panel-conventions.md): panel、edge、向き、flux 符号規約
 
 ## ビルドと実行
 
@@ -21,17 +23,20 @@ CMake preset を利用します。
 cmake --preset dev
 cmake --build --preset dev
 ./build/dev/my_planet_sim --config configs/phase0_ode.cfg
+./build/dev/my_planet_sim --config configs/phase1_solid_body.cfg
 ctest --preset dev
 cmake --build build/dev --target format-check
 ```
 
 `release` と `asan-ubsan` preset も同じ configure/build/test 手順で使用できます。
 
-現在の実行ファイルは、Phase 0 の製造解 `dy/dt = -lambda*y` を積分し、
-解析解との誤差と再現用 metadata を出力します。
+実行ファイルは `experiment.kind` に応じて、Phase 0 の製造 ODE または
+Phase 1 の全球 cubed-sphere tracer 輸送を実行します。輸送ケースは診断を
+標準出力へ、cell snapshot を `output.directory/tracer.csv` へ出力します。
 
-Phase 0 の科学・ソフトウェア基盤はローカル検証を完了しています。次の開発対象は
-Phase 1 の cubed-sphere 幾何と球面受動輸送です。
+Phase 0 の科学・ソフトウェア基盤と Phase 1 の cubed-sphere 幾何・球面
+受動輸送はローカル検証を完了しています。次の開発対象は Phase 2 の全球
+shallow-water 系です。
 
 ## 将来のファイル構成
 

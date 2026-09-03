@@ -70,8 +70,8 @@ components are never copied directly.
 - `i` is the fastest-varying index in row-major storage.
 - A halo of width `h` extends logical indices to `-h..nx+h-1` and
   `-h..ny+h-1`.
-- Global cubed-sphere panel order and edge orientation will be fixed by the Phase 1
-  geometry ADR; code must not infer it from enum integer values before then.
+- Global cubed-sphere panel order and edge orientation are fixed by
+  [ADR 0001](adr/0001-cubed-sphere-panel-conventions.md).
 
 `Field2D` owns storage but does not own coordinates or cell metrics. Algorithms that
 integrate a field receive weights explicitly.
@@ -163,7 +163,6 @@ reserved for prose and figures.
 
 The following are intentionally not fixed in Phase 0:
 
-- cubed-sphere panel numbering and local coordinate mapping;
 - prognostic momentum representation and horizontal staggering;
 - exact hybrid `A/B` profile and model top pressure;
 - large field file format and parallel I/O library;

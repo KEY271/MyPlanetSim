@@ -50,9 +50,15 @@ add_library(
   src/core/validation.cpp
   src/core/version.cpp
   src/diagnostics/reductions.cpp
+  src/geometry/cubed_sphere.cpp
+  src/grid/cubed_sphere_field.cpp
+  src/grid/cubed_sphere_grid.cpp
+  src/grid/panel_topology.cpp
   src/io/checkpoint.cpp
   src/io/run_metadata.cpp
   src/phase0/ode_experiment.cpp
+  src/numerics/spherical_operators.cpp
+  src/transport/spherical_transport.cpp
 )
 target_compile_features(myplanetsim_core PUBLIC cxx_std_20)
 target_include_directories(
@@ -78,6 +84,22 @@ if(BUILD_TESTING)
   add_test(
     NAME smoke.phase0_ode
     COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase0_ode.cfg
+  )
+  add_test(
+    NAME smoke.phase1_transport
+    COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase1_solid_body.cfg
+  )
+  add_test(
+    NAME smoke.phase1_deformational
+    COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase1_deformational.cfg
+  )
+  set_tests_properties(
+    smoke.phase1_deformational
+    PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
+  )
+  set_tests_properties(
+    smoke.phase1_transport
+    PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
   )
   set_tests_properties(
     smoke.phase0_ode
