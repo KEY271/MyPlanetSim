@@ -47,7 +47,6 @@ enum class InitialConditionKind {
 
 struct GridParameters {
   Index cells_per_panel = 0;
-  Index halo_width = 0;
 };
 
 struct TransportParameters {
@@ -82,10 +81,6 @@ struct DiagnosticsParameters {
   std::uint64_t interval_steps = 1;
 };
 
-struct OutputParameters {
-  std::uint64_t snapshot_interval_steps = 1;
-};
-
 struct ExperimentConfig {
   ExperimentKind kind = ExperimentKind::kOde;
   PlanetParameters planet;
@@ -95,7 +90,6 @@ struct ExperimentConfig {
   TransportParameters transport{};
   ShallowWaterParameters shallow_water{};
   DiagnosticsParameters diagnostics{};
-  OutputParameters output{};
   std::string output_directory;
 
   void validate() const;

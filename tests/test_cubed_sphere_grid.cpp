@@ -1,8 +1,10 @@
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
+#include <vector>
 
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
-#include "myplanetsim/grid/panel_topology.hpp"
 #include "support/test.hpp"
 
 MPS_TEST_CASE("cubed sphere geometry satisfies global invariants") {
@@ -28,21 +30,35 @@ MPS_TEST_CASE("cubed sphere geometry satisfies global invariants") {
   }
 }
 
-MPS_TEST_CASE("panel edge connections are reciprocal") {
-  for (const auto panel : mps::kPanels) {
-    for (const auto edge : {mps::PanelEdge::kWest, mps::PanelEdge::kEast,
-                            mps::PanelEdge::kSouth, mps::PanelEdge::kNorth}) {
-      const auto first = mps::edge_connection(panel, edge);
-      const auto second =
-          mps::edge_connection(first.neighbor_panel, first.neighbor_edge);
-      MPS_CHECK(second.neighbor_panel == panel);
-      MPS_CHECK(second.neighbor_edge == edge);
-      MPS_CHECK_EQ(second.reversed, first.reversed);
-      for (mps::Index index = 0; index < 7; ++index) {
-        const auto mapped = mps::map_edge_index(index, 7, first);
-        MPS_CHECK_EQ(mps::map_edge_index(mapped, 7, second), index);
+MPS_TEST_CASE("cubed sphere joins panel edges and all eight corners") {
+  for (const mps::Index n : {1, 2, 7}) {
+    const mps::CubedSphereGrid grid(n, 1.0);
+    std::size_t panel_boundary_edges = 0;
+    for (const auto& edge : grid.edges()) {
+      if (edge.left_cell.panel == edge.right_cell.panel) {
+        continue;
+      }
+      ++panel_boundary_edges;
+      MPS_CHECK(grid.neighbor_across(edge.id, edge.left_cell) == edge.right_cell);
+      MPS_CHECK(grid.neighbor_across(edge.id, edge.right_cell) == edge.left_cell);
+      MPS_CHECK_EQ(grid.edge_sign_for_cell(edge.id, edge.left_cell), 1);
+      MPS_CHECK_EQ(grid.edge_sign_for_cell(edge.id, edge.right_cell), -1);
+    }
+    MPS_CHECK_EQ(panel_boundary_edges, 12U * static_cast<std::size_t>(n));
+
+    std::vector<std::array<bool, 6>> incident_panels(grid.vertex_count());
+    for (const auto& cell : grid.cells()) {
+      for (const auto vertex : cell.vertices) {
+        incident_panels[vertex][mps::panel_index(cell.id.panel)] = true;
       }
     }
+    std::size_t corners = 0;
+    for (const auto& panels : incident_panels) {
+      const auto count = std::ranges::count(panels, true);
+      MPS_CHECK(count >= 1 && count <= 3);
+      corners += count == 3 ? 1U : 0U;
+    }
+    MPS_CHECK_EQ(corners, 8U);
   }
 }
 

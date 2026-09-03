@@ -32,8 +32,6 @@ struct ShallowWaterResult {
 [[nodiscard]] Real shallow_water_cfl_number(const CubedSphereGrid& grid,
                                             const ShallowWaterState& state,
                                             Real gravity_m_s2, Real time_step_s);
-[[nodiscard]] ShallowWaterState make_resting_shallow_water_state(
-    const CubedSphereGrid& grid, Real time_s, Real depth_m);
 [[nodiscard]] ShallowWaterResult run_shallow_water(
     const ExperimentConfig& config,
     std::optional<ShallowWaterState> initial_state = std::nullopt,

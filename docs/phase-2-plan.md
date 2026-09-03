@@ -188,7 +188,6 @@ error で停止する。
 ```text
 experiment.kind = shallow_water
 grid.cells_per_panel
-grid.halo_width
 shallow_water.test_case
 shallow_water.scheme
 shallow_water.reconstruction
@@ -199,7 +198,6 @@ shallow_water.depth_floor_m
 shallow_water.diffusion_kind
 shallow_water.diffusion_coefficient
 diagnostics.interval_steps
-output.snapshot_interval_steps
 ```
 
 test case 固有値は preset 内で canonical value を明記し、論文既定値を code 内の

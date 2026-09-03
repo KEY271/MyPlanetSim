@@ -24,7 +24,7 @@ namespace {
                   .time_step_s = 1.0,
                   .random_seed = 1},
           .ode = {},
-          .grid = {.cells_per_panel = n, .halo_width = 1},
+          .grid = {.cells_per_panel = n},
           .transport = {.test_case = mps::TransportTestCase::kSolidBody,
                         .initial_condition = mps::InitialConditionKind::kGaussianHill,
                         .scheme = mps::TransportScheme::kUpwind,

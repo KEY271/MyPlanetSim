@@ -29,7 +29,7 @@ constexpr mps::Vec3 kAxis{0.0, 0.0, 1.0};
                .end_time_s = end_time_s,
                .time_step_s = 300.0,
                .random_seed = 1};
-  value.grid = {.cells_per_panel = resolution, .halo_width = 2};
+  value.grid = {.cells_per_panel = resolution};
   value.shallow_water.test_case = mps::ShallowWaterTestCase::kGalewsky;
   value.shallow_water.scheme = mps::ShallowWaterScheme::kRusanov;
   value.shallow_water.reconstruction = mps::ReconstructionKind::kLinear;
@@ -61,7 +61,8 @@ constexpr mps::Vec3 kAxis{0.0, 0.0, 1.0};
   const mps::CubedSphereGrid grid(resolution, kRadius);
   const auto state = balanced_state(grid);
   const auto rhs = mps::assemble_shallow_water_rhs(
-      grid, state, config(resolution, 600.0).shallow_water, kGravity, kRotation);
+      grid, state, config(resolution, 600.0).shallow_water, kGravity,
+      {0.0, 0.0, kRotation});
   return momentum_rms(grid, rhs.total) / momentum_rms(grid, rhs.coriolis);
 }
 

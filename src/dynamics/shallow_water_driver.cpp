@@ -28,40 +28,6 @@ namespace {
   return {0.0, 0.0, config.planet.rotation_rate_rad_s};
 }
 
-// Selects the reference or the compatible tendency and owns the dual topology
-// that the compatible scheme needs.
-class TendencyAssembler {
- public:
-  TendencyAssembler(const CubedSphereGrid& grid,
-                    const ShallowWaterParameters& parameters, const Real gravity_m_s2,
-                    const Vec3 rotation_vector_rad_s)
-      : grid_(&grid),
-        parameters_(&parameters),
-        gravity_m_s2_(gravity_m_s2),
-        rotation_vector_rad_s_(rotation_vector_rad_s) {
-    if (parameters.scheme == ShallowWaterScheme::kCompatible) {
-      dual_.emplace(grid);
-    }
-  }
-
-  [[nodiscard]] ShallowWaterRhsComponents operator()(
-      const ShallowWaterState& state) const {
-    if (dual_.has_value()) {
-      return assemble_compatible_shallow_water_rhs(
-          *grid_, *dual_, state, *parameters_, gravity_m_s2_, rotation_vector_rad_s_);
-    }
-    return assemble_shallow_water_rhs(*grid_, state, *parameters_, gravity_m_s2_,
-                                      rotation_vector_rad_s_);
-  }
-
- private:
-  const CubedSphereGrid* grid_;
-  const ShallowWaterParameters* parameters_;
-  Real gravity_m_s2_;
-  Vec3 rotation_vector_rad_s_;
-  std::optional<CubedSphereDualTopology> dual_;
-};
-
 void project_and_validate_stage(const CubedSphereGrid& grid, ShallowWaterState& state,
                                 const Real depth_floor_m, const int stage,
                                 const Real cfl) {
@@ -108,7 +74,16 @@ void project_and_validate_stage(const CubedSphereGrid& grid, ShallowWaterState& 
 
 void ssp_rk3_step(const CubedSphereGrid& grid, ShallowWaterState& state,
                   const Real time_step_s, const ShallowWaterParameters& parameters,
-                  const TendencyAssembler& assemble, const Real cfl) {
+                  const CubedSphereDualTopology* dual, const Real gravity_m_s2,
+                  const Vec3 rotation_vector_rad_s, const Real cfl) {
+  const auto assemble = [&](const ShallowWaterState& stage) {
+    if (dual != nullptr) {
+      return assemble_compatible_shallow_water_rhs(grid, *dual, stage, parameters,
+                                                   gravity_m_s2, rotation_vector_rad_s);
+    }
+    return assemble_shallow_water_rhs(grid, stage, parameters, gravity_m_s2,
+                                      rotation_vector_rad_s);
+  };
   const ShallowWaterState initial = state;
   const auto rhs1 = assemble(initial);
   auto stage1 = euler_update(initial, rhs1.total, time_step_s);
@@ -176,17 +151,6 @@ Real shallow_water_cfl_number(const CubedSphereGrid& grid,
   return maximum_cfl;
 }
 
-ShallowWaterState make_resting_shallow_water_state(const CubedSphereGrid& grid,
-                                                   const Real time_s,
-                                                   const Real depth_m) {
-  require_non_negative(time_s, "initial shallow-water time");
-  require_positive(depth_m, "initial shallow-water depth");
-  return {.time_s = time_s,
-          .step = 0,
-          .depth = std::vector<Real>(grid.cell_count(), depth_m),
-          .momentum = std::vector<Vec3>(grid.cell_count())};
-}
-
 ShallowWaterResult run_shallow_water(
     const ExperimentConfig& config, std::optional<ShallowWaterState> initial_state,
     const std::optional<std::uint64_t> stop_after_step) {
@@ -196,8 +160,10 @@ ShallowWaterResult run_shallow_water(
   }
   const CubedSphereGrid grid(config.grid.cells_per_panel, config.planet.radius_m);
   const Vec3 omega = rotation_vector(config);
-  const TendencyAssembler assemble(grid, config.shallow_water,
-                                   config.planet.gravity_m_s2, omega);
+  std::optional<CubedSphereDualTopology> dual;
+  if (config.shallow_water.scheme == ShallowWaterScheme::kCompatible) {
+    dual.emplace(grid);
+  }
   const ShallowWaterState reference = make_shallow_water_initial_state(grid, config);
   ShallowWaterState state =
       initial_state.has_value() ? std::move(*initial_state) : reference;
@@ -226,7 +192,9 @@ ShallowWaterResult run_shallow_water(
     const Real actual_cfl =
         shallow_water_cfl_number(grid, state, config.planet.gravity_m_s2, time_step);
     maximum_cfl = std::max(maximum_cfl, actual_cfl);
-    ssp_rk3_step(grid, state, time_step, config.shallow_water, assemble, actual_cfl);
+    ssp_rk3_step(grid, state, time_step, config.shallow_water,
+                 dual.has_value() ? &*dual : nullptr, config.planet.gravity_m_s2, omega,
+                 actual_cfl);
     state.time_s += time_step;
     ++state.step;
     if (state.step % config.diagnostics.interval_steps == 0) {

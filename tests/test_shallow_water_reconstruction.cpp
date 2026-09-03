@@ -65,7 +65,8 @@ MPS_TEST_CASE("linear reconstructed RHS retains unique-edge mass cancellation") 
   parameters.reconstruction = mps::ReconstructionKind::kLinear;
   parameters.limiter = mps::LimiterKind::kBarthJespersen;
   parameters.depth_floor_m = 0.1;
-  const auto rhs = mps::assemble_shallow_water_rhs(grid, state, parameters, 3.0, 0.1);
+  const auto rhs =
+      mps::assemble_shallow_water_rhs(grid, state, parameters, 3.0, {0.0, 0.0, 0.1});
   mps::Real sum = 0.0;
   mps::Real scale = 0.0;
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {

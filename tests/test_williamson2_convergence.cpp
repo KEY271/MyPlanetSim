@@ -28,7 +28,7 @@ struct WilliamsonErrors {
                 .end_time_s = 3600.0,
                 .time_step_s = 300.0,
                 .random_seed = 1};
-  config.grid = {.cells_per_panel = resolution, .halo_width = 2};
+  config.grid = {.cells_per_panel = resolution};
   config.shallow_water.test_case = mps::ShallowWaterTestCase::kWilliamson2;
   config.shallow_water.scheme = mps::ShallowWaterScheme::kRusanov;
   config.shallow_water.reconstruction = mps::ReconstructionKind::kLinear;

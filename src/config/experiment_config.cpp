@@ -37,10 +37,9 @@ constexpr std::array<std::string_view, 11> kCommonRequiredKeys{
 constexpr std::array<std::string_view, 2> kOdeRequiredKeys{"ode.initial_value",
                                                            "ode.decay_rate_s_1"};
 
-constexpr std::array<std::string_view, 12> kTransportRequiredKeys{
+constexpr std::array<std::string_view, 11> kTransportRequiredKeys{
     "experiment.kind",
     "grid.cells_per_panel",
-    "grid.halo_width",
     "transport.test_case",
     "transport.initial_condition",
     "transport.scheme",
@@ -52,10 +51,9 @@ constexpr std::array<std::string_view, 12> kTransportRequiredKeys{
     "transport.angular_speed_rad_s",
 };
 
-constexpr std::array<std::string_view, 18> kShallowWaterRequiredKeys{
+constexpr std::array<std::string_view, 16> kShallowWaterRequiredKeys{
     "experiment.kind",
     "grid.cells_per_panel",
-    "grid.halo_width",
     "shallow_water.test_case",
     "shallow_water.scheme",
     "shallow_water.reconstruction",
@@ -70,7 +68,6 @@ constexpr std::array<std::string_view, 18> kShallowWaterRequiredKeys{
     "shallow_water.flow_axis_z",
     "shallow_water.maximum_velocity_m_s",
     "diagnostics.interval_steps",
-    "output.snapshot_interval_steps",
 };
 
 [[nodiscard]] std::string_view trim(const std::string_view value) {
@@ -162,8 +159,6 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
     config.ode.decay_rate_s_1 = parse_real(value, line, key);
   } else if (key == "grid.cells_per_panel") {
     config.grid.cells_per_panel = parse_index(value, line, key);
-  } else if (key == "grid.halo_width") {
-    config.grid.halo_width = parse_index(value, line, key);
   } else if (key == "transport.test_case") {
     if (value == "solid_body") {
       config.transport.test_case = TransportTestCase::kSolidBody;
@@ -283,8 +278,6 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
     config.shallow_water.maximum_velocity_m_s = parse_real(value, line, key);
   } else if (key == "diagnostics.interval_steps") {
     config.diagnostics.interval_steps = parse_seed(value, line, key);
-  } else if (key == "output.snapshot_interval_steps") {
-    config.output.snapshot_interval_steps = parse_seed(value, line, key);
   } else if (key == "output.directory") {
     config.output_directory = value;
   } else {
@@ -317,9 +310,6 @@ void ExperimentConfig::validate() const {
     if (grid.cells_per_panel <= 0) {
       throw std::invalid_argument("grid.cells_per_panel must be positive");
     }
-    if (grid.halo_width < 1) {
-      throw std::invalid_argument("grid.halo_width must be at least one");
-    }
     require_finite(transport.cfl, "transport.cfl");
     if (!(transport.cfl > 0.0 && transport.cfl <= 1.0)) {
       throw std::invalid_argument("transport.cfl must be in (0, 1]");
@@ -338,9 +328,6 @@ void ExperimentConfig::validate() const {
   } else {
     if (grid.cells_per_panel <= 0) {
       throw std::invalid_argument("grid.cells_per_panel must be positive");
-    }
-    if (grid.halo_width < 1) {
-      throw std::invalid_argument("grid.halo_width must be at least one");
     }
     require_finite(shallow_water.cfl, "shallow_water.cfl");
     if (!(shallow_water.cfl > 0.0 && shallow_water.cfl <= 1.0)) {
@@ -371,8 +358,8 @@ void ExperimentConfig::validate() const {
     }
     require_non_negative(shallow_water.maximum_velocity_m_s,
                          "shallow_water.maximum_velocity_m_s");
-    if (diagnostics.interval_steps == 0 || output.snapshot_interval_steps == 0) {
-      throw std::invalid_argument("diagnostic and snapshot intervals must be positive");
+    if (diagnostics.interval_steps == 0) {
+      throw std::invalid_argument("diagnostics.interval_steps must be positive");
     }
   }
 
@@ -426,8 +413,7 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     require_keys(seen_keys, kOdeRequiredKeys);
     for (const auto& key : seen_keys) {
       if (key.starts_with("grid.") || key.starts_with("transport.") ||
-          key.starts_with("shallow_water.") || key.starts_with("diagnostics.") ||
-          key == "output.snapshot_interval_steps") {
+          key.starts_with("shallow_water.") || key.starts_with("diagnostics.")) {
         throw std::runtime_error("key " + key + " is not valid for ode experiment");
       }
     }
@@ -435,7 +421,7 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     require_keys(seen_keys, kTransportRequiredKeys);
     for (const auto& key : seen_keys) {
       if (key.starts_with("ode.") || key.starts_with("shallow_water.") ||
-          key.starts_with("diagnostics.") || key == "output.snapshot_interval_steps") {
+          key.starts_with("diagnostics.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for sphere_transport experiment");
       }
@@ -485,7 +471,6 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
            << "ode.decay_rate_s_1 = " << config.ode.decay_rate_s_1 << '\n';
   } else if (config.kind == ExperimentKind::kSphereTransport) {
     output << "grid.cells_per_panel = " << config.grid.cells_per_panel << '\n'
-           << "grid.halo_width = " << config.grid.halo_width << '\n'
            << "transport.test_case = "
            << transport_test_case_name(config.transport.test_case) << '\n'
            << "transport.initial_condition = "
@@ -501,7 +486,6 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
            << '\n';
   } else {
     output << "grid.cells_per_panel = " << config.grid.cells_per_panel << '\n'
-           << "grid.halo_width = " << config.grid.halo_width << '\n'
            << "shallow_water.test_case = "
            << shallow_water_test_case_name(config.shallow_water.test_case) << '\n'
            << "shallow_water.scheme = "
@@ -525,9 +509,7 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
            << "shallow_water.maximum_velocity_m_s = "
            << config.shallow_water.maximum_velocity_m_s << '\n'
            << "diagnostics.interval_steps = " << config.diagnostics.interval_steps
-           << '\n'
-           << "output.snapshot_interval_steps = "
-           << config.output.snapshot_interval_steps << '\n';
+           << '\n';
   }
   output << "output.directory = " << config.output_directory << '\n';
 

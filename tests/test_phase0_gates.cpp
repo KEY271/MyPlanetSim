@@ -90,16 +90,4 @@ MPS_TEST_CASE("serialized restart matches continuous integration bitwise") {
                std::bit_cast<std::uint64_t>(continuous.state.value));
 }
 
-MPS_TEST_CASE("configuration and seed retain deterministic identities") {
-  const auto config = config_with_time_step(0.1);
-  MPS_CHECK_EQ(mps::canonical_config_text(config), mps::canonical_config_text(config));
-  MPS_CHECK_EQ(mps::config_fingerprint(config), mps::config_fingerprint(config));
-
-  auto first = mps::make_random_engine(config.run.random_seed);
-  auto second = mps::make_random_engine(config.run.random_seed);
-  for (int draw = 0; draw < 32; ++draw) {
-    MPS_CHECK_EQ(first(), second());
-  }
-}
-
 int main() { return mps::test::run_all(); }

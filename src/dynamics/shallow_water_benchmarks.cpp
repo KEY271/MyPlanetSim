@@ -1,9 +1,7 @@
 #include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
 
 #include <algorithm>
-#include <bit>
 #include <cmath>
-#include <cstdint>
 #include <numbers>
 #include <stdexcept>
 #include <vector>
@@ -35,15 +33,6 @@ struct AxisBasis {
 [[nodiscard]] Real longitude(const AxisBasis& basis, const Vec3 position) {
   return std::atan2(dot(position, basis.longitude_quarter),
                     dot(position, basis.longitude_zero));
-}
-
-void checksum_value(std::uint64_t& hash, const Real value) noexcept {
-  constexpr std::uint64_t kPrime = 1099511628211ULL;
-  const std::uint64_t bits = std::bit_cast<std::uint64_t>(value);
-  for (int byte = 0; byte < 8; ++byte) {
-    hash ^= (bits >> (8 * byte)) & 0xffU;
-    hash *= kPrime;
-  }
 }
 
 }  // namespace
@@ -326,19 +315,6 @@ SphericalWaveMode diagnose_depth_wave_mode(const CubedSphereGrid& grid,
               2.0 * std::hypot(cosine_component, sine_component) / grid.total_area_m2(),
           .phase_rad = std::atan2(-sine_component, cosine_component) /
                        static_cast<Real>(wavenumber)};
-}
-
-std::uint64_t shallow_water_field_checksum(const ShallowWaterState& state) noexcept {
-  std::uint64_t hash = 14695981039346656037ULL;
-  for (const Real depth : state.depth) {
-    checksum_value(hash, depth);
-  }
-  for (const Vec3 momentum : state.momentum) {
-    checksum_value(hash, momentum.x);
-    checksum_value(hash, momentum.y);
-    checksum_value(hash, momentum.z);
-  }
-  return hash;
 }
 
 ShallowWaterState make_shallow_water_initial_state(const CubedSphereGrid& grid,

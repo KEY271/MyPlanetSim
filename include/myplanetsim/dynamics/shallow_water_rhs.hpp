@@ -19,14 +19,6 @@ struct ShallowWaterRhsComponents {
 [[nodiscard]] ShallowWaterRhsComponents assemble_shallow_water_rhs(
     const CubedSphereGrid& grid, const ShallowWaterState& state,
     const ShallowWaterParameters& parameters, Real gravity_m_s2,
-    Real rotation_rate_rad_s);
-[[nodiscard]] ShallowWaterRhsComponents assemble_shallow_water_rhs(
-    const CubedSphereGrid& grid, const ShallowWaterState& state,
-    const ShallowWaterParameters& parameters, Real gravity_m_s2,
     Vec3 rotation_vector_rad_s);
-
-[[nodiscard]] ShallowWaterRhsComponents assemble_first_order_shallow_water_rhs(
-    const CubedSphereGrid& grid, const ShallowWaterState& state, Real gravity_m_s2,
-    Real rotation_rate_rad_s, Real depth_floor_m);
 
 }  // namespace mps

@@ -21,7 +21,7 @@ namespace {
                    .reference_pressure_pa = 1.0};
   config.run = {
       .start_time_s = 0.0, .end_time_s = 0.1, .time_step_s = 0.002, .random_seed = 1};
-  config.grid = {.cells_per_panel = resolution, .halo_width = 2};
+  config.grid = {.cells_per_panel = resolution};
   config.shallow_water.test_case = mps::ShallowWaterTestCase::kLinearWave;
   config.shallow_water.scheme = mps::ShallowWaterScheme::kRusanov;
   config.shallow_water.reconstruction = mps::ReconstructionKind::kLinear;

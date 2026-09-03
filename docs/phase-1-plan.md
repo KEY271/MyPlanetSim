@@ -27,8 +27,6 @@ Phase 1 では全球 cubed-sphere の幾何と球面輸送を実装する。完�
 - NetCDFなどの大規模field形式
 - 高次DG/SE、semi-Lagrangian、semi-implicit方式の比較
 
-既存の`Field2D` periodic haloはstorage/boundaryの回帰テスト用utilityとして残すが、Phase 1の科学ケースには使わない。
-
 ## 3. 固定する数値設計
 
 ### 3.1 panel座標と写像
@@ -72,11 +70,11 @@ x = normalize(n + tan(alpha) * e_alpha + tan(beta) * e_beta)
 
 `N`に対してcell数は`6N^2`、unique edge数は`12N^2`、unique vertex数は`6N^2+2`になる。これをtopologyの構造テストに使う。
 
-### 3.3 scalar fieldとhalo
+### 3.3 scalar field
 
-tracerはcell average `q`として6個の`Field2D<Real>`に保持する。Phase 1の再構築はface-neighborだけを使うため、panel edge haloだけを交換し、物理的に一意でないcorner ghostを計算へ使わない。corner haloはDebug時にpoison値のままとし、誤参照を検出する。
-
-面をまたぐscalarは値をコピーできるが、`i/j`の入替えと反転は`PanelTopology`が明示する。将来のvector haloで同じ写像を再利用できるAPIにする。
+tracerはcell average `q`として、`CubedSphereGrid::cells()`と同じpanel-major
+順序のflat vectorに保持する。面をまたぐ処理はunique edgeの左右cellを直接参照し、
+haloやpanel別fieldは持たない。
 
 ### 3.4 共有辺flux
 
@@ -105,7 +103,6 @@ Phase 1で`experiment.kind`を導入し、Phase 0 ODEとsphere transportのschem
 ```text
 experiment.kind = sphere_transport
 grid.cells_per_panel
-grid.halo_width
 transport.test_case
 transport.initial_condition
 transport.scheme
@@ -257,32 +254,10 @@ test: enforce cubed-sphere geometry invariants
 
 受け入れ条件: 4.1の全geometry gateを`N=1..64`で通す。
 
-### P1.08 — cubed-sphere scalar field
+### P1.08–P1.09 — 旧panel field / halo実装
 
-```text
-grid: add panel-based cubed-sphere scalar fields
-```
-
-変更:
-
-- 6 panelの`Field2D<Real>`を所有する`CubedSphereField`を追加。
-- panel-major flatten/unflatten、interior iteration、fill/copyを追加。
-- checkpoint順をversion付きで固定。
-
-テスト: 全cell固有値、flatten round-trip、deep copy、shape mismatch拒否、checkpoint state sizeを確認。
-
-### P1.09 — scalar edge halo exchange
-
-```text
-grid: exchange scalar halos across panel edges
-```
-
-変更:
-
-- `PanelTopology`に従うedge halo exchangeを追加。
-- corner ghostは使用禁止状態を維持。
-
-テスト: 全panel/edgeへ固有patternを置き、halo幅1/2、swap/reversal、interior不変性を全要素比較。
+Phase 1中にはpanel別fieldとhalo exchangeを実装したが、完成した輸送系は
+unique edgeとflat vectorだけを使用したため、後の簡素化で削除した。
 
 ### P1.10 — vector basis変換
 

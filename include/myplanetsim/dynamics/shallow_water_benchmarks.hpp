@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cstdint>
-
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/dynamics/shallow_water_state.hpp"
 
@@ -40,8 +38,6 @@ struct SphericalWaveMode {
 [[nodiscard]] SphericalWaveMode diagnose_depth_wave_mode(const CubedSphereGrid& grid,
                                                          const ShallowWaterState& state,
                                                          Vec3 axis, int wavenumber);
-[[nodiscard]] std::uint64_t shallow_water_field_checksum(
-    const ShallowWaterState& state) noexcept;
 [[nodiscard]] ShallowWaterState make_shallow_water_initial_state(
     const CubedSphereGrid& grid, const ExperimentConfig& config);
 

@@ -41,26 +41,6 @@ void divide_by_area_and_project(const CubedSphereGrid& grid,
 
 }  // namespace
 
-ShallowWaterRhsComponents assemble_first_order_shallow_water_rhs(
-    const CubedSphereGrid& grid, const ShallowWaterState& state,
-    const Real gravity_m_s2, const Real rotation_rate_rad_s, const Real depth_floor_m) {
-  ShallowWaterParameters parameters{};
-  parameters.reconstruction = ReconstructionKind::kPiecewiseConstant;
-  parameters.limiter = LimiterKind::kNone;
-  parameters.depth_floor_m = depth_floor_m;
-  return assemble_shallow_water_rhs(grid, state, parameters, gravity_m_s2,
-                                    rotation_rate_rad_s);
-}
-
-ShallowWaterRhsComponents assemble_shallow_water_rhs(
-    const CubedSphereGrid& grid, const ShallowWaterState& state,
-    const ShallowWaterParameters& parameters, const Real gravity_m_s2,
-    const Real rotation_rate_rad_s) {
-  require_finite(rotation_rate_rad_s, "shallow-water rotation rate");
-  return assemble_shallow_water_rhs(grid, state, parameters, gravity_m_s2,
-                                    Vec3{0.0, 0.0, rotation_rate_rad_s});
-}
-
 ShallowWaterRhsComponents assemble_shallow_water_rhs(
     const CubedSphereGrid& grid, const ShallowWaterState& state,
     const ShallowWaterParameters& parameters, const Real gravity_m_s2,

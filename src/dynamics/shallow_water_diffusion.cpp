@@ -33,22 +33,6 @@ namespace {
 
 }  // namespace
 
-Real diffusion_coefficient_for_efolding(const CubedSphereGrid& grid,
-                                        const DiffusionKind kind,
-                                        const Real efolding_time_s) {
-  require_positive(efolding_time_s, "diffusion e-folding time");
-  const Real spacing = minimum_cell_spacing(grid);
-  switch (kind) {
-    case DiffusionKind::kNone:
-      return 0.0;
-    case DiffusionKind::kLaplacian:
-      return spacing * spacing / efolding_time_s;
-    case DiffusionKind::kBiharmonic:
-      return std::pow(spacing, 4) / efolding_time_s;
-  }
-  throw std::logic_error("unknown diffusion kind");
-}
-
 Real stable_diffusion_time_step(const CubedSphereGrid& grid, const DiffusionKind kind,
                                 const Real diffusion_coefficient,
                                 const Real maximum_time_step_s) {

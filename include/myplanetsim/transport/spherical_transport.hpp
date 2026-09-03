@@ -40,8 +40,6 @@ struct TransportResult {
   bool reached_end_time;
 };
 
-[[nodiscard]] Vec3 solid_body_velocity(Vec3 unit_position, Real radius_m,
-                                       Vec3 rotation_axis, Real angular_speed_rad_s);
 [[nodiscard]] std::vector<Real> prescribed_edge_fluxes(const CubedSphereGrid& grid,
                                                        TransportTestCase test_case,
                                                        Real time_s, Real period_s,
@@ -60,23 +58,6 @@ struct TransportResult {
 [[nodiscard]] Real stable_transport_time_step(const CubedSphereGrid& grid,
                                               std::span<const Real> oriented_edge_flux,
                                               Real cfl, Real maximum_time_step_s);
-
-class SphericalTransportRhs {
- public:
-  SphericalTransportRhs(const CubedSphereGrid& grid,
-                        const TransportParameters& parameters, Real period_s);
-  void operator()(Real time_s, std::span<const Real> tracer, std::span<Real> tendency);
-  [[nodiscard]] std::uint64_t limiter_activations() const noexcept {
-    return limiter_activations_;
-  }
-
- private:
-  const CubedSphereGrid& grid_;
-  TransportParameters parameters_;
-  Real period_s_;
-  Vec3 axis_;
-  std::uint64_t limiter_activations_ = 0;
-};
 
 [[nodiscard]] TransportResult run_spherical_transport(
     const ExperimentConfig& config,

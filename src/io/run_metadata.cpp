@@ -71,6 +71,4 @@ void write_run_metadata(std::ostream& output, const RunMetadata& metadata,
   }
 }
 
-std::mt19937_64 make_random_engine(const Seed seed) { return std::mt19937_64(seed); }
-
 }  // namespace mps

@@ -5,9 +5,6 @@
 
 namespace mps {
 
-[[nodiscard]] Real diffusion_coefficient_for_efolding(const CubedSphereGrid& grid,
-                                                      DiffusionKind kind,
-                                                      Real efolding_time_s);
 [[nodiscard]] Real stable_diffusion_time_step(const CubedSphereGrid& grid,
                                               DiffusionKind kind,
                                               Real diffusion_coefficient,

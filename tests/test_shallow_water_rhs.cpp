@@ -25,8 +25,12 @@ MPS_TEST_CASE("uniform resting shallow water has roundoff-scale RHS") {
   constexpr mps::Real depth = 3000.0;
   constexpr mps::Real gravity = 9.80616;
   const auto state = make_state(grid, depth);
-  const auto rhs =
-      mps::assemble_first_order_shallow_water_rhs(grid, state, gravity, 7.292e-5, 1.0);
+  const mps::ShallowWaterParameters parameters{
+      .reconstruction = mps::ReconstructionKind::kPiecewiseConstant,
+      .limiter = mps::LimiterKind::kNone,
+      .depth_floor_m = 1.0};
+  const auto rhs = mps::assemble_shallow_water_rhs(grid, state, parameters, gravity,
+                                                   {0.0, 0.0, 7.292e-5});
   mps::Real maximum_depth_rate = 0.0;
   mps::Real maximum_momentum_rate = 0.0;
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
@@ -49,8 +53,12 @@ MPS_TEST_CASE("unique-edge shallow-water scatter conserves global mass") {
         state.depth[cell] *
         mps::project_tangent({0.3, -0.2, 0.1}, grid.cells()[cell].center);
   }
+  const mps::ShallowWaterParameters parameters{
+      .reconstruction = mps::ReconstructionKind::kPiecewiseConstant,
+      .limiter = mps::LimiterKind::kNone,
+      .depth_floor_m = 0.1};
   const auto rhs =
-      mps::assemble_first_order_shallow_water_rhs(grid, state, 4.0, 0.1, 0.1);
+      mps::assemble_shallow_water_rhs(grid, state, parameters, 4.0, {0.0, 0.0, 0.1});
   std::vector<mps::Real> integrated(grid.cell_count());
   mps::Real flux_scale = 0.0;
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
@@ -67,8 +75,12 @@ MPS_TEST_CASE("Coriolis tendency has the documented sign and is tangent") {
   const std::size_t cell = 0;
   state.momentum[cell] =
       mps::project_tangent({1.0, 2.0, 3.0}, grid.cells()[cell].center);
+  const mps::ShallowWaterParameters parameters{
+      .reconstruction = mps::ReconstructionKind::kPiecewiseConstant,
+      .limiter = mps::LimiterKind::kNone,
+      .depth_floor_m = 0.1};
   const auto rhs =
-      mps::assemble_first_order_shallow_water_rhs(grid, state, 3.0, 0.2, 0.1);
+      mps::assemble_shallow_water_rhs(grid, state, parameters, 3.0, {0.0, 0.0, 0.2});
   const mps::Vec3 expected =
       -2.0 * mps::project_tangent(mps::cross({0.0, 0.0, 0.2}, state.momentum[cell]),
                                   grid.cells()[cell].center);
@@ -81,9 +93,12 @@ MPS_TEST_CASE("shallow-water RHS rejects non-finite state") {
   const mps::CubedSphereGrid grid(2, 1.0);
   auto state = make_state(grid, 2.0);
   state.depth[0] = std::numeric_limits<mps::Real>::quiet_NaN();
-  MPS_CHECK_THROWS_AS(
-      mps::assemble_first_order_shallow_water_rhs(grid, state, 3.0, 0.0, 0.1),
-      std::runtime_error);
+  const mps::ShallowWaterParameters parameters{
+      .reconstruction = mps::ReconstructionKind::kPiecewiseConstant,
+      .limiter = mps::LimiterKind::kNone,
+      .depth_floor_m = 0.1};
+  MPS_CHECK_THROWS_AS(mps::assemble_shallow_water_rhs(grid, state, parameters, 3.0, {}),
+                      std::runtime_error);
 }
 
 int main() { return mps::test::run_all(); }

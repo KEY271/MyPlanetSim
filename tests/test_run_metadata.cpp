@@ -55,15 +55,4 @@ MPS_TEST_CASE("run metadata contains required canonical fields") {
   MPS_CHECK(text.ends_with("configuration.end\n"));
 }
 
-MPS_TEST_CASE("explicit seeds produce reproducible random sequences") {
-  auto first = mps::make_random_engine(77);
-  auto second = mps::make_random_engine(77);
-  auto different = mps::make_random_engine(78);
-
-  for (int draw = 0; draw < 8; ++draw) {
-    MPS_CHECK_EQ(first(), second());
-  }
-  MPS_CHECK(first() != different());
-}
-
 int main() { return mps::test::run_all(); }

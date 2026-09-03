@@ -37,7 +37,6 @@ run.end_time_s = 10
 run.time_step_s = 1
 run.random_seed = 7
 grid.cells_per_panel = 8
-grid.halo_width = 2
 transport.test_case = solid_body
 transport.initial_condition = gaussian_hill
 transport.scheme = linear
@@ -63,7 +62,6 @@ run.end_time_s = 10
 run.time_step_s = 1
 run.random_seed = 7
 grid.cells_per_panel = 8
-grid.halo_width = 2
 shallow_water.test_case = williamson2
 shallow_water.scheme = rusanov
 shallow_water.reconstruction = linear
@@ -78,7 +76,6 @@ shallow_water.flow_axis_y = 2
 shallow_water.flow_axis_z = 3
 shallow_water.maximum_velocity_m_s = 4
 diagnostics.interval_steps = 2
-output.snapshot_interval_steps = 3
 output.directory = output
 )";
 
@@ -187,7 +184,6 @@ MPS_TEST_CASE("shallow-water configuration has a strict canonical round trip") {
   MPS_CHECK_EQ(second.shallow_water.diffusion_coefficient,
                first.shallow_water.diffusion_coefficient);
   MPS_CHECK_EQ(second.diagnostics.interval_steps, 2U);
-  MPS_CHECK_EQ(second.output.snapshot_interval_steps, 3U);
   MPS_CHECK_THROWS_AS(
       parse(std::string(kValidShallowWaterConfig) + "transport.cfl = 0.5\n"),
       std::runtime_error);

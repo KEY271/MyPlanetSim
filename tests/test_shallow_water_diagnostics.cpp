@@ -32,7 +32,7 @@ MPS_TEST_CASE("shallow-water diagnostics recover constant-rest invariants") {
   const mps::CubedSphereGrid grid(32, radius);
   const auto state = rest_state(grid, depth);
   const auto diagnostics =
-      mps::diagnostics::diagnose_shallow_water(grid, state, gravity, omega);
+      mps::diagnostics::diagnose_shallow_water(grid, state, gravity, {0.0, 0.0, omega});
   const mps::Real area = grid.total_area_m2();
   MPS_CHECK_NEAR(diagnostics.mass, depth * area, 2.0e-14 * depth * area);
   MPS_CHECK_NEAR(diagnostics.energy, 0.5 * gravity * depth * depth * area,
@@ -52,7 +52,7 @@ MPS_TEST_CASE("shallow-water invariant rates have physical unit scaling") {
   auto tendency = zero_tendency(grid);
   std::ranges::fill(tendency.depth, 0.25);
   const auto rates = mps::diagnostics::shallow_water_invariant_rates(
-      grid, state, tendency, gravity, 0.0);
+      grid, state, tendency, gravity, {});
   MPS_CHECK_NEAR(rates.mass, 0.25 * grid.total_area_m2(),
                  2.0e-14 * grid.total_area_m2());
   MPS_CHECK_NEAR(rates.energy, gravity * depth * 0.25 * grid.total_area_m2(),
@@ -69,7 +69,7 @@ MPS_TEST_CASE("shallow-water budget components sum to total") {
   std::ranges::fill(flux.depth, 0.1);
   std::ranges::fill(diffusion.depth, -0.1);
   const auto budget = mps::diagnostics::make_shallow_water_budget(
-      grid, state, flux, coriolis, pressure, diffusion, 3.0, 0.2);
+      grid, state, flux, coriolis, pressure, diffusion, 3.0, {0.0, 0.0, 0.2});
   MPS_CHECK_NEAR(budget.total.mass, 0.0, 1.0e-14);
   MPS_CHECK_NEAR(budget.residual.mass, 0.0, 1.0e-14);
   MPS_CHECK_NEAR(budget.residual.energy, 0.0, 1.0e-13);

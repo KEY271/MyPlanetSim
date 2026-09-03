@@ -34,7 +34,7 @@ constexpr mps::Real kVelocity =
                .end_time_s = end_time_s,
                .time_step_s = 300.0,
                .random_seed = 1};
-  value.grid = {.cells_per_panel = resolution, .halo_width = 2};
+  value.grid = {.cells_per_panel = resolution};
   value.shallow_water.test_case = mps::ShallowWaterTestCase::kWilliamson2;
   value.shallow_water.scheme = scheme;
   value.shallow_water.reconstruction = mps::ReconstructionKind::kLinear;
@@ -80,7 +80,9 @@ constexpr mps::Real kVelocity =
 MPS_TEST_CASE("compatible scheme keeps a rotating lake at rest") {
   const mps::CubedSphereGrid grid(8, kRadius);
   const mps::CubedSphereDualTopology dual(grid);
-  const auto state = mps::make_resting_shallow_water_state(grid, 0.0, kDepth);
+  const mps::ShallowWaterState state{
+      .depth = std::vector<mps::Real>(grid.cell_count(), kDepth),
+      .momentum = std::vector<mps::Vec3>(grid.cell_count())};
   mps::ShallowWaterParameters parameters{};
   parameters.scheme = mps::ShallowWaterScheme::kCompatible;
   parameters.depth_floor_m = 1.0;

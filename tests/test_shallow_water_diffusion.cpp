@@ -61,22 +61,20 @@ MPS_TEST_CASE("disabled diffusion is exactly zero") {
   }
 }
 
-MPS_TEST_CASE("diffusion helpers scale with resolution and order") {
+MPS_TEST_CASE("diffusion stability limit tightens under refinement") {
   const mps::CubedSphereGrid coarse(8, 1.0);
   const mps::CubedSphereGrid fine(16, 1.0);
-  const mps::Real coarse_laplacian = mps::diffusion_coefficient_for_efolding(
-      coarse, mps::DiffusionKind::kLaplacian, 2.0);
-  const mps::Real fine_laplacian = mps::diffusion_coefficient_for_efolding(
-      fine, mps::DiffusionKind::kLaplacian, 2.0);
-  const mps::Real coarse_biharmonic = mps::diffusion_coefficient_for_efolding(
-      coarse, mps::DiffusionKind::kBiharmonic, 2.0);
-  const mps::Real fine_biharmonic = mps::diffusion_coefficient_for_efolding(
-      fine, mps::DiffusionKind::kBiharmonic, 2.0);
-  MPS_CHECK(fine_laplacian < 0.3 * coarse_laplacian);
-  MPS_CHECK(fine_biharmonic < 0.1 * coarse_biharmonic);
-  MPS_CHECK_NEAR(mps::stable_diffusion_time_step(coarse, mps::DiffusionKind::kLaplacian,
-                                                 coarse_laplacian, 10.0),
-                 0.5, 1.0e-14);
+  const auto stable_step = [](const mps::CubedSphereGrid& grid,
+                              const mps::DiffusionKind kind) {
+    return mps::stable_diffusion_time_step(grid, kind, 0.1, 10.0);
+  };
+  MPS_CHECK(stable_step(fine, mps::DiffusionKind::kLaplacian) <
+            stable_step(coarse, mps::DiffusionKind::kLaplacian));
+  MPS_CHECK(stable_step(fine, mps::DiffusionKind::kBiharmonic) <
+            stable_step(coarse, mps::DiffusionKind::kBiharmonic));
+  MPS_CHECK_EQ(
+      mps::stable_diffusion_time_step(coarse, mps::DiffusionKind::kNone, 0.0, 10.0),
+      10.0);
 }
 
 int main() { return mps::test::run_all(); }

@@ -60,10 +60,8 @@ add_library(
   src/dynamics/shallow_water_rhs.cpp
   src/dynamics/shallow_water_reconstruction.cpp
   src/geometry/cubed_sphere.cpp
-  src/grid/cubed_sphere_field.cpp
   src/grid/cubed_sphere_grid.cpp
   src/grid/dual_topology.cpp
-  src/grid/panel_topology.cpp
   src/io/checkpoint.cpp
   src/io/run_metadata.cpp
   src/phase0/ode_experiment.cpp

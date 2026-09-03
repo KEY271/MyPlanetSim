@@ -49,15 +49,6 @@ void validate_tendency(const CubedSphereGrid& grid,
 ShallowWaterInvariants diagnose_shallow_water(const CubedSphereGrid& grid,
                                               const ShallowWaterState& state,
                                               const Real gravity_m_s2,
-                                              const Real rotation_rate_rad_s) {
-  require_finite(rotation_rate_rad_s, "shallow-water rotation rate");
-  return diagnose_shallow_water(grid, state, gravity_m_s2,
-                                Vec3{0.0, 0.0, rotation_rate_rad_s});
-}
-
-ShallowWaterInvariants diagnose_shallow_water(const CubedSphereGrid& grid,
-                                              const ShallowWaterState& state,
-                                              const Real gravity_m_s2,
                                               const Vec3 rotation_vector_rad_s) {
   require_positive(gravity_m_s2, "shallow-water gravity");
   if (!is_finite(rotation_vector_rad_s)) {
@@ -117,15 +108,6 @@ ShallowWaterInvariants diagnose_shallow_water(const CubedSphereGrid& grid,
 ShallowWaterInvariantRates shallow_water_invariant_rates(
     const CubedSphereGrid& grid, const ShallowWaterState& state,
     const ShallowWaterTendency& tendency, const Real gravity_m_s2,
-    const Real rotation_rate_rad_s) {
-  require_finite(rotation_rate_rad_s, "shallow-water rotation rate");
-  return shallow_water_invariant_rates(grid, state, tendency, gravity_m_s2,
-                                       Vec3{0.0, 0.0, rotation_rate_rad_s});
-}
-
-ShallowWaterInvariantRates shallow_water_invariant_rates(
-    const CubedSphereGrid& grid, const ShallowWaterState& state,
-    const ShallowWaterTendency& tendency, const Real gravity_m_s2,
     const Vec3 rotation_vector_rad_s) {
   require_positive(gravity_m_s2, "shallow-water gravity");
   if (!is_finite(rotation_vector_rad_s)) {
@@ -176,16 +158,6 @@ ShallowWaterInvariantRates shallow_water_invariant_rates(
           .energy = compensated_sum(energy),
           .potential_enstrophy = compensated_sum(enstrophy),
           .axial_angular_momentum = compensated_sum(angular_momentum)};
-}
-
-ShallowWaterBudget make_shallow_water_budget(
-    const CubedSphereGrid& grid, const ShallowWaterState& state,
-    const ShallowWaterTendency& flux, const ShallowWaterTendency& coriolis,
-    const ShallowWaterTendency& pressure, const ShallowWaterTendency& diffusion,
-    const Real gravity_m_s2, const Real rotation_rate_rad_s) {
-  require_finite(rotation_rate_rad_s, "shallow-water rotation rate");
-  return make_shallow_water_budget(grid, state, flux, coriolis, pressure, diffusion,
-                                   gravity_m_s2, Vec3{0.0, 0.0, rotation_rate_rad_s});
 }
 
 ShallowWaterBudget make_shallow_water_budget(

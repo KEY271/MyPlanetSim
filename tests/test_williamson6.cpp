@@ -24,7 +24,7 @@ constexpr mps::Real kVelocity = 50.0;
                   .reference_pressure_pa = 1.0e5};
   value.run = {
       .start_time_s = 0.0, .end_time_s = 600.0, .time_step_s = 300.0, .random_seed = 1};
-  value.grid = {.cells_per_panel = resolution, .halo_width = 2};
+  value.grid = {.cells_per_panel = resolution};
   value.shallow_water.test_case = mps::ShallowWaterTestCase::kWilliamson6;
   value.shallow_water.scheme = mps::ShallowWaterScheme::kRusanov;
   value.shallow_water.reconstruction = mps::ReconstructionKind::kLinear;
@@ -48,16 +48,6 @@ MPS_TEST_CASE("Williamson 6 initial state is positive finite and tangent") {
   const auto wave3 = mps::diagnose_depth_wave_mode(grid, state, {0.0, 0.0, 1.0}, 3);
   MPS_CHECK(wave4.amplitude > 100.0 * wave3.amplitude);
   MPS_CHECK(std::abs(wave4.phase_rad) < 1.0e-12);
-}
-
-MPS_TEST_CASE("Williamson 6 checksum is deterministic and layout-sensitive") {
-  const mps::CubedSphereGrid grid(8, kRadius);
-  auto state = mps::make_williamson6_state(grid, 0.0, kGravity, kRotation, kDepth,
-                                           kVelocity, {0.0, 0.0, 1.0});
-  const auto first = mps::shallow_water_field_checksum(state);
-  MPS_CHECK_EQ(first, mps::shallow_water_field_checksum(state));
-  state.depth[0] = std::nextafter(state.depth[0], 2.0 * state.depth[0]);
-  MPS_CHECK(first != mps::shallow_water_field_checksum(state));
 }
 
 MPS_TEST_CASE("Williamson 6 short integration preserves mass and wave four") {

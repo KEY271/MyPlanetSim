@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iosfwd>
-#include <random>
 #include <string>
 
 #include "myplanetsim/config/experiment_config.hpp"
@@ -25,6 +24,4 @@ struct RunMetadata {
 [[nodiscard]] RunMetadata make_run_metadata(const ExperimentConfig& config);
 void write_run_metadata(std::ostream& output, const RunMetadata& metadata,
                         const ExperimentConfig& config);
-[[nodiscard]] std::mt19937_64 make_random_engine(Seed seed);
-
 }  // namespace mps

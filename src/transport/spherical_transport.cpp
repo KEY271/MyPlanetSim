@@ -138,17 +138,6 @@ void validate_tracer(const CubedSphereGrid& grid, const std::span<const Real> tr
 
 }  // namespace
 
-Vec3 solid_body_velocity(const Vec3 unit_position, const Real radius_m,
-                         const Vec3 rotation_axis, const Real angular_speed_rad_s) {
-  if (!(radius_m > 0.0) || !std::isfinite(radius_m) ||
-      !std::isfinite(angular_speed_rad_s)) {
-    throw std::invalid_argument("solid-body wind parameters must be finite and valid");
-  }
-  const Vec3 position = normalize(unit_position);
-  const Vec3 axis = normalize(rotation_axis);
-  return radius_m * angular_speed_rad_s * cross(axis, position);
-}
-
 std::vector<Real> prescribed_edge_fluxes(const CubedSphereGrid& grid,
                                          const TransportTestCase test_case,
                                          const Real time_s, const Real period_s,
@@ -264,45 +253,42 @@ Real stable_transport_time_step(const CubedSphereGrid& grid,
   return time_step;
 }
 
-SphericalTransportRhs::SphericalTransportRhs(const CubedSphereGrid& grid,
-                                             const TransportParameters& parameters,
-                                             const Real period_s)
-    : grid_(grid),
-      parameters_(parameters),
-      period_s_(period_s),
-      axis_(normalize({parameters.rotation_axis_x, parameters.rotation_axis_y,
-                       parameters.rotation_axis_z})) {}
+namespace {
 
-void SphericalTransportRhs::operator()(const Real time_s,
-                                       const std::span<const Real> tracer,
-                                       const std::span<Real> tendency) {
-  validate_tracer(grid_, tracer);
-  if (tendency.size() != grid_.cell_count()) {
+[[nodiscard]] std::uint64_t transport_tendency(const CubedSphereGrid& grid,
+                                               const TransportParameters& parameters,
+                                               const Real period_s, const Vec3 axis,
+                                               const Real time_s,
+                                               const std::span<const Real> tracer,
+                                               const std::span<Real> tendency) {
+  validate_tracer(grid, tracer);
+  if (tendency.size() != grid.cell_count()) {
     throw std::invalid_argument("transport tendency size does not match grid");
   }
   const auto fluxes =
-      prescribed_edge_fluxes(grid_, parameters_.test_case, time_s, period_s_, axis_,
-                             parameters_.angular_speed_rad_s);
+      prescribed_edge_fluxes(grid, parameters.test_case, time_s, period_s, axis,
+                             parameters.angular_speed_rad_s);
   std::vector<Vec3> gradients;
-  std::vector<Real> factors(grid_.cell_count(), 1.0);
-  if (parameters_.scheme == TransportScheme::kLinear) {
-    gradients = least_squares_gradient(grid_, tracer);
-    if (parameters_.limiter == LimiterKind::kBarthJespersen) {
-      for (std::size_t index = 0; index < grid_.cell_count(); ++index) {
-        const auto& cell = grid_.cells()[index];
+  std::vector<Real> factors(grid.cell_count(), 1.0);
+  std::uint64_t limiter_activations = 0;
+  if (parameters.scheme == TransportScheme::kLinear) {
+    gradients = least_squares_gradient(grid, tracer);
+    if (parameters.limiter == LimiterKind::kBarthJespersen) {
+      for (std::size_t index = 0; index < grid.cell_count(); ++index) {
+        const auto& cell = grid.cells()[index];
         Real minimum = tracer[index];
         Real maximum = tracer[index];
-        for (const auto edge_id : grid_.cell_edges(cell.id)) {
+        for (const auto edge_id : grid.cell_edges(cell.id)) {
           const Real neighbor =
-              tracer[grid_.cell_index(grid_.neighbor_across(edge_id, cell.id))];
+              tracer[grid.cell_index(grid.neighbor_across(edge_id, cell.id))];
           minimum = std::min(minimum, neighbor);
           maximum = std::max(maximum, neighbor);
         }
-        for (const auto edge_id : grid_.cell_edges(cell.id)) {
+        for (const auto edge_id : grid.cell_edges(cell.id)) {
           const Real increment =
               dot(gradients[index],
-                  face_displacement(cell.center, grid_.edge(edge_id).center,
-                                    grid_.radius_m()));
+                  face_displacement(cell.center, grid.edge(edge_id).center,
+                                    grid.radius_m()));
           if (increment > 0.0) {
             factors[index] =
                 std::min(factors[index], (maximum - tracer[index]) / increment);
@@ -313,36 +299,39 @@ void SphericalTransportRhs::operator()(const Real time_s,
         }
         factors[index] = std::clamp(factors[index], 0.0, 1.0);
         if (factors[index] < 1.0 - 1.0e-14) {
-          ++limiter_activations_;
+          ++limiter_activations;
         }
       }
     }
   }
 
-  std::vector<Real> tracer_flux(grid_.edge_count());
-  for (const auto& edge : grid_.edges()) {
-    const auto left = grid_.cell_index(edge.left_cell);
-    const auto right = grid_.cell_index(edge.right_cell);
+  std::vector<Real> tracer_flux(grid.edge_count());
+  for (const auto& edge : grid.edges()) {
+    const auto left = grid.cell_index(edge.left_cell);
+    const auto right = grid.cell_index(edge.right_cell);
     Real left_value = tracer[left];
     Real right_value = tracer[right];
-    if (parameters_.scheme == TransportScheme::kLinear) {
+    if (parameters.scheme == TransportScheme::kLinear) {
       left_value +=
           factors[left] *
-          dot(gradients[left], face_displacement(grid_.cells()[left].center,
-                                                 edge.center, grid_.radius_m()));
+          dot(gradients[left], face_displacement(grid.cells()[left].center, edge.center,
+                                                 grid.radius_m()));
       right_value +=
           factors[right] *
-          dot(gradients[right], face_displacement(grid_.cells()[right].center,
-                                                  edge.center, grid_.radius_m()));
+          dot(gradients[right], face_displacement(grid.cells()[right].center,
+                                                  edge.center, grid.radius_m()));
     }
     tracer_flux[edge.id] = fluxes[edge.id] >= 0.0 ? fluxes[edge.id] * left_value
                                                   : fluxes[edge.id] * right_value;
   }
-  scatter_oriented_edge_flux(grid_, tracer_flux, tendency);
+  scatter_oriented_edge_flux(grid, tracer_flux, tendency);
   for (std::size_t index = 0; index < tendency.size(); ++index) {
-    tendency[index] /= grid_.cells()[index].area_m2;
+    tendency[index] /= grid.cells()[index].area_m2;
   }
+  return limiter_activations;
 }
+
+}  // namespace
 
 TransportResult run_spherical_transport(
     const ExperimentConfig& config, std::optional<TransportState> initial_state,
@@ -363,7 +352,15 @@ TransportResult run_spherical_transport(
     throw std::invalid_argument("transport restart time is outside configured run");
   }
   const Real period = config.run.end_time_s - config.run.start_time_s;
-  SphericalTransportRhs rhs(grid, config.transport, period);
+  const Vec3 axis =
+      normalize({config.transport.rotation_axis_x, config.transport.rotation_axis_y,
+                 config.transport.rotation_axis_z});
+  std::uint64_t limiter_activations = 0;
+  const auto rhs = [&](const Real time_s, const std::span<const Real> tracer,
+                       const std::span<Real> tendency) {
+    limiter_activations += transport_tendency(grid, config.transport, period, axis,
+                                              time_s, tracer, tendency);
+  };
   SspRk3 stepper(grid.cell_count());
   while (state.time_s < config.run.end_time_s &&
          (!stop_after_step.has_value() || state.step < *stop_after_step)) {
@@ -389,7 +386,7 @@ TransportResult run_spherical_transport(
         config.transport.angular_speed_rad_s, state.time_s - config.run.start_time_s);
   }
   const auto diagnostics =
-      diagnose(grid, reference_initial, state.tracer, exact, rhs.limiter_activations());
+      diagnose(grid, reference_initial, state.tracer, exact, limiter_activations);
   return {std::move(state), diagnostics, reached_end};
 }
 

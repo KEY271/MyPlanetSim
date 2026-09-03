@@ -1,6 +1,3 @@
-#include <bit>
-#include <cstdint>
-
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/phase0/ode_experiment.hpp"
 #include "support/test.hpp"
@@ -37,21 +34,6 @@ MPS_TEST_CASE("ODE experiment does not add a roundoff-sized final step") {
   const auto result = mps::run_ode_experiment(config, mps::IntegratorKind::kSspRk3);
   MPS_CHECK_EQ(result.state.time_s, 1.0);
   MPS_CHECK_EQ(result.state.step, 10U);
-}
-
-MPS_TEST_CASE("ODE restart reproduces an uninterrupted run bitwise") {
-  const auto config = sample_config();
-  const auto continuous = mps::run_ode_experiment(config, mps::IntegratorKind::kSspRk3);
-  const auto partial =
-      mps::run_ode_experiment(config, mps::IntegratorKind::kSspRk3, std::nullopt, 2);
-  MPS_CHECK(!partial.reached_end_time);
-
-  const auto restarted =
-      mps::run_ode_experiment(config, mps::IntegratorKind::kSspRk3, partial.state);
-  MPS_CHECK_EQ(restarted.state.time_s, continuous.state.time_s);
-  MPS_CHECK_EQ(restarted.state.step, continuous.state.step);
-  MPS_CHECK_EQ(std::bit_cast<std::uint64_t>(restarted.state.value),
-               std::bit_cast<std::uint64_t>(continuous.state.value));
 }
 
 MPS_TEST_CASE("integrator names have a strict round trip") {

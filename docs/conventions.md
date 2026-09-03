@@ -66,15 +66,13 @@ components are never copied directly.
 
 ## Array and grid indices
 
-- Horizontal interior indices are `i = 0..nx-1`, `j = 0..ny-1`.
-- `i` is the fastest-varying index in row-major storage.
-- A halo of width `h` extends logical indices to `-h..nx+h-1` and
-  `-h..ny+h-1`.
+- Horizontal cell indices are `i = 0..N-1`, `j = 0..N-1`.
+- Cell fields use the panel-major flat order fixed by ADR 0001; `i` varies fastest.
+- Cross-panel operations use the grid's unique edges and neighbor queries directly.
 - Global cubed-sphere panel order and edge orientation are fixed by
   [ADR 0001](adr/0001-cubed-sphere-panel-conventions.md).
 
-`Field2D` owns storage but does not own coordinates or cell metrics. Algorithms that
-integrate a field receive weights explicitly.
+Algorithms that integrate a field receive cell-area weights explicitly.
 
 ## Vertical indices
 

@@ -19,7 +19,7 @@ namespace {
                   .reference_pressure_pa = 6.0};
   value.run = {
       .start_time_s = 0.0, .end_time_s = 1.0, .time_step_s = 0.2, .random_seed = 7};
-  value.grid = {.cells_per_panel = 4, .halo_width = 2};
+  value.grid = {.cells_per_panel = 4};
   value.shallow_water.test_case = mps::ShallowWaterTestCase::kRest;
   value.shallow_water.scheme = mps::ShallowWaterScheme::kRusanov;
   value.shallow_water.reconstruction = mps::ReconstructionKind::kPiecewiseConstant;
@@ -36,7 +36,9 @@ namespace {
 
 MPS_TEST_CASE("gravity-wave CFL respects configured bounds") {
   const mps::CubedSphereGrid grid(4, 2.0);
-  const auto state = mps::make_resting_shallow_water_state(grid, 0.0, 2.0);
+  const mps::ShallowWaterState state{
+      .depth = std::vector<mps::Real>(grid.cell_count(), 2.0),
+      .momentum = std::vector<mps::Vec3>(grid.cell_count())};
   const mps::Real half =
       mps::stable_shallow_water_time_step(grid, state, 3.0, 0.5, 10.0);
   const mps::Real full =
