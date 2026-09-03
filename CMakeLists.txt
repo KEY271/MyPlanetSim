@@ -50,6 +50,7 @@ add_library(
   src/core/validation.cpp
   src/core/version.cpp
   src/diagnostics/reductions.cpp
+  src/io/checkpoint.cpp
   src/io/run_metadata.cpp
 )
 target_compile_features(myplanetsim_core PUBLIC cxx_std_20)
