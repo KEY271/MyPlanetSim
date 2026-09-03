@@ -37,6 +37,7 @@ mps_add_test(unit.shallow_water_reconstruction test_shallow_water_reconstruction
 mps_add_test(unit.shallow_water_driver test_shallow_water_driver.cpp)
 mps_add_test(phase2.linear_waves test_shallow_water_waves.cpp)
 set_tests_properties(phase2.linear_waves PROPERTIES LABELS phase2_gate)
+mps_add_test(unit.williamson2 test_williamson2.cpp)
 mps_add_test(unit.ode_experiment test_ode_experiment.cpp)
 mps_add_test(phase0.convergence_restart test_phase0_gates.cpp)
 set_tests_properties(phase0.convergence_restart PROPERTIES LABELS phase0_gate)
