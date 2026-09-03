@@ -206,6 +206,14 @@ ShallowWaterResult run_shallow_water(
     throw std::invalid_argument("shallow-water restart time is outside configured run");
   }
   Real maximum_cfl = 0.0;
+  std::vector<ShallowWaterSample> samples;
+  const auto sample = [&](const ShallowWaterState& sampled) {
+    samples.push_back({.time_s = sampled.time_s,
+                       .step = sampled.step,
+                       .invariants = diagnostics::diagnose_shallow_water(
+                           grid, sampled, config.planet.gravity_m_s2, omega)});
+  };
+  sample(state);
   while (state.time_s < config.run.end_time_s &&
          (!stop_after_step.has_value() || state.step < *stop_after_step)) {
     Real time_step = stable_shallow_water_time_step(
@@ -221,6 +229,12 @@ ShallowWaterResult run_shallow_water(
     ssp_rk3_step(grid, state, time_step, config.shallow_water, assemble, actual_cfl);
     state.time_s += time_step;
     ++state.step;
+    if (state.step % config.diagnostics.interval_steps == 0) {
+      sample(state);
+    }
+  }
+  if (samples.back().step != state.step) {
+    sample(state);
   }
   const auto initial_diagnostics = diagnostics::diagnose_shallow_water(
       grid, reference, config.planet.gravity_m_s2, omega);
@@ -231,7 +245,8 @@ ShallowWaterResult run_shallow_water(
           .initial_diagnostics = initial_diagnostics,
           .final_diagnostics = final_diagnostics,
           .reached_end_time = reached_end_time,
-          .maximum_cfl = maximum_cfl};
+          .maximum_cfl = maximum_cfl,
+          .samples = std::move(samples)};
 }
 
 }  // namespace mps

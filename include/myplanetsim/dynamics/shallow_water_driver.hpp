@@ -1,11 +1,19 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
+#include <vector>
 
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/diagnostics/shallow_water_diagnostics.hpp"
 
 namespace mps {
+
+struct ShallowWaterSample {
+  Real time_s;
+  std::uint64_t step;
+  diagnostics::ShallowWaterInvariants invariants;
+};
 
 struct ShallowWaterResult {
   ShallowWaterState state;
@@ -13,6 +21,8 @@ struct ShallowWaterResult {
   diagnostics::ShallowWaterInvariants final_diagnostics;
   bool reached_end_time;
   Real maximum_cfl;
+  // Invariants sampled every diagnostics.interval_steps, ends included.
+  std::vector<ShallowWaterSample> samples;
 };
 
 [[nodiscard]] Real stable_shallow_water_time_step(const CubedSphereGrid& grid,

@@ -74,4 +74,18 @@ MPS_TEST_CASE("shallow-water stopped restart is bitwise continuous") {
   }
 }
 
+MPS_TEST_CASE("shallow-water diagnostics are sampled on the configured interval") {
+  auto value = config();
+  value.diagnostics.interval_steps = 2;
+  const auto result = mps::run_shallow_water(value);
+  MPS_CHECK(result.samples.size() >= 2);
+  MPS_CHECK_EQ(result.samples.front().step, std::uint64_t{0});
+  MPS_CHECK_EQ(result.samples.back().step, result.state.step);
+  MPS_CHECK_EQ(result.samples.back().time_s, result.state.time_s);
+  for (std::size_t index = 1; index + 1 < result.samples.size(); ++index) {
+    MPS_CHECK_EQ(result.samples[index].step % 2, std::uint64_t{0});
+  }
+  MPS_CHECK_EQ(result.samples.back().invariants.mass, result.final_diagnostics.mass);
+}
+
 int main() { return mps::test::run_all(); }
