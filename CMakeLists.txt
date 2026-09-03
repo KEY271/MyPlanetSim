@@ -50,6 +50,7 @@ add_library(
   src/core/validation.cpp
   src/core/version.cpp
   src/diagnostics/reductions.cpp
+  src/dynamics/shallow_water_state.cpp
   src/geometry/cubed_sphere.cpp
   src/grid/cubed_sphere_field.cpp
   src/grid/cubed_sphere_grid.cpp

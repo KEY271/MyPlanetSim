@@ -62,6 +62,31 @@ MPS_TEST_CASE("checkpoint rejects mismatches corruption and truncation") {
                       std::runtime_error);
 }
 
+MPS_TEST_CASE("checkpoint version 2 validates named state layout") {
+  auto original = sample_checkpoint();
+  original.layout_id = "shallow_water_cell_v1";
+  std::ostringstream output;
+  mps::write_checkpoint(output, original);
+  MPS_CHECK(output.str().find("version = 2") != std::string::npos);
+  MPS_CHECK(output.str().find("layout_id = shallow_water_cell_v1") !=
+            std::string::npos);
+
+  std::istringstream valid(output.str());
+  const auto restored = mps::read_checkpoint(valid, original.config_fingerprint,
+                                             original.layout_id, original.state.size());
+  MPS_CHECK_EQ(restored.layout_id, original.layout_id);
+
+  std::istringstream wrong_layout(output.str());
+  MPS_CHECK_THROWS_AS(
+      mps::read_checkpoint(wrong_layout, original.config_fingerprint, "other", 4),
+      std::runtime_error);
+  std::istringstream wrong_size(output.str());
+  MPS_CHECK_THROWS_AS(
+      mps::read_checkpoint(wrong_size, original.config_fingerprint, original.layout_id,
+                           original.state.size() + 1),
+      std::runtime_error);
+}
+
 MPS_TEST_CASE("checkpoint file is promoted from a temporary file") {
   const auto path =
       std::filesystem::temp_directory_path() / "myplanetsim_phase0_checkpoint_test.txt";
