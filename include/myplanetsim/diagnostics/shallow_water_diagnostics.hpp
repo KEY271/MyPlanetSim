@@ -36,13 +36,25 @@ struct ShallowWaterBudget {
 [[nodiscard]] ShallowWaterInvariants diagnose_shallow_water(
     const CubedSphereGrid& grid, const ShallowWaterState& state, Real gravity_m_s2,
     Real rotation_rate_rad_s);
+[[nodiscard]] ShallowWaterInvariants diagnose_shallow_water(
+    const CubedSphereGrid& grid, const ShallowWaterState& state, Real gravity_m_s2,
+    Vec3 rotation_vector_rad_s);
 [[nodiscard]] ShallowWaterInvariantRates shallow_water_invariant_rates(
     const CubedSphereGrid& grid, const ShallowWaterState& state,
     const ShallowWaterTendency& tendency, Real gravity_m_s2, Real rotation_rate_rad_s);
+[[nodiscard]] ShallowWaterInvariantRates shallow_water_invariant_rates(
+    const CubedSphereGrid& grid, const ShallowWaterState& state,
+    const ShallowWaterTendency& tendency, Real gravity_m_s2,
+    Vec3 rotation_vector_rad_s);
 [[nodiscard]] ShallowWaterBudget make_shallow_water_budget(
     const CubedSphereGrid& grid, const ShallowWaterState& state,
     const ShallowWaterTendency& flux, const ShallowWaterTendency& coriolis,
     const ShallowWaterTendency& pressure, const ShallowWaterTendency& diffusion,
     Real gravity_m_s2, Real rotation_rate_rad_s);
+[[nodiscard]] ShallowWaterBudget make_shallow_water_budget(
+    const CubedSphereGrid& grid, const ShallowWaterState& state,
+    const ShallowWaterTendency& flux, const ShallowWaterTendency& coriolis,
+    const ShallowWaterTendency& pressure, const ShallowWaterTendency& diffusion,
+    Real gravity_m_s2, Vec3 rotation_vector_rad_s);
 
 }  // namespace mps::diagnostics

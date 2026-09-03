@@ -55,8 +55,19 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
     const CubedSphereGrid& grid, const ShallowWaterState& state,
     const ShallowWaterParameters& parameters, const Real gravity_m_s2,
     const Real rotation_rate_rad_s) {
-  require_positive(gravity_m_s2, "shallow-water gravity");
   require_finite(rotation_rate_rad_s, "shallow-water rotation rate");
+  return assemble_shallow_water_rhs(grid, state, parameters, gravity_m_s2,
+                                    Vec3{0.0, 0.0, rotation_rate_rad_s});
+}
+
+ShallowWaterRhsComponents assemble_shallow_water_rhs(
+    const CubedSphereGrid& grid, const ShallowWaterState& state,
+    const ShallowWaterParameters& parameters, const Real gravity_m_s2,
+    const Vec3 rotation_vector_rad_s) {
+  require_positive(gravity_m_s2, "shallow-water gravity");
+  if (!is_finite(rotation_vector_rad_s)) {
+    throw std::invalid_argument("shallow-water rotation vector is non-finite");
+  }
   validate_shallow_water_state(grid, state, parameters.depth_floor_m);
   const auto reconstructed = reconstruct_shallow_water_face_states(
       grid, state, parameters.reconstruction, parameters.limiter,
@@ -88,7 +99,6 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
   }
   divide_by_area_and_project(grid, result.flux);
   divide_by_area_and_project(grid, result.pressure);
-  const Vec3 omega{0.0, 0.0, rotation_rate_rad_s};
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
     Vec3 pressure_geometry_correction{};
     for (const std::size_t edge_id : grid.cell_edges(grid.cell_id(cell))) {
@@ -105,8 +115,8 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
             (cell_pressure / grid.cells()[cell].area_m2) * pressure_geometry_correction,
         grid.cells()[cell].center);
     result.coriolis.momentum[cell] =
-        -2.0 *
-        project_tangent(cross(omega, state.momentum[cell]), grid.cells()[cell].center);
+        -2.0 * project_tangent(cross(rotation_vector_rad_s, state.momentum[cell]),
+                               grid.cells()[cell].center);
     result.total.depth[cell] = result.flux.depth[cell];
     result.total.momentum[cell] =
         project_tangent(result.flux.momentum[cell] + result.pressure.momentum[cell] +
