@@ -52,6 +52,7 @@ add_library(
   src/diagnostics/reductions.cpp
   src/diagnostics/shallow_water_diagnostics.cpp
   src/dynamics/shallow_water_state.cpp
+  src/dynamics/shallow_water_compatible.cpp
   src/dynamics/shallow_water_diffusion.cpp
   src/dynamics/shallow_water_flux.cpp
   src/dynamics/shallow_water_driver.cpp

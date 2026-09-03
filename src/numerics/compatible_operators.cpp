@@ -150,19 +150,19 @@ std::vector<Real> vertex_relative_vorticity(
   return vorticity;
 }
 
-std::vector<Real> vertex_depth(const CubedSphereGrid& grid,
-                               const CubedSphereDualTopology& dual,
-                               const std::span<const Real> cell_depth) {
-  validate_cell_values(grid, cell_depth);
-  std::vector<Real> depth(grid.vertex_count());
+std::vector<Real> interpolate_cells_to_vertices(
+    const CubedSphereGrid& grid, const CubedSphereDualTopology& dual,
+    const std::span<const Real> cell_values) {
+  validate_cell_values(grid, cell_values);
+  std::vector<Real> vertex_values(grid.vertex_count());
   for (const auto& dual_vertex : dual.vertices()) {
     Real weighted = 0.0;
     for (const std::size_t cell : dual_vertex.incident_cells) {
-      weighted += 0.25 * grid.cells()[cell].area_m2 * cell_depth[cell];
+      weighted += 0.25 * grid.cells()[cell].area_m2 * cell_values[cell];
     }
-    depth[dual_vertex.primal_vertex] = weighted / dual_vertex.area_m2;
+    vertex_values[dual_vertex.primal_vertex] = weighted / dual_vertex.area_m2;
   }
-  return depth;
+  return vertex_values;
 }
 
 std::vector<Real> vertex_potential_vorticity(
@@ -173,7 +173,7 @@ std::vector<Real> vertex_potential_vorticity(
   if (!is_finite(rotation_vector_rad_s)) {
     throw std::invalid_argument("rotation vector is non-finite");
   }
-  const auto depth = vertex_depth(grid, dual, cell_depth);
+  const auto depth = interpolate_cells_to_vertices(grid, dual, cell_depth);
   auto potential_vorticity =
       vertex_relative_vorticity(grid, dual, edge_normal_velocity);
   for (std::size_t vertex = 0; vertex < grid.vertex_count(); ++vertex) {

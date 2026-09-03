@@ -119,7 +119,7 @@ MPS_TEST_CASE("resting state has planetary potential vorticity on every vertex")
   const std::vector<mps::Real> normal_velocity(grid.edge_count(), 0.0);
   const auto potential_vorticity =
       mps::vertex_potential_vorticity(grid, dual, depth, normal_velocity, kRotation);
-  const auto vertex = mps::vertex_depth(grid, dual, depth);
+  const auto vertex = mps::interpolate_cells_to_vertices(grid, dual, depth);
   for (std::size_t index = 0; index < grid.vertex_count(); ++index) {
     const mps::Real exact =
         2.0 * mps::dot(kRotation, grid.vertices()[index].position) / depth_m;

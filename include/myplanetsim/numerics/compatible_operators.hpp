@@ -35,9 +35,10 @@ struct CompatibleEdgeMetric {
 [[nodiscard]] std::vector<Real> vertex_relative_vorticity(
     const CubedSphereGrid& grid, const CubedSphereDualTopology& dual,
     std::span<const Real> edge_normal_velocity);
-[[nodiscard]] std::vector<Real> vertex_depth(const CubedSphereGrid& grid,
-                                             const CubedSphereDualTopology& dual,
-                                             std::span<const Real> cell_depth);
+// Kite-area weighted interpolation of a cell field onto the dual cells.
+[[nodiscard]] std::vector<Real> interpolate_cells_to_vertices(
+    const CubedSphereGrid& grid, const CubedSphereDualTopology& dual,
+    std::span<const Real> cell_values);
 [[nodiscard]] std::vector<Real> vertex_potential_vorticity(
     const CubedSphereGrid& grid, const CubedSphereDualTopology& dual,
     std::span<const Real> cell_depth, std::span<const Real> edge_normal_velocity,
