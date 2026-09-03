@@ -17,3 +17,7 @@ body { margin: 0; }
 .eyebrow { color: #7bdff2; letter-spacing: 0.08em; text-transform: uppercase; }
 
 .globe-3d { min-height: 24rem; width: 100%; touch-action: none; }
+
+.map-2d { position: relative; min-height: 24rem; width: 100%; touch-action: none; }
+.map-2d canvas { position: absolute; inset: 0; height: 100%; width: 100%; }
+.map-2d button { position: absolute; right: 0.75rem; top: 0.75rem; }
