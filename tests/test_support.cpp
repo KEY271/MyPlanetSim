@@ -1,6 +1,6 @@
-#include "support/test.hpp"
-
 #include <stdexcept>
+
+#include "support/test.hpp"
 
 MPS_TEST_CASE("boolean and equality checks") {
   MPS_CHECK(true);
@@ -12,6 +12,4 @@ MPS_TEST_CASE("exception check") {
   MPS_CHECK_THROWS_AS(throw std::runtime_error("expected"), std::runtime_error);
 }
 
-int main() {
-  return mps::test::run_all();
-}
+int main() { return mps::test::run_all(); }

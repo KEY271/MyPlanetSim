@@ -18,6 +18,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 ./build/my_planet_sim
 ctest --test-dir build --output-on-failure
+cmake --build build --target format-check
 ```
 
 現在の実行ファイルは、正常終了するだけの空プログラムです。上記の実行とスモークテストが C++ 開発環境の最初の検証になります。

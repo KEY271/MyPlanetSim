@@ -7,6 +7,9 @@ project(
   LANGUAGES CXX
 )
 
+include(cmake/MyPlanetSimWarnings.cmake)
+include(cmake/MyPlanetSimFormatting.cmake)
+
 add_library(myplanetsim_core src/core/version.cpp)
 target_compile_features(myplanetsim_core PUBLIC cxx_std_20)
 target_include_directories(
@@ -14,17 +17,10 @@ target_include_directories(
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
+target_link_libraries(myplanetsim_core PRIVATE myplanetsim_warnings)
 
 add_executable(my_planet_sim apps/my_planet_sim.cpp)
-target_link_libraries(my_planet_sim PRIVATE myplanetsim_core)
-
-if(MSVC)
-  target_compile_options(myplanetsim_core PRIVATE /W4 /permissive-)
-  target_compile_options(my_planet_sim PRIVATE /W4 /permissive-)
-else()
-  target_compile_options(myplanetsim_core PRIVATE -Wall -Wextra -Wpedantic)
-  target_compile_options(my_planet_sim PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+target_link_libraries(my_planet_sim PRIVATE myplanetsim_core myplanetsim_warnings)
 
 include(CTest)
 if(BUILD_TESTING)

@@ -47,9 +47,8 @@ inline void record_failure(const char* file, const int line,
 }
 
 template <typename Actual, typename Expected>
-void check_equal(const Actual& actual, const Expected& expected,
-                 const char* file, const int line,
-                 const std::string_view expression) {
+void check_equal(const Actual& actual, const Expected& expected, const char* file,
+                 const int line, const std::string_view expression) {
   if (!(actual == expected)) {
     std::ostringstream details;
     details << "actual=" << actual << ", expected=" << expected;
@@ -58,8 +57,8 @@ void check_equal(const Actual& actual, const Expected& expected,
 }
 
 inline void check_near(const double actual, const double expected,
-                       const double tolerance, const char* file,
-                       const int line, const std::string_view expression) {
+                       const double tolerance, const char* file, const int line,
+                       const std::string_view expression) {
   if (!std::isfinite(actual) || !std::isfinite(expected) || tolerance < 0.0 ||
       std::abs(actual - expected) > tolerance) {
     std::ostringstream details;
@@ -96,30 +95,29 @@ inline int run_all() {
 #define MPS_TEST_CONCAT(lhs, rhs) MPS_TEST_CONCAT_INNER(lhs, rhs)
 
 #define MPS_TEST_CASE(name) MPS_TEST_CASE_IMPL(name, __LINE__)
-#define MPS_TEST_CASE_IMPL(name, line)                                      \
-  static void MPS_TEST_CONCAT(mps_test_function_, line)();                  \
-  static const ::mps::test::Registrar MPS_TEST_CONCAT(mps_test_registrar_,  \
-                                                       line)(                \
-      name, &MPS_TEST_CONCAT(mps_test_function_, line));                    \
+#define MPS_TEST_CASE_IMPL(name, line)                                            \
+  static void MPS_TEST_CONCAT(mps_test_function_, line)();                        \
+  static const ::mps::test::Registrar MPS_TEST_CONCAT(mps_test_registrar_, line)( \
+      name, &MPS_TEST_CONCAT(mps_test_function_, line));                          \
   static void MPS_TEST_CONCAT(mps_test_function_, line)()
 
-#define MPS_CHECK(expression)                                              \
-  do {                                                                     \
-    if (!(expression)) {                                                   \
-      ::mps::test::record_failure(__FILE__, __LINE__, #expression);        \
-    }                                                                      \
+#define MPS_CHECK(expression)                                       \
+  do {                                                              \
+    if (!(expression)) {                                            \
+      ::mps::test::record_failure(__FILE__, __LINE__, #expression); \
+    }                                                               \
   } while (false)
 
-#define MPS_CHECK_EQ(actual, expected)                                     \
-  do {                                                                     \
-    ::mps::test::check_equal((actual), (expected), __FILE__, __LINE__,     \
-                             #actual " == " #expected);                   \
+#define MPS_CHECK_EQ(actual, expected)                                 \
+  do {                                                                 \
+    ::mps::test::check_equal((actual), (expected), __FILE__, __LINE__, \
+                             #actual " == " #expected);                \
   } while (false)
 
-#define MPS_CHECK_NEAR(actual, expected, tolerance)                        \
-  do {                                                                     \
-    ::mps::test::check_near((actual), (expected), (tolerance), __FILE__,   \
-                            __LINE__, #actual " ~= " #expected);          \
+#define MPS_CHECK_NEAR(actual, expected, tolerance)                                \
+  do {                                                                             \
+    ::mps::test::check_near((actual), (expected), (tolerance), __FILE__, __LINE__, \
+                            #actual " ~= " #expected);                             \
   } while (false)
 
 #define MPS_CHECK_THROWS_AS(expression, exception_type)                    \
