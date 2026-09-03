@@ -11,6 +11,7 @@ endfunction()
 
 mps_add_test(unit.planet_parameters test_planet_parameters.cpp)
 mps_add_test(unit.experiment_config test_experiment_config.cpp)
+mps_add_test(unit.control_request test_control_request.cpp)
 mps_add_test(unit.vec3_cubed_sphere test_vec3_cubed_sphere.cpp)
 mps_add_test(unit.cubed_sphere_grid test_cubed_sphere_grid.cpp)
 mps_add_test(unit.dual_topology test_dual_topology.cpp)

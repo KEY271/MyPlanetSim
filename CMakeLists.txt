@@ -46,6 +46,7 @@ configure_file(
 add_library(
   myplanetsim_core
   src/config/experiment_config.cpp
+  src/control/control_request.cpp
   src/core/planet_parameters.cpp
   src/core/validation.cpp
   src/core/version.cpp
