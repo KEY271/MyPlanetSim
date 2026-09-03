@@ -11,9 +11,11 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/diagnostics/reductions.hpp"
+#include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
 #include "myplanetsim/dynamics/shallow_water_driver.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
 #include "myplanetsim/io/checkpoint.hpp"
@@ -182,6 +184,36 @@ void write_shallow_water_result(std::ostream& output,
          << '\n';
 }
 
+// Error norms against the analytic solution, where the benchmark has one.
+void write_shallow_water_errors(std::ostream& output,
+                                const mps::ExperimentConfig& config,
+                                const mps::CubedSphereGrid& grid,
+                                const mps::ShallowWaterResult& result) {
+  if (config.shallow_water.test_case != mps::ShallowWaterTestCase::kWilliamson2) {
+    return;
+  }
+  // Williamson 2 is steady, so its initial state is also the exact final state.
+  const auto exact = mps::make_shallow_water_initial_state(grid, config);
+  std::vector<mps::Real> weights(grid.cell_count());
+  std::vector<mps::Real> velocity_error(grid.cell_count());
+  const std::vector<mps::Real> zero(grid.cell_count());
+  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
+    weights[cell] = grid.cells()[cell].area_m2;
+    velocity_error[cell] =
+        mps::norm(result.state.velocity(cell) - exact.velocity(cell));
+  }
+  const auto depth =
+      mps::diagnostics::weighted_error_norms(result.state.depth, exact.depth, weights);
+  const auto velocity =
+      mps::diagnostics::weighted_error_norms(velocity_error, zero, weights);
+  output << "error.depth_l1 = " << depth.l1 << '\n'
+         << "error.depth_l2 = " << depth.l2 << '\n'
+         << "error.depth_linf = " << depth.linf << '\n'
+         << "error.velocity_l1 = " << velocity.l1 << '\n'
+         << "error.velocity_l2 = " << velocity.l2 << '\n'
+         << "error.velocity_linf = " << velocity.linf << '\n';
+}
+
 void write_shallow_water_diagnostics(const mps::ExperimentConfig& config,
                                      const mps::ShallowWaterResult& result) {
   const std::filesystem::path directory(config.output_directory);
@@ -316,6 +348,7 @@ int main(const int argc, const char* const argv[]) {
       write_shallow_water_diagnostics(config, result);
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
       write_shallow_water_result(std::cout, result, wall_time_s, grid.cell_count());
+      write_shallow_water_errors(std::cout, config, grid, result);
     }
     return 0;
   } catch (const std::exception& error) {
