@@ -156,3 +156,4 @@ export function transitionRunState(state: RunState, next: RunState): RunState {
 }
 
 export * from "./visual";
+export * from "./geometry";

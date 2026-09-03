@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ProtocolError, transitionRunState, validateRunRequest } from "./index";
 import { DeterministicMockSimulationClient as Mock } from "./client";
 import { addShallowWaterDerivedFields, fieldRange, parseShallowWaterCsv } from "./visual";
+import { cubedSphereCells, gridEdges, hitTest, mapToUnitSphere } from "./geometry";
 
 const request = {
   protocolVersion: 1 as const,
@@ -43,5 +44,17 @@ describe("protocol contracts", () => {
       `panel,i,j,depth_m,momentum_x,momentum_y,momentum_z\n${rows.join("\n")}`, 2));
     expect(fieldRange(value.fields[0])).toEqual([2, 2]);
     expect(value.fields.find((field) => field.id === "speed_m_s")?.values[0]).toBe(1);
+  });
+
+  it("reconstructs panel mapping and cubed-sphere edge counts", () => {
+    const point = mapToUnitSphere("PX", 0, 0);
+    expect(point).toEqual([1, 0, 0]);
+    for (const cellsPerPanel of [1, 2, 4, 16]) {
+      expect(cubedSphereCells(cellsPerPanel)).toHaveLength(6 * cellsPerPanel ** 2);
+      const edges = gridEdges(cellsPerPanel);
+      expect(edges).toHaveLength(12 * cellsPerPanel ** 2);
+      expect(edges.filter((edge) => edge.panelSeam)).toHaveLength(12 * cellsPerPanel);
+      expect(hitTest(cubedSphereCells(cellsPerPanel)[0].center, cellsPerPanel)).toEqual({ panel: "PX", i: 0, j: 0 });
+    }
   });
 });

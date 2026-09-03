@@ -1,0 +1,11 @@
+{
+  "mapping": "equiangular_gnomonic_v1",
+  "points": [
+    { "panel": "PX", "alpha": 0, "beta": 0, "unit": [1, 0, 0] },
+    { "panel": "PY", "alpha": 0, "beta": 0, "unit": [0, 1, 0] },
+    { "panel": "PZ", "alpha": 0, "beta": 0, "unit": [0, 0, 1] },
+    { "panel": "NX", "alpha": 0, "beta": 0, "unit": [-1, 0, 0] },
+    { "panel": "NY", "alpha": 0, "beta": 0, "unit": [0, -1, 0] },
+    { "panel": "NZ", "alpha": 0, "beta": 0, "unit": [0, 0, -1] }
+  ]
+}
