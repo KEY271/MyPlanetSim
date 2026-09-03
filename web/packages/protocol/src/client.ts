@@ -16,6 +16,7 @@ export interface SimulationClient {
   capabilities(): Promise<CapabilitiesV1>;
   submit(request: RunRequestV1): Promise<{ runId: string }>;
   events(runId: string, afterSequence?: number): AsyncIterable<EventV1>;
+  frame(runId: string, sequence: number): Promise<ArrayBuffer>;
   cancel(runId: string): Promise<void>;
 }
 
@@ -63,6 +64,12 @@ export class HttpSimulationClient implements SimulationClient {
     if (!response.ok) throw new ProtocolError("http_error", `cancel failed: ${response.status}`);
   }
 
+  async frame(runId: string, sequence: number): Promise<ArrayBuffer> {
+    const response = await this.fetcher(`${this.baseUrl}/api/v1/runs/${encodeURIComponent(runId)}/frames/${sequence}`);
+    if (!response.ok) throw new ProtocolError("http_error", `frame failed: ${response.status}`);
+    return response.arrayBuffer();
+  }
+
   private async json<T>(path: string, init: RequestInit): Promise<T> {
     const response = await this.fetcher(`${this.baseUrl}${path}`, init);
     if (!response.ok) throw new ProtocolError("http_error", `request failed: ${response.status}`);
@@ -108,5 +115,18 @@ export class DeterministicMockSimulationClient implements SimulationClient {
   async cancel(runId: string): Promise<void> {
     if (!this.requests.has(runId)) throw new ProtocolError("unknown_run", runId);
     this.cancelled.add(runId);
+  }
+
+  async frame(_runId: string, _sequence: number): Promise<ArrayBuffer> {
+    const cellsPerPanel = 1; const cellCount = 6; const fingerprint = "mock";
+    const bytes = new ArrayBuffer(52 + fingerprint.length + 32 * cellCount);
+    const view = new DataView(bytes); const magic = "MPSFRAM1";
+    for (let index = 0; index < magic.length; index += 1) view.setUint8(index, magic.charCodeAt(index));
+    view.setUint32(8, 1, true); view.setUint32(12, 0, true); view.setBigUint64(16, BigInt(cellsPerPanel), true);
+    view.setFloat64(24, 0, true); view.setBigUint64(32, 0n, true); view.setBigUint64(40, BigInt(cellCount), true); view.setUint32(48, fingerprint.length, true);
+    new TextEncoder().encode(fingerprint).forEach((value, index) => view.setUint8(52 + index, value));
+    const offset = 52 + fingerprint.length;
+    for (let index = 0; index < cellCount; index += 1) view.setFloat64(offset + index * 8, 1, true);
+    return bytes;
   }
 }

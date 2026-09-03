@@ -28,4 +28,6 @@ body { margin: 0; }
 .view-grid > div { min-width: 0; }
 .request-panel { display: block; }
 .request-panel pre { overflow: auto; padding: 1rem; background: #18232d; }
+.timeline { display: flex; align-items: center; gap: 0.75rem; margin: 1rem 0; }
+.timeline input { flex: 1; }
 @media (max-width: 60rem) { .view-grid { grid-template-columns: 1fr; } }
