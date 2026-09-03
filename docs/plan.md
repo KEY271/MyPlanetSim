@@ -127,16 +127,47 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 検証するもの:
 
-- Williamson test 2（定常地衡流）と test 6（Rossby–Haurwitz wave）。山岳を含む test 5 は Phase 5 へ回す
+- Williamson test 2（定常地衡流）と test 6（Rossby–Haurwitz wave）。山岳を含む test 5 は Phase 6 へ回す
 - Galewsky–Scott–Polvani の不安定 jet を高解像度または公開参照解と比較
 - 質量、全エネルギー、ポテンシャルエンストロフィー、軸角運動量の時系列
 - grid imprinting、4-grid-wave、seam 反射、cube corner noise の有無
 - 解像度・時間刻みを別々に細分化し、空間誤差と時間誤差を分離
 - 基準方式と改良方式を同一条件で比較し、精度・保存性・コストを ADR に記録
 
-完了ゲート: 標準テストの数値解・収束曲線・保存量が再生成可能で、採用する水平離散化を根拠付きで固定できる。地形項そのものは Phase 5 まで正式機能にしない。
+完了ゲート: 標準テストの数値解・収束曲線・保存量が再生成可能で、採用する水平離散化を根拠付きで固定できる。地形項そのものは Phase 6 まで正式機能にしない。
 
-### Phase 3 — 鉛直 1D と hybrid sigma-pressure
+### Phase 3 — C++ 制御付き独立 Web 可視化 UI
+
+アーキテクチャ、data contract、画面・操作仕様、コミット単位の実装順、受け入れ条件は
+[Phase 3 実装計画](phase-3-plan.md) に定める。
+
+実装するもの:
+
+- C++ source/headerへ直接依存しない `web/` の TypeScript UI、local control gateway、独立 CI
+- version付きrun/event/frame protocolと、native C++ processの安全な開始・停止
+- 3D/2D clickによるGaussian depth初期条件editとC++ shallow-water再積分
+- Phase 1/2 の CSV snapshot とlive binary frameを取り込む表示 data model
+- cubed-sphere field を表示する interactive 3D globe と 2D 全球地図
+- 3D/2D の双方で panel seam/全 cell edge を切り替える cubed-sphere grid overlay
+- field/color/selection を共有する inspector と view control
+- C++が出力するinitial/intermediate/final frame、diagnostics、provenance、run bundle
+
+検証するもの:
+
+- panel、seam、corner、antimeridianを含むgeometry・投影・pickingの一致
+- grid overlayのunique edge数と3D/2D表示modeの一致
+- 3D/2D間のfield、range、selection、initial edit、current C++ frameの同期
+- initial editのmass policy、positivity、tangencyと、C++で伝播するgravity wave
+- protocol version、process lifecycle、cancel、path/command injection防止
+- invalid CSV/frame、非有限値、欠落/重複cell、WebGL failureの明示的な処理
+- keyboard、reduced motion、responsive layoutの基本操作
+- `N=48/96` datasetのload、buffer/node数、frame timeとbrowser互換性
+
+完了ゲート: `web/` はC++なしでもoffline build/test/previewでき、live modeではloopback gateway
+から設定済みnative C++だけを制御できる。3D/2D clickで作ったdepth perturbationがC++のframe 0へ
+一致し、後続frameで実際のshallow-water waveとして伝播することを自動検証できる。
+
+### Phase 4 — 鉛直 1D と hybrid sigma-pressure
 
 実装するもの:
 
@@ -155,7 +186,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: 鉛直演算子だけの unit/convergence テストが通り、水平力学から独立して質量・熱力学 budget を閉じられる。
 
-### Phase 4 — 地形なし乾燥 3D 静水圧力学コア
+### Phase 5 — 地形なし乾燥 3D 静水圧力学コア
 
 実装するもの:
 
@@ -175,7 +206,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: 地形なしの標準 3D テストが複数解像度で再現し、shallow-water 段階の水平誤差と新しい鉛直誤差を区別できる。
 
-### Phase 5 — 地形と下部境界
+### Phase 6 — 地形と下部境界
 
 実装するもの:
 
@@ -186,7 +217,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 検証するもの:
 
-- 平坦地形が Phase 4 と数値的に同一であること
+- 平坦地形が Phase 5 と数値的に同一であること
 - DCMIP 2-0-x 型の、山岳上で静止する静水圧大気に偽風が発生しないこと
 - 山の高さ・幅・鉛直解像度に対する pressure-gradient error の収束
 - Williamson test 5 の山岳付き shallow-water を回帰試験として再利用
@@ -196,7 +227,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: 静止大気の偽風と pressure-gradient error が解像度とともに減少し、山岳位置を変えても保存量と主要診断が同等になる。
 
-### Phase 6 — 理想化乾燥物理と気候統計
+### Phase 7 — 理想化乾燥物理と気候統計
 
 実装するもの:
 
@@ -214,7 +245,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: 単一 snapshot ではなく平均値とばらつきを伴うベンチマーク報告を自動生成できる。
 
-### Phase 7 — 架空惑星化
+### Phase 8 — 架空惑星化
 
 実装するもの:
 
@@ -224,7 +255,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 検証するもの:
 
-- Earth-like preset が Phase 6 の基準結果を変えないこと
+- Earth-like preset が Phase 7 の基準結果を変えないこと
 - 単位だけを整合的に変換した相似問題が同じ無次元解を与えること
 - `Omega -> 0`、弱い強制、半径変更などの極限で挙動が物理的期待と一致すること
 - パラメータ sweep で CFL、層厚、温度、風速が安全範囲を外れたとき明示的に停止すること
@@ -232,7 +263,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 完了ゲート: コード変更なしに惑星設定を切替でき、各 preset が設定・診断・再現手順を伴う。
 
-### Phase 8 — 物理拡張と性能（基本コア完成後）
+### Phase 9 — 物理拡張と性能（基本コア完成後）
 
 候補:
 
@@ -270,14 +301,15 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 ## 5. 直近の実装順
 
-Phase 0 は完了済みであり、次の実装スプリントは Phase 1 だけを対象にする。
+Phase 0–2 は完了済みであり、次の実装スプリントは Phase 3 の C++ 制御付き独立 Web 可視化 UI を
+対象にする。
 
-1. cubed-sphere の面番号、向き、equiangular gnomonic 写像を ADR で固定する。
-2. 座標変換、panel topology、セル面積・辺長・接法線を実装して幾何恒等式を検証する。
-3. scalar halo exchange と共有辺 flux を実装し、全球 flux cancellation を検証する。
-4. prescribed wind による一次風上輸送と CFL 制御を実装する。
-5. MUSCL 再構築と limiter を追加し、滑らかな tracer の二次収束と極値保存を検証する。
-6. Williamson test 1 と Lauritzen et al. の標準ケースを CI/回帰テスト化し、Phase 1 report を作る。
+1. UI/gateway/C++境界とrun/event/frame protocolをADRで固定する。
+2. C++へinitial-condition edit、frame observer、machine-readable CLIを追加する。
+3. `web/` に独立UI、shared protocol、local control gateway、quality gateを作る。
+4. cubed-sphere geometry/grid、3D globe、2D全球地図を実装する。
+5. click editからnative C++ run/progress/cancel/frame表示までを接続する。
+6. scientific/live/security/browser/performance gateを実行し、Phase 3 reportを作る。
 
 ## 6. 調査資料と計画への反映
 

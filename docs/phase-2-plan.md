@@ -11,7 +11,7 @@ Phase 2 では Phase 1 の全球 geometry、unique edge、Cartesian 接ベクト
 共有 flux、診断、checkpoint を再利用し、回転球面上の1層 shallow-water
 方程式を実装する。完了時には、基準となる cell-centered finite-volume 法と
 compatible/mimetic 候補を同じ実験 API で比較し、標準ケース、保存量、
-seam/corner 誤差、計算量に基づいて Phase 3 以降で採用する水平離散化を
+seam/corner 誤差、計算量に基づいて Phase 4 以降で採用する水平離散化を
 ADR で固定できることを目標とする。
 
 成果物は次を含む。
@@ -32,9 +32,9 @@ Phase 0/1 gate を無効化しない。
 
 ## 2. Phase 2 に含めないもの
 
-- orography と topographic source term。Williamson test 5 は Phase 5 へ回す。
-- multilayer、baroclinic、hydrostatic primitive equations（Phase 4）
-- hybrid sigma-pressure、鉛直移流、surface pressure（Phase 3/4）
+- orography と topographic source term。Williamson test 5 は Phase 6 へ回す。
+- multilayer、baroclinic、hydrostatic primitive equations（Phase 5）
+- hybrid sigma-pressure、鉛直移流、surface pressure（Phase 4/5）
 - moisture、放射、境界層、外力による気候積分
 - MPI/OpenMP/GPU と大規模 parallel I/O
 - semi-implicit、split-explicit、exponential time integration
@@ -290,7 +290,7 @@ e-folding timeで比較する。
 
 異なる diffusion を使って一方だけを有利にしない。安定化に必要な最小 diffusion
 も比較結果の一部とする。P2.19 ADR は採用/不採用だけでなく、棄却した候補、既知の
-欠点、Phase 4 で再評価する条件を記録する。
+欠点、Phase 5 で再評価する条件を記録する。
 
 ## 7. コミット列
 
@@ -552,7 +552,7 @@ docs: select the horizontal shallow-water discretization
 
 - `docs/adr/0003-shallow-water-horizontal-discretization.md` を追加。
 - W2/W6/Galewsky の精度、保存、artifact、robustness、cost tableを比較。
-- Phase 3/4で採用するscheme、fallback、既知の制約を決定。
+- Phase 4/5で採用するscheme、fallback、既知の制約を決定。
 
 受け入れ条件: section 6.6 の条件が同一で、結論を再生成できるraw diagnosticsと
 commandが記録されている。
@@ -627,7 +627,7 @@ ctest --preset asan-ubsan
 - [x] diffusionのmode damping、mass、energy/enstrophy budgetが検証されている。
 - [x] compatible候補のtopology、PV flux、保存特性がunit testを通る。
 - [x] 基準/compatible比較が同じCFL・diffusion条件で行われている。
-- [x] Phase 3/4採用schemeとfallbackが結果ベースのADRで決定されている。
+- [x] Phase 4/5採用schemeとfallbackが結果ベースのADRで決定されている。
 - [x] restartが連続実行とbitwise一致する。
 - [x] Phase 0/1の全回帰、GCC/Clang、Release、ASan/UBSan、formatがgreen。
 - [x] Phase 2検証報告と全tableをclean checkoutから再生成できる。

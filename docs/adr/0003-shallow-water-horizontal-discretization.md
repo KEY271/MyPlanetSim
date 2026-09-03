@@ -1,6 +1,6 @@
 # ADR 0003: horizontal shallow-water discretization
 
-**Status:** accepted for Phase 3 and Phase 4
+**Status:** accepted for Phase 4 and Phase 5
 
 ## Context
 
@@ -96,7 +96,7 @@ the ninetieth percentile converge at second order while the maximum grows.
 
 ## Decision
 
-Phase 3 and Phase 4 use the reference collocated finite-volume scheme with the
+Phase 4 and Phase 5 use the reference collocated finite-volume scheme with the
 Rusanov unique-edge flux, linear reconstruction and the Barth--Jespersen
 limiter.
 
@@ -121,7 +121,7 @@ for a future candidate.  They are not offered as the production scheme, and
 - Without numerical dissipation the candidate fails the unstable jet outright.
   Adding enough diffusion to survive it would change the comparison conditions,
   and the amount needed is itself a negative result.
-- Re-evaluate the compatible family in Phase 4 if any of these change: the
+- Re-evaluate the compatible family in Phase 5 if any of these change: the
   horizontal grid becomes orthogonal or nearly so, the corner treatment gains a
   dedicated construction, or the full set of TRiSK tangential-velocity weights
   is implemented so that the antisymmetry and the conservation proof survive on

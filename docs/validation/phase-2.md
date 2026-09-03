@@ -156,7 +156,7 @@ and the budget components sum to the total.
 
 [ADR 0003](../adr/0003-shallow-water-horizontal-discretization.md) records the
 measured comparison and the decision to keep the reference Rusanov scheme for
-Phase 3 and Phase 4. In summary, both schemes conserve mass to rounding, the
+Phase 4 and Phase 5. In summary, both schemes conserve mass to rounding, the
 compatible candidate is about five times cheaper per cell-step but one to two
 orders of magnitude less accurate, its potential enstrophy drift does not fall
 with resolution, and it fails the Galewsky jet outright without dissipation.
