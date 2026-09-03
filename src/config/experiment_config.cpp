@@ -218,6 +218,8 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.shallow_water.test_case = ShallowWaterTestCase::kRest;
     } else if (value == "linear_wave") {
       config.shallow_water.test_case = ShallowWaterTestCase::kLinearWave;
+    } else if (value == "geostrophic_adjustment") {
+      config.shallow_water.test_case = ShallowWaterTestCase::kGeostrophicAdjustment;
     } else if (value == "williamson2") {
       config.shallow_water.test_case = ShallowWaterTestCase::kWilliamson2;
     } else if (value == "williamson6") {
@@ -562,6 +564,8 @@ std::string_view shallow_water_test_case_name(
       return "rest";
     case ShallowWaterTestCase::kLinearWave:
       return "linear_wave";
+    case ShallowWaterTestCase::kGeostrophicAdjustment:
+      return "geostrophic_adjustment";
     case ShallowWaterTestCase::kWilliamson2:
       return "williamson2";
     case ShallowWaterTestCase::kWilliamson6:

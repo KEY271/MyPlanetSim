@@ -32,6 +32,7 @@ enum class ReconstructionKind { kPiecewiseConstant, kLinear };
 enum class ShallowWaterTestCase {
   kRest,
   kLinearWave,
+  kGeostrophicAdjustment,
   kWilliamson2,
   kWilliamson6,
   kGalewsky

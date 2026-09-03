@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "myplanetsim/core/validation.hpp"
+#include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
 #include "myplanetsim/dynamics/shallow_water_rhs.hpp"
 
 namespace mps {
@@ -151,13 +152,8 @@ ShallowWaterResult run_shallow_water(
   if (config.shallow_water.scheme != ShallowWaterScheme::kRusanov) {
     throw std::invalid_argument("compatible shallow-water scheme is not yet available");
   }
-  if (config.shallow_water.test_case != ShallowWaterTestCase::kRest) {
-    throw std::invalid_argument(
-        "requested shallow-water initial condition is unavailable");
-  }
   const CubedSphereGrid grid(config.grid.cells_per_panel, config.planet.radius_m);
-  const ShallowWaterState reference = make_resting_shallow_water_state(
-      grid, config.run.start_time_s, config.shallow_water.mean_depth_m);
+  const ShallowWaterState reference = make_shallow_water_initial_state(grid, config);
   ShallowWaterState state =
       initial_state.has_value() ? std::move(*initial_state) : reference;
   validate_shallow_water_state(grid, state, config.shallow_water.depth_floor_m);
