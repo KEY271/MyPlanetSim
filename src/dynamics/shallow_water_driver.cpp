@@ -15,7 +15,9 @@ namespace mps {
 namespace {
 
 [[nodiscard]] Vec3 rotation_vector(const ExperimentConfig& config) {
-  if (config.shallow_water.test_case == ShallowWaterTestCase::kWilliamson2) {
+  if (config.shallow_water.test_case == ShallowWaterTestCase::kWilliamson2 ||
+      config.shallow_water.test_case == ShallowWaterTestCase::kWilliamson6 ||
+      config.shallow_water.test_case == ShallowWaterTestCase::kGalewsky) {
     return config.planet.rotation_rate_rad_s *
            normalize(Vec3{config.shallow_water.flow_axis_x,
                           config.shallow_water.flow_axis_y,

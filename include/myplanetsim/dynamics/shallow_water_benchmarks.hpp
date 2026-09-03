@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/dynamics/shallow_water_state.hpp"
 
@@ -19,6 +21,23 @@ namespace mps {
                                                        Real reference_depth_m,
                                                        Real maximum_velocity_m_s,
                                                        Vec3 flow_axis);
+[[nodiscard]] ShallowWaterState make_williamson6_state(const CubedSphereGrid& grid,
+                                                       Real time_s, Real gravity_m_s2,
+                                                       Real rotation_rate_rad_s,
+                                                       Real reference_depth_m,
+                                                       Real velocity_scale_m_s,
+                                                       Vec3 flow_axis);
+
+struct SphericalWaveMode {
+  Real amplitude;
+  Real phase_rad;
+};
+
+[[nodiscard]] SphericalWaveMode diagnose_depth_wave_mode(const CubedSphereGrid& grid,
+                                                         const ShallowWaterState& state,
+                                                         Vec3 axis, int wavenumber);
+[[nodiscard]] std::uint64_t shallow_water_field_checksum(
+    const ShallowWaterState& state) noexcept;
 [[nodiscard]] ShallowWaterState make_shallow_water_initial_state(
     const CubedSphereGrid& grid, const ExperimentConfig& config);
 
