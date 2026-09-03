@@ -6,6 +6,7 @@
     "build": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.js",
     "start": "node src/main.js"
   },
   "devDependencies": {
