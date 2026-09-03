@@ -11,6 +11,7 @@
 #include <set>
 #include <stdexcept>
 #include <string_view>
+#include <vector>
 
 #include "myplanetsim/core/validation.hpp"
 
@@ -73,7 +74,53 @@ void assign_value(ControlRequestV1& request, const std::string_view key,
   } else if (key == "control.frame_directory") {
     request.frame_directory = std::filesystem::path(value);
   } else if (key == "initial_edits.count") {
-    request.initial_edits_count = parse_uint(value, line, key);
+    const auto count = parse_uint(value, line, key);
+    if (count > kControlMaxEditCount) {
+      throw parse_error(line, "initial_edits.count exceeds the supported limit");
+    }
+    request.initial_edits.resize(static_cast<std::size_t>(count));
+  } else if (key.starts_with("initial_edits.")) {
+    const auto first_dot = key.find('.', std::string_view("initial_edits.").size());
+    if (first_dot == std::string_view::npos) {
+      throw parse_error(line, "invalid initial edit key");
+    }
+    const auto index_text = key.substr(std::string_view("initial_edits.").size(),
+                                       first_dot - std::string_view("initial_edits.").size());
+    const auto index = parse_uint(index_text, line, key);
+    if (index >= kControlMaxEditCount) {
+      throw parse_error(line, "initial edit index exceeds the supported limit");
+    }
+    if (index >= request.initial_edits.size()) {
+      request.initial_edits.resize(static_cast<std::size_t>(index + 1));
+    }
+    auto& edit = request.initial_edits[static_cast<std::size_t>(index)];
+    const auto field = key.substr(first_dot + 1);
+    if (field == "kind") {
+      if (value != "gaussian_depth") {
+        throw parse_error(line, "unknown initial edit kind " + std::string(value));
+      }
+      edit.kind = InitialConditionEditKind::kGaussianDepth;
+    } else if (field == "center_x") {
+      edit.center_unit.x = parse_real(value, line, key);
+    } else if (field == "center_y") {
+      edit.center_unit.y = parse_real(value, line, key);
+    } else if (field == "center_z") {
+      edit.center_unit.z = parse_real(value, line, key);
+    } else if (field == "amplitude_m") {
+      edit.amplitude_m = parse_real(value, line, key);
+    } else if (field == "sigma_rad") {
+      edit.sigma_rad = parse_real(value, line, key);
+    } else if (field == "mass_policy") {
+      if (value == "preserve_global") {
+        edit.mass_policy = MassPolicy::kPreserveGlobal;
+      } else if (value == "allow_change") {
+        edit.mass_policy = MassPolicy::kAllowChange;
+      } else {
+        throw parse_error(line, "unknown initial edit mass policy " + std::string(value));
+      }
+    } else {
+      throw parse_error(line, "unknown initial edit field " + std::string(field));
+    }
   } else {
     throw parse_error(line, "unknown key " + std::string(key));
   }
@@ -126,7 +173,7 @@ void validate_control_request(const ControlRequestV1& request) {
   if (has_path_escape(request.frame_directory)) {
     throw std::invalid_argument("control.frame_directory must be a safe relative path");
   }
-  if (request.initial_edits_count > kControlMaxEditCount) {
+  if (request.initial_edits.size() > kControlMaxEditCount) {
     throw std::invalid_argument("initial_edits.count exceeds the supported limit");
   }
 }
@@ -170,6 +217,33 @@ ControlRequestV1 parse_control_request(std::istream& input) {
                                std::string(key));
     }
   }
+  for (std::size_t index = 0; index < request.initial_edits.size(); ++index) {
+    const std::string prefix = "initial_edits." + std::to_string(index) + ".";
+    static constexpr std::array<std::string_view, 7> edit_fields{
+        "kind", "center_x", "center_y", "center_z", "amplitude_m", "sigma_rad",
+        "mass_policy"};
+    for (const auto field : edit_fields) {
+      if (!seen_keys.contains(prefix + std::string(field))) {
+        throw std::runtime_error("control request is missing required key " + prefix +
+                                 std::string(field));
+      }
+    }
+  }
+  for (const auto& key : seen_keys) {
+    if (!key.starts_with("initial_edits.") || key == "initial_edits.count") {
+      continue;
+    }
+    const auto first_dot = key.find('.', std::string_view("initial_edits.").size());
+    const auto index_text = key.substr(std::string_view("initial_edits.").size(),
+                                       first_dot - std::string_view("initial_edits.").size());
+    std::uint64_t index = 0;
+    const auto result = std::from_chars(index_text.data(), index_text.data() + index_text.size(),
+                                        index);
+    if (result.ec != std::errc{} || result.ptr != index_text.data() + index_text.size() ||
+        index >= request.initial_edits.size()) {
+      throw std::runtime_error("initial edit key is outside initial_edits.count");
+    }
+  }
   validate_control_request(request);
   return request;
 }
@@ -193,7 +267,19 @@ void write_control_request(std::ostream& output, const ControlRequestV1& request
          << "control.maximum_time_step_s = " << request.maximum_time_step_s << '\n'
          << "control.frame_interval_steps = " << request.frame_interval_steps << '\n'
          << "control.frame_directory = " << request.frame_directory.generic_string() << '\n'
-         << "initial_edits.count = " << request.initial_edits_count << '\n';
+         << "initial_edits.count = " << request.initial_edits.size() << '\n';
+  for (std::size_t index = 0; index < request.initial_edits.size(); ++index) {
+    const auto& edit = request.initial_edits[index];
+    output << "initial_edits." << index << ".kind = "
+           << initial_condition_edit_kind_name(edit.kind) << '\n'
+           << "initial_edits." << index << ".center_x = " << edit.center_unit.x << '\n'
+           << "initial_edits." << index << ".center_y = " << edit.center_unit.y << '\n'
+           << "initial_edits." << index << ".center_z = " << edit.center_unit.z << '\n'
+           << "initial_edits." << index << ".amplitude_m = " << edit.amplitude_m << '\n'
+           << "initial_edits." << index << ".sigma_rad = " << edit.sigma_rad << '\n'
+           << "initial_edits." << index << ".mass_policy = "
+           << mass_policy_name(edit.mass_policy) << '\n';
+  }
   if (!output) {
     throw std::runtime_error("failed while writing control request");
   }
@@ -209,6 +295,25 @@ ExperimentConfig apply_control_request(const ExperimentConfig& config,
   resolved.output_directory = request.frame_directory.generic_string();
   resolved.validate();
   return resolved;
+}
+
+std::string_view initial_condition_edit_kind_name(
+    const InitialConditionEditKind kind) noexcept {
+  switch (kind) {
+    case InitialConditionEditKind::kGaussianDepth:
+      return "gaussian_depth";
+  }
+  return "unknown";
+}
+
+std::string_view mass_policy_name(const MassPolicy policy) noexcept {
+  switch (policy) {
+    case MassPolicy::kPreserveGlobal:
+      return "preserve_global";
+    case MassPolicy::kAllowChange:
+      return "allow_change";
+  }
+  return "unknown";
 }
 
 }  // namespace mps

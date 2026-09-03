@@ -17,6 +17,23 @@ control.frame_directory = runs/run_01/frames
 initial_edits.count = 0
 )";
 
+constexpr std::string_view kEditedRequest = R"(
+control.format_version = 1
+control.run_id = run_02
+control.end_time_s = 120
+control.maximum_time_step_s = 2.5
+control.frame_interval_steps = 4
+control.frame_directory = runs/run_02/frames
+initial_edits.count = 1
+initial_edits.0.kind = gaussian_depth
+initial_edits.0.center_x = 0
+initial_edits.0.center_y = 0
+initial_edits.0.center_z = 1
+initial_edits.0.amplitude_m = 2
+initial_edits.0.sigma_rad = 0.25
+initial_edits.0.mass_policy = preserve_global
+)";
+
 [[nodiscard]] mps::ControlRequestV1 parse(const std::string_view text) {
   std::istringstream input{std::string(text)};
   return mps::parse_control_request(input);
@@ -35,6 +52,18 @@ MPS_TEST_CASE("control request has a canonical round trip") {
   MPS_CHECK_EQ(second.maximum_time_step_s, first.maximum_time_step_s);
   MPS_CHECK_EQ(second.frame_interval_steps, first.frame_interval_steps);
   MPS_CHECK_EQ(second.frame_directory, first.frame_directory);
+  MPS_CHECK_EQ(second.initial_edits.size(), first.initial_edits.size());
+}
+
+MPS_TEST_CASE("control request round trips a Gaussian edit") {
+  const auto first = parse(kEditedRequest);
+  MPS_CHECK_EQ(first.initial_edits.size(), std::size_t{1});
+  MPS_CHECK_EQ(first.initial_edits[0].center_unit.z, 1.0);
+  std::ostringstream output;
+  mps::write_control_request(output, first);
+  const auto second = parse(output.str());
+  MPS_CHECK_EQ(second.initial_edits[0].amplitude_m, 2.0);
+  MPS_CHECK(second.initial_edits[0].mass_policy == mps::MassPolicy::kPreserveGlobal);
 }
 
 MPS_TEST_CASE("control request rejects malformed structure") {

@@ -11,6 +11,7 @@
 #include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
 #include "myplanetsim/dynamics/shallow_water_compatible.hpp"
 #include "myplanetsim/dynamics/shallow_water_diffusion.hpp"
+#include "myplanetsim/dynamics/shallow_water_initial_edits.hpp"
 #include "myplanetsim/dynamics/shallow_water_rhs.hpp"
 
 namespace mps {
@@ -153,7 +154,8 @@ Real shallow_water_cfl_number(const CubedSphereGrid& grid,
 
 ShallowWaterResult run_shallow_water(
     const ExperimentConfig& config, std::optional<ShallowWaterState> initial_state,
-    const std::optional<std::uint64_t> stop_after_step) {
+    const std::optional<std::uint64_t> stop_after_step,
+    const std::span<const InitialConditionEditV1> initial_edits) {
   config.validate();
   if (config.kind != ExperimentKind::kShallowWater) {
     throw std::invalid_argument("shallow-water driver requires shallow_water config");
@@ -167,6 +169,14 @@ ShallowWaterResult run_shallow_water(
   const ShallowWaterState reference = make_shallow_water_initial_state(grid, config);
   ShallowWaterState state =
       initial_state.has_value() ? std::move(*initial_state) : reference;
+  if (!initial_edits.empty()) {
+    if (initial_state.has_value()) {
+      throw std::invalid_argument("initial edits cannot be applied to a restart state");
+    }
+    const auto edit_diagnostics = apply_initial_condition_edits(
+        grid, state, initial_edits, config.shallow_water.depth_floor_m);
+    (void)edit_diagnostics;
+  }
   validate_shallow_water_state(grid, state, config.shallow_water.depth_floor_m);
   if (state.time_s < config.run.start_time_s || state.time_s > config.run.end_time_s) {
     throw std::invalid_argument("shallow-water restart time is outside configured run");
@@ -205,7 +215,7 @@ ShallowWaterResult run_shallow_water(
     sample(state);
   }
   const auto initial_diagnostics = diagnostics::diagnose_shallow_water(
-      grid, reference, config.planet.gravity_m_s2, omega);
+      grid, initial_edits.empty() ? reference : state, config.planet.gravity_m_s2, omega);
   const auto final_diagnostics = diagnostics::diagnose_shallow_water(
       grid, state, config.planet.gravity_m_s2, omega);
   const bool reached_end_time = state.time_s == config.run.end_time_s;

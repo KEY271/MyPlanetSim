@@ -2,10 +2,12 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/diagnostics/shallow_water_diagnostics.hpp"
+#include "myplanetsim/control/control_request.hpp"
 
 namespace mps {
 
@@ -35,6 +37,7 @@ struct ShallowWaterResult {
 [[nodiscard]] ShallowWaterResult run_shallow_water(
     const ExperimentConfig& config,
     std::optional<ShallowWaterState> initial_state = std::nullopt,
-    std::optional<std::uint64_t> stop_after_step = std::nullopt);
+    std::optional<std::uint64_t> stop_after_step = std::nullopt,
+    std::span<const InitialConditionEditV1> initial_edits = {});
 
 }  // namespace mps
