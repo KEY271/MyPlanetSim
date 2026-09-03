@@ -23,6 +23,11 @@ struct ShallowWaterState {
   [[nodiscard]] Vec3 velocity(std::size_t cell) const;
 };
 
+struct ShallowWaterTendency {
+  std::vector<Real> depth;
+  std::vector<Vec3> momentum;
+};
+
 [[nodiscard]] std::vector<Real> flatten_shallow_water_state(
     const ShallowWaterState& state);
 [[nodiscard]] ShallowWaterState unflatten_shallow_water_state(
