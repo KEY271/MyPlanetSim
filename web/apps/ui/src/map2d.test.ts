@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inverseProject, projectUnit } from "./map2d";
+import { inverseProject, projectUnit } from "./projection";
 
 describe("2D map projection", () => {
   it("round trips known unit vectors", () => {

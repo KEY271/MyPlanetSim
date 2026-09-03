@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { VisualDatasetV1 } from "@myplanetsim/protocol";
+import { UnitVector, VisualDatasetV1 } from "@myplanetsim/protocol";
 import { createGlobeGeometry, createGridGeometry, pickedCellFromFace } from "./globe";
 
 interface Globe3DProps {
@@ -8,9 +8,10 @@ interface Globe3DProps {
   readonly fieldId: string;
   readonly gridMode: "off" | "panel_seams" | "all_cells";
   readonly onPick?: (cell: number | null) => void;
+  readonly pendingOrigin?: UnitVector;
 }
 
-export function Globe3D({ dataset, fieldId, gridMode, onPick }: Globe3DProps) {
+export function Globe3D({ dataset, fieldId, gridMode, onPick, pendingOrigin }: Globe3DProps) {
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!host.current) return undefined;
@@ -27,6 +28,8 @@ export function Globe3D({ dataset, fieldId, gridMode, onPick }: Globe3DProps) {
       new THREE.LineBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.55 }));
     grid.scale.setScalar(1.002);
     scene.add(surface, grid);
+    const marker = pendingOrigin ? new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 8), new THREE.MeshBasicMaterial({ color: "#ffcf56" })) : null;
+    if (marker && pendingOrigin) { marker.position.set(...pendingOrigin).multiplyScalar(1.03); scene.add(marker); }
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let dragging = false;
@@ -90,9 +93,11 @@ export function Globe3D({ dataset, fieldId, gridMode, onPick }: Globe3DProps) {
       (surface.material as THREE.Material).dispose();
       grid.geometry.dispose();
       (grid.material as THREE.Material).dispose();
+      marker?.geometry.dispose();
+      (marker?.material as THREE.Material | undefined)?.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [dataset, fieldId, gridMode, onPick]);
+  }, [dataset, fieldId, gridMode, onPick, pendingOrigin]);
   return <div ref={host} aria-label="3D globe" className="globe-3d" />;
 }

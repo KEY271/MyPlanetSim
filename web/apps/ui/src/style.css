@@ -21,3 +21,11 @@ body { margin: 0; }
 .map-2d { position: relative; min-height: 24rem; width: 100%; touch-action: none; }
 .map-2d canvas { position: absolute; inset: 0; height: 100%; width: 100%; }
 .map-2d button { position: absolute; right: 0.75rem; top: 0.75rem; }
+
+.control-panel, .request-panel { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1.5rem 0; }
+.control-panel label { display: grid; gap: 0.25rem; }
+.view-grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.view-grid > div { min-width: 0; }
+.request-panel { display: block; }
+.request-panel pre { overflow: auto; padding: 1rem; background: #18232d; }
+@media (max-width: 60rem) { .view-grid { grid-template-columns: 1fr; } }

@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { VisualDatasetV1, cubedSphereCells, gridEdges } from "@myplanetsim/protocol";
-import { drawWrappedSegment, inverseProject, projectUnit } from "./map2d";
+import { UnitVector, VisualDatasetV1, cubedSphereCells, gridEdges } from "@myplanetsim/protocol";
+import { drawWrappedSegment, inverseProject, projectUnit } from "./projection";
 
 interface Map2DProps {
   readonly dataset: VisualDatasetV1;
   readonly fieldId: string;
   readonly gridMode: "off" | "panel_seams" | "all_cells";
   readonly onPick?: (cell: number | null) => void;
+  readonly pendingOrigin?: UnitVector;
 }
 
-export function Map2D({ dataset, fieldId, gridMode, onPick }: Map2DProps) {
+export function Map2D({ dataset, fieldId, gridMode, onPick, pendingOrigin }: Map2DProps) {
   const host = useRef<HTMLDivElement>(null);
   const base = useRef<HTMLCanvasElement>(null);
   const grid = useRef<HTMLCanvasElement>(null);
@@ -21,9 +22,10 @@ export function Map2D({ dataset, fieldId, gridMode, onPick }: Map2DProps) {
     const draw = (width: number, height: number) => {
       const field = dataset.fields.find((candidate) => candidate.id === fieldId);
       if (!field) return;
-      const baseContext = base.current?.getContext("2d"); const gridContext = grid.current?.getContext("2d");
-      if (!baseContext || !gridContext) return;
+      const baseContext = base.current?.getContext("2d"); const gridContext = grid.current?.getContext("2d"); const overlayContext = overlay.current?.getContext("2d");
+      if (!baseContext || !gridContext || !overlayContext) return;
       baseContext.clearRect(0, 0, width, height); gridContext.clearRect(0, 0, width, height);
+      overlayContext.clearRect(0, 0, width, height);
       const cells = cubedSphereCells(dataset.grid.cellsPerPanel);
       const minimum = Math.min(...field.values); const range = Math.max(...field.values) - minimum || 1;
       for (let index = 0; index < cells.length; index += 1) {
@@ -36,6 +38,7 @@ export function Map2D({ dataset, fieldId, gridMode, onPick }: Map2DProps) {
         for (const edge of gridEdges(dataset.grid.cellsPerPanel)) { if (gridMode === "panel_seams" && !edge.panelSeam) continue; drawWrappedSegment(gridContext, edge.first, edge.second, width, height, view.zoom, view.pan); }
         gridContext.stroke();
       }
+      if (pendingOrigin) { const marker = projectUnit(pendingOrigin, width, height, view.zoom, view.pan); overlayContext.fillStyle = "#ffcf56"; overlayContext.beginPath(); overlayContext.arc(marker[0], marker[1], 6, 0, 2 * Math.PI); overlayContext.fill(); }
     };
     const resize = () => {
       const bounds = host.current?.getBoundingClientRect(); if (!bounds) return;
@@ -44,7 +47,7 @@ export function Map2D({ dataset, fieldId, gridMode, onPick }: Map2DProps) {
     };
     const observer = new ResizeObserver(resize); observer.observe(host.current); resize();
     return () => observer.disconnect();
-  }, [dataset, fieldId, gridMode, view]);
+  }, [dataset, fieldId, gridMode, view, pendingOrigin]);
   useEffect(() => {
     const element = host.current; if (!element) return undefined;
     let dragging = false; let moved = false; let last: [number, number] = [0, 0];
