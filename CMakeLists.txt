@@ -13,6 +13,7 @@ include(cmake/MyPlanetSimFormatting.cmake)
 
 add_library(
   myplanetsim_core
+  src/config/experiment_config.cpp
   src/core/planet_parameters.cpp
   src/core/validation.cpp
   src/core/version.cpp
@@ -37,5 +38,10 @@ target_link_libraries(
 include(CTest)
 if(BUILD_TESTING)
   add_test(NAME smoke.empty_program COMMAND my_planet_sim)
+  add_test(NAME smoke.help COMMAND my_planet_sim --help)
+  add_test(
+    NAME smoke.config
+    COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase0_ode.cfg
+  )
   add_subdirectory(tests)
 endif()
