@@ -52,6 +52,7 @@ add_library(
   src/diagnostics/reductions.cpp
   src/diagnostics/shallow_water_diagnostics.cpp
   src/dynamics/shallow_water_state.cpp
+  src/dynamics/shallow_water_flux.cpp
   src/geometry/cubed_sphere.cpp
   src/grid/cubed_sphere_field.cpp
   src/grid/cubed_sphere_grid.cpp
