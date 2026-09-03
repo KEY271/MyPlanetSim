@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "myplanetsim/core/validation.hpp"
+#include "myplanetsim/dynamics/shallow_water_reconstruction.hpp"
 
 namespace mps {
 namespace {
@@ -42,9 +43,24 @@ void divide_by_area_and_project(const CubedSphereGrid& grid,
 ShallowWaterRhsComponents assemble_first_order_shallow_water_rhs(
     const CubedSphereGrid& grid, const ShallowWaterState& state,
     const Real gravity_m_s2, const Real rotation_rate_rad_s, const Real depth_floor_m) {
+  ShallowWaterParameters parameters{};
+  parameters.reconstruction = ReconstructionKind::kPiecewiseConstant;
+  parameters.limiter = LimiterKind::kNone;
+  parameters.depth_floor_m = depth_floor_m;
+  return assemble_shallow_water_rhs(grid, state, parameters, gravity_m_s2,
+                                    rotation_rate_rad_s);
+}
+
+ShallowWaterRhsComponents assemble_shallow_water_rhs(
+    const CubedSphereGrid& grid, const ShallowWaterState& state,
+    const ShallowWaterParameters& parameters, const Real gravity_m_s2,
+    const Real rotation_rate_rad_s) {
   require_positive(gravity_m_s2, "shallow-water gravity");
   require_finite(rotation_rate_rad_s, "shallow-water rotation rate");
-  validate_shallow_water_state(grid, state, depth_floor_m);
+  validate_shallow_water_state(grid, state, parameters.depth_floor_m);
+  const auto reconstructed = reconstruct_shallow_water_face_states(
+      grid, state, parameters.reconstruction, parameters.limiter,
+      parameters.depth_floor_m);
   ShallowWaterRhsComponents result{
       .flux = zero_tendency(grid.cell_count()),
       .pressure = zero_tendency(grid.cell_count()),
@@ -52,19 +68,12 @@ ShallowWaterRhsComponents assemble_first_order_shallow_water_rhs(
       .diffusion = zero_tendency(grid.cell_count()),
       .total = zero_tendency(grid.cell_count()),
       .maximum_wave_speed_m_s = 0.0,
+      .limiter_activations = reconstructed.limiter_activations,
   };
   for (const auto& edge : grid.edges()) {
-    const std::size_t left = grid.cell_index(edge.left_cell);
-    const std::size_t right = grid.cell_index(edge.right_cell);
     const auto basis = edge_tangent_basis(edge);
-    const ShallowWaterPrimitive left_state{
-        .depth_m = state.depth[left],
-        .velocity_m_s = project_tangent(state.velocity(left), edge.center),
-    };
-    const ShallowWaterPrimitive right_state{
-        .depth_m = state.depth[right],
-        .velocity_m_s = project_tangent(state.velocity(right), edge.center),
-    };
+    const auto& left_state = reconstructed.edges[edge.id].left;
+    const auto& right_state = reconstructed.edges[edge.id].right;
     const auto edge_flux =
         rusanov_shallow_water_flux(left_state, right_state, basis, gravity_m_s2);
     const Vec3 pressure_flux = 0.25 * gravity_m_s2 *

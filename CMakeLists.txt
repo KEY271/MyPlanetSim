@@ -55,6 +55,7 @@ add_library(
   src/dynamics/shallow_water_flux.cpp
   src/dynamics/shallow_water_driver.cpp
   src/dynamics/shallow_water_rhs.cpp
+  src/dynamics/shallow_water_reconstruction.cpp
   src/geometry/cubed_sphere.cpp
   src/grid/cubed_sphere_field.cpp
   src/grid/cubed_sphere_grid.cpp

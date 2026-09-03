@@ -57,24 +57,24 @@ void project_and_validate_stage(const CubedSphereGrid& grid, ShallowWaterState& 
 }
 
 void ssp_rk3_step(const CubedSphereGrid& grid, ShallowWaterState& state,
-                  const Real time_step_s, const Real gravity_m_s2,
-                  const Real rotation_rate_rad_s, const Real depth_floor_m,
+                  const Real time_step_s, const ShallowWaterParameters& parameters,
+                  const Real gravity_m_s2, const Real rotation_rate_rad_s,
                   const Real cfl) {
   const ShallowWaterState initial = state;
-  const auto rhs1 = assemble_first_order_shallow_water_rhs(
-      grid, initial, gravity_m_s2, rotation_rate_rad_s, depth_floor_m);
+  const auto rhs1 = assemble_shallow_water_rhs(grid, initial, parameters, gravity_m_s2,
+                                               rotation_rate_rad_s);
   auto stage1 = euler_update(initial, rhs1.total, time_step_s);
-  project_and_validate_stage(grid, stage1, depth_floor_m, 1, cfl);
+  project_and_validate_stage(grid, stage1, parameters.depth_floor_m, 1, cfl);
 
-  const auto rhs2 = assemble_first_order_shallow_water_rhs(
-      grid, stage1, gravity_m_s2, rotation_rate_rad_s, depth_floor_m);
+  const auto rhs2 = assemble_shallow_water_rhs(grid, stage1, parameters, gravity_m_s2,
+                                               rotation_rate_rad_s);
   auto stage2 = convex_update(initial, 0.75, stage1, rhs2.total, 0.25, time_step_s);
-  project_and_validate_stage(grid, stage2, depth_floor_m, 2, cfl);
+  project_and_validate_stage(grid, stage2, parameters.depth_floor_m, 2, cfl);
 
-  const auto rhs3 = assemble_first_order_shallow_water_rhs(
-      grid, stage2, gravity_m_s2, rotation_rate_rad_s, depth_floor_m);
+  const auto rhs3 = assemble_shallow_water_rhs(grid, stage2, parameters, gravity_m_s2,
+                                               rotation_rate_rad_s);
   state = convex_update(initial, 1.0 / 3.0, stage2, rhs3.total, 2.0 / 3.0, time_step_s);
-  project_and_validate_stage(grid, state, depth_floor_m, 3, cfl);
+  project_and_validate_stage(grid, state, parameters.depth_floor_m, 3, cfl);
 }
 
 }  // namespace
@@ -174,8 +174,8 @@ ShallowWaterResult run_shallow_water(
     const Real actual_cfl =
         shallow_water_cfl_number(grid, state, config.planet.gravity_m_s2, time_step);
     maximum_cfl = std::max(maximum_cfl, actual_cfl);
-    ssp_rk3_step(grid, state, time_step, config.planet.gravity_m_s2,
-                 config.planet.rotation_rate_rad_s, config.shallow_water.depth_floor_m,
+    ssp_rk3_step(grid, state, time_step, config.shallow_water,
+                 config.planet.gravity_m_s2, config.planet.rotation_rate_rad_s,
                  actual_cfl);
     state.time_s += time_step;
     ++state.step;
