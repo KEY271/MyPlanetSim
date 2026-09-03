@@ -11,7 +11,11 @@ include(cmake/MyPlanetSimWarnings.cmake)
 include(cmake/MyPlanetSimSanitizers.cmake)
 include(cmake/MyPlanetSimFormatting.cmake)
 
-add_library(myplanetsim_core src/core/version.cpp)
+add_library(
+  myplanetsim_core
+  src/core/validation.cpp
+  src/core/version.cpp
+)
 target_compile_features(myplanetsim_core PUBLIC cxx_std_20)
 target_include_directories(
   myplanetsim_core

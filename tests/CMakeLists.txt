@@ -4,7 +4,7 @@ function(mps_add_test target source)
   target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(
     ${target}
-    PRIVATE myplanetsim_warnings myplanetsim_sanitizers
+    PRIVATE myplanetsim_core myplanetsim_warnings myplanetsim_sanitizers
   )
   add_test(NAME ${target} COMMAND ${target})
 endfunction()
@@ -12,3 +12,4 @@ endfunction()
 mps_add_test(unit.test_support test_support.cpp)
 mps_add_test(unit.test_support_failure test_support_failure.cpp)
 set_tests_properties(unit.test_support_failure PROPERTIES WILL_FAIL TRUE)
+mps_add_test(unit.validation test_validation.cpp)
