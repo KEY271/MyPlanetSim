@@ -11,15 +11,18 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 
 ## ビルドと実行
 
-CMake 3.25 以上と C++20 対応コンパイラを使用します。
+CMake 3.25 以上、Ninja、C++20 対応コンパイラを使用します。通常の開発では
+CMake preset を利用します。
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-./build/my_planet_sim
-ctest --test-dir build --output-on-failure
-cmake --build build --target format-check
+cmake --preset dev
+cmake --build --preset dev
+./build/dev/my_planet_sim
+ctest --preset dev
+cmake --build build/dev --target format-check
 ```
+
+`release` と `asan-ubsan` preset も同じ configure/build/test 手順で使用できます。
 
 現在の実行ファイルは、正常終了するだけの空プログラムです。上記の実行とスモークテストが C++ 開発環境の最初の検証になります。
 

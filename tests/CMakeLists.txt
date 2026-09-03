@@ -2,7 +2,10 @@ function(mps_add_test target source)
   add_executable(${target} ${source})
   target_compile_features(${target} PRIVATE cxx_std_20)
   target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(${target} PRIVATE myplanetsim_warnings)
+  target_link_libraries(
+    ${target}
+    PRIVATE myplanetsim_warnings myplanetsim_sanitizers
+  )
   add_test(NAME ${target} COMMAND ${target})
 endfunction()
 
