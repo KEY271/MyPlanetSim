@@ -1,0 +1,17 @@
+:root {
+  color: #e8edf2;
+  background: #101820;
+  font-family: system-ui, sans-serif;
+}
+
+body { margin: 0; }
+
+.app-shell {
+  box-sizing: border-box;
+  max-width: 60rem;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 8rem 2rem;
+}
+
+.eyebrow { color: #7bdff2; letter-spacing: 0.08em; text-transform: uppercase; }
