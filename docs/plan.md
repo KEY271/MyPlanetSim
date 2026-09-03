@@ -113,6 +113,9 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 ### Phase 2 — cubed-sphere 全球 shallow-water
 
+コミット単位の実装順、基準 finite-volume 法と compatible 候補の比較方法、
+受け入れ条件は [Phase 2 実装計画](phase-2-plan.md) に定める。
+
 実装するもの:
 
 - 球面計量と惑星自転を含む shallow-water 力学
