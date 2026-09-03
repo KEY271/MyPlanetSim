@@ -15,3 +15,5 @@ body { margin: 0; }
 }
 
 .eyebrow { color: #7bdff2; letter-spacing: 0.08em; text-transform: uppercase; }
+
+.globe-3d { min-height: 24rem; width: 100%; touch-action: none; }
