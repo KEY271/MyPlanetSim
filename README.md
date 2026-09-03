@@ -13,7 +13,10 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [科学・数値規約](docs/conventions.md): 単位、座標、添字、符号、誤差・保存量の共通定義
 - [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
 - [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果
+- [Phase 2 検証報告](docs/validation/phase-2.md): shallow-water 標準試験、保存量、方式比較の検証結果
 - [cubed-sphere panel ADR](docs/adr/0001-cubed-sphere-panel-conventions.md): panel、edge、向き、flux 符号規約
+- [shallow-water state ADR](docs/adr/0002-shallow-water-state-and-staggering.md): 予報変数、staggering、flux/source 分割
+- [水平離散化 ADR](docs/adr/0003-shallow-water-horizontal-discretization.md): 基準 Rusanov 法と compatible 候補の比較と採否
 
 ## ビルドと実行
 
@@ -31,13 +34,20 @@ cmake --build build/dev --target format-check
 
 `release` と `asan-ubsan` preset も同じ configure/build/test 手順で使用できます。
 
-実行ファイルは `experiment.kind` に応じて、Phase 0 の製造 ODE または
-Phase 1 の全球 cubed-sphere tracer 輸送を実行します。輸送ケースは診断を
-標準出力へ、cell snapshot を `output.directory/tracer.csv` へ出力します。
+実行ファイルは `experiment.kind` に応じて、Phase 0 の製造 ODE、Phase 1 の
+全球 cubed-sphere tracer 輸送、Phase 2 の全球 shallow-water を実行します。
+輸送ケースは診断を標準出力へ、cell snapshot を `output.directory/tracer.csv`
+へ出力します。shallow-water ケースは診断と保存量 drift、計算コストを標準
+出力へ、cell snapshot を `output.directory/shallow_water.csv`、区間診断を
+`output.directory/diagnostics.csv` へ出力します。
 
-Phase 0 の科学・ソフトウェア基盤と Phase 1 の cubed-sphere 幾何・球面
-受動輸送はローカル検証を完了しています。次の開発対象は Phase 2 の全球
-shallow-water 系です。
+```sh
+./build/dev/my_planet_sim --config configs/phase2_williamson2.cfg
+```
+
+Phase 0 の科学・ソフトウェア基盤、Phase 1 の cubed-sphere 幾何・球面受動
+輸送、Phase 2 の全球 shallow-water はローカル検証を完了しています。次の
+開発対象は Phase 3 です。
 
 ## 将来のファイル構成
 

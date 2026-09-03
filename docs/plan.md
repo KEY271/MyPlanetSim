@@ -114,7 +114,9 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 ### Phase 2 — cubed-sphere 全球 shallow-water
 
 コミット単位の実装順、基準 finite-volume 法と compatible 候補の比較方法、
-受け入れ条件は [Phase 2 実装計画](phase-2-plan.md) に定める。
+受け入れ条件は [Phase 2 実装計画](phase-2-plan.md) に定める。実装は完了し、
+結果は [Phase 2 検証報告](validation/phase-2.md) に、採用する水平離散化は
+[ADR 0003](adr/0003-shallow-water-horizontal-discretization.md) に記録した。
 
 実装するもの:
 

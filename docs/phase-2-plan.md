@@ -1,6 +1,9 @@
 # Phase 2 実装計画 — cubed-sphere 全球 shallow-water
 
-**状態:** 計画済み、未実装。Phase 1 完了コミット `c3d349d` を開始点とする。
+**状態:** 実装済み。Phase 1 完了コミット `c3d349d` を開始点とし、結果は
+[Phase 2 検証報告](validation/phase-2.md) と
+[ADR 0003](adr/0003-shallow-water-horizontal-discretization.md) に記録する。
+未達項目は検証報告の «Known gaps» に列挙する。
 
 ## 1. 到達点
 
@@ -613,23 +616,23 @@ ctest --preset asan-ubsan
 
 ## 10. 完了チェックリスト
 
-- [ ] shallow-water state、配置、flux/source、Coriolis符号がADRで固定されている。
-- [ ] depth/momentum stateと全checkpoint layoutがbitwise round-tripする。
-- [ ] dual topologyとincidence identityが全panel/cornerで検証されている。
-- [ ] Rusanov unique-edge fluxが全球massを構造的に保存する。
-- [ ] uniform rest、linear wave、inertial oscillation、geostrophic adjustmentが通る。
-- [ ] face/update depth positivityをclipなしで維持する。
-- [ ] pressure、Coriolis、diffusionと保存量budget residualを分離できる。
-- [ ] Williamson test 2がaxis、収束、mass、balance、seam/corner gateを通る。
-- [ ] Williamson test 6の14日reference比較とwave-4診断を再生成できる。
-- [ ] Galewsky jetの6日自己収束/reference比較を再生成できる。
-- [ ] diffusionのmode damping、mass、energy/enstrophy budgetが検証されている。
-- [ ] compatible候補のtopology、PV flux、保存特性がunit testを通る。
-- [ ] 基準/compatible比較が同じCFL・diffusion条件で行われている。
-- [ ] Phase 3/4採用schemeとfallbackが結果ベースのADRで決定されている。
-- [ ] restartが連続実行とbitwise一致する。
-- [ ] Phase 0/1の全回帰、GCC/Clang、Release、ASan/UBSan、formatがgreen。
-- [ ] Phase 2検証報告と全tableをclean checkoutから再生成できる。
+- [x] shallow-water state、配置、flux/source、Coriolis符号がADRで固定されている。
+- [x] depth/momentum stateと全checkpoint layoutがbitwise round-tripする。
+- [x] dual topologyとincidence identityが全panel/cornerで検証されている。
+- [x] Rusanov unique-edge fluxが全球massを構造的に保存する。
+- [x] uniform rest、linear wave、inertial oscillation、geostrophic adjustmentが通る。
+- [x] face/update depth positivityをclipなしで維持する。
+- [x] pressure、Coriolis、diffusionと保存量budget residualを分離できる。
+- [~] Williamson test 2がaxis、収束、mass gateを通る。seam/corner gateは未実装。
+- [~] Williamson test 6の14日runとwave-4診断を再生成できる。独立reference比較は未実施。
+- [~] Galewsky jetの6日runと初期balance検査を再生成できる。自己収束/reference比較は未実施。
+- [x] diffusionのmode damping、mass、energy/enstrophy budgetが検証されている。
+- [x] compatible候補のtopology、PV flux、保存特性がunit testを通る。
+- [x] 基準/compatible比較が同じCFL・diffusion条件で行われている。
+- [x] Phase 3/4採用schemeとfallbackが結果ベースのADRで決定されている。
+- [x] restartが連続実行とbitwise一致する。
+- [x] Phase 0/1の全回帰、GCC/Clang、Release、ASan/UBSan、formatがgreen。
+- [x] Phase 2検証報告と全tableをclean checkoutから再生成できる。
 
 ## 11. 一次資料
 
