@@ -13,6 +13,7 @@ include(cmake/MyPlanetSimFormatting.cmake)
 
 add_library(
   myplanetsim_core
+  src/core/planet_parameters.cpp
   src/core/validation.cpp
   src/core/version.cpp
 )
