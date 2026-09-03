@@ -30,7 +30,9 @@ three-valent cube corners do not converge in either operator.
 ## Measurements
 
 All runs use the same grid, initial state, CFL target of 0.45 and no explicit
-diffusion.  Williamson test 2 is integrated for five days, and the errors are
+diffusion. The reference scheme uses linear reconstruction with the
+Barth--Jespersen limiter; the compatible candidate is centred and reconstructs
+no face states.  Williamson test 2 is integrated for five days, and the errors are
 taken against its steady analytic solution.
 
 ```sh

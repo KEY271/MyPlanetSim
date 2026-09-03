@@ -7,8 +7,11 @@ namespace mps {
 
 // Vector-invariant C-grid tendency built on the compatible diagnostic
 // operators. The shared unique-edge mass flux makes the depth update
-// structurally conservative; the vorticity term is written as a potential
-// vorticity flux so that a constant potential vorticity stays constant.
+// structurally conservative, and the planetary and relative vorticity enter
+// through one potential vorticity flux instead of a separate Coriolis source.
+//
+// The scheme is centred: it reconstructs no face states, so
+// `shallow_water.reconstruction` and `shallow_water.limiter` are unused.
 //
 // The reported components follow the reference scheme where they can:
 // `flux` holds the mass divergence together with the kinetic-energy gradient,
