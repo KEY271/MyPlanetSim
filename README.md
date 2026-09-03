@@ -8,9 +8,18 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 
 - [開発・検証計画](docs/plan.md): 数値方式の初期方針、開発段階、各段階の検証項目、完了条件、参考文献
 
-## 現在の状態
+## ビルドと実行
 
-計画策定段階です。ソースコード、ビルド手順、実行例は実装開始後に追加します。
+CMake 3.25 以上と C++20 対応コンパイラを使用します。
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+./build/my_planet_sim
+ctest --test-dir build --output-on-failure
+```
+
+現在の実行ファイルは、正常終了するだけの空プログラムです。上記の実行とスモークテストが C++ 開発環境の最初の検証になります。
 
 ## 将来のファイル構成
 
@@ -20,7 +29,7 @@ MyPlanetSim/
 ├── README.md               # プロジェクト入口
 ├── docs/                   # 設計、数式、検証記録、ADR
 ├── include/myplanetsim/    # 公開 C++ API
-├── src/                    # 格子、数値演算、力学、物理、I/O
+├── src/                    # 実行入口、格子、数値演算、力学、物理、I/O
 ├── apps/                   # 実行プログラム
 ├── tests/                  # unit / convergence / regression テスト
 ├── configs/                # 再現可能な実験設定
