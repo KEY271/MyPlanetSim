@@ -27,6 +27,10 @@ namespace mps {
                                                        Real reference_depth_m,
                                                        Real velocity_scale_m_s,
                                                        Vec3 flow_axis);
+[[nodiscard]] ShallowWaterState make_galewsky_state(
+    const CubedSphereGrid& grid, Real time_s, Real gravity_m_s2,
+    Real rotation_rate_rad_s, Real mean_depth_m, Real maximum_velocity_m_s,
+    Vec3 flow_axis, bool add_height_perturbation = true);
 
 struct SphericalWaveMode {
   Real amplitude;

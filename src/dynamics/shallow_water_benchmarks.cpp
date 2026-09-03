@@ -1,8 +1,10 @@
 #include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <numbers>
 #include <stdexcept>
 #include <vector>
 
@@ -210,6 +212,100 @@ ShallowWaterState make_williamson6_state(const CubedSphereGrid& grid, const Real
   return state;
 }
 
+ShallowWaterState make_galewsky_state(const CubedSphereGrid& grid, const Real time_s,
+                                      const Real gravity_m_s2,
+                                      const Real rotation_rate_rad_s,
+                                      const Real mean_depth_m,
+                                      const Real maximum_velocity_m_s,
+                                      const Vec3 flow_axis,
+                                      const bool add_height_perturbation) {
+  require_non_negative(time_s, "Galewsky time");
+  require_positive(gravity_m_s2, "Galewsky gravity");
+  require_finite(rotation_rate_rad_s, "Galewsky rotation rate");
+  require_positive(mean_depth_m, "Galewsky mean depth");
+  require_positive(maximum_velocity_m_s, "Galewsky maximum velocity");
+  const AxisBasis basis = make_axis_basis(flow_axis);
+  constexpr Real phi0 = std::numbers::pi_v<Real> / 7.0;
+  constexpr Real phi1 = 0.5 * std::numbers::pi_v<Real> - phi0;
+  constexpr Real perturbation_latitude = std::numbers::pi_v<Real> / 4.0;
+  constexpr Real perturbation_longitude_scale = 1.0 / 3.0;
+  constexpr Real perturbation_latitude_scale = 1.0 / 15.0;
+  constexpr Real perturbation_height_m = 120.0;
+  constexpr std::size_t integration_intervals = 4096;
+  constexpr Real latitude_min = -0.5 * std::numbers::pi_v<Real>;
+  constexpr Real latitude_step =
+      std::numbers::pi_v<Real> / static_cast<Real>(integration_intervals);
+  const Real normalization = std::exp(-4.0 / ((phi1 - phi0) * (phi1 - phi0)));
+  const auto zonal_velocity = [&](const Real latitude) {
+    if (!(latitude > phi0 && latitude < phi1)) {
+      return 0.0;
+    }
+    return maximum_velocity_m_s / normalization *
+           std::exp(1.0 / ((latitude - phi0) * (latitude - phi1)));
+  };
+  const auto balance_integrand = [&](const Real latitude) {
+    const Real velocity = zonal_velocity(latitude);
+    return velocity * (2.0 * rotation_rate_rad_s * std::sin(latitude) +
+                       velocity * std::tan(latitude) / grid.radius_m());
+  };
+  std::vector<Real> balance_integral(integration_intervals + 1);
+  Real previous = balance_integrand(latitude_min);
+  for (std::size_t sample = 1; sample <= integration_intervals; ++sample) {
+    const Real latitude = latitude_min + latitude_step * static_cast<Real>(sample);
+    const Real current = balance_integrand(latitude);
+    balance_integral[sample] =
+        balance_integral[sample - 1] + 0.5 * latitude_step * (previous + current);
+    previous = current;
+  }
+  const auto interpolated_balance = [&](const Real latitude) {
+    const Real coordinate = std::clamp((latitude - latitude_min) / latitude_step, 0.0,
+                                       static_cast<Real>(integration_intervals));
+    const std::size_t lower =
+        std::min(static_cast<std::size_t>(coordinate), integration_intervals - 1);
+    const Real fraction = coordinate - static_cast<Real>(lower);
+    return (1.0 - fraction) * balance_integral[lower] +
+           fraction * balance_integral[lower + 1];
+  };
+
+  ShallowWaterState state{.time_s = time_s,
+                          .step = 0,
+                          .depth = std::vector<Real>(grid.cell_count()),
+                          .momentum = std::vector<Vec3>(grid.cell_count())};
+  Real integrated_depth = 0.0;
+  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
+    const Vec3 position = grid.cells()[cell].center;
+    const Real sine_latitude = std::clamp(dot(basis.axis, position), -1.0, 1.0);
+    const Real latitude = std::asin(sine_latitude);
+    const Real cosine_latitude = std::cos(latitude);
+    const Real lambda = longitude(basis, position);
+    const Vec3 east = cosine_latitude > 1.0e-14
+                          ? cross(basis.axis, position) / cosine_latitude
+                          : basis.longitude_quarter;
+    Real depth = -(grid.radius_m() / gravity_m_s2) * interpolated_balance(latitude);
+    if (add_height_perturbation) {
+      depth +=
+          perturbation_height_m * cosine_latitude *
+          std::exp(-std::pow(lambda / perturbation_longitude_scale, 2)) *
+          std::exp(-std::pow(
+              (perturbation_latitude - latitude) / perturbation_latitude_scale, 2));
+    }
+    state.depth[cell] = depth;
+    state.momentum[cell] = depth * zonal_velocity(latitude) * east;
+    integrated_depth += grid.cells()[cell].area_m2 * depth;
+  }
+  const Real depth_shift = mean_depth_m - integrated_depth / grid.total_area_m2();
+  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
+    const Vec3 velocity =
+        state.depth[cell] != 0.0 ? state.momentum[cell] / state.depth[cell] : Vec3{};
+    state.depth[cell] += depth_shift;
+    if (!(state.depth[cell] > 0.0) || !std::isfinite(state.depth[cell])) {
+      throw std::invalid_argument("Galewsky constants produce invalid depth");
+    }
+    state.momentum[cell] = state.depth[cell] * velocity;
+  }
+  return state;
+}
+
 SphericalWaveMode diagnose_depth_wave_mode(const CubedSphereGrid& grid,
                                            const ShallowWaterState& state,
                                            const Vec3 axis, const int wavenumber) {
@@ -276,8 +372,12 @@ ShallowWaterState make_shallow_water_initial_state(const CubedSphereGrid& grid,
           {config.shallow_water.flow_axis_x, config.shallow_water.flow_axis_y,
            config.shallow_water.flow_axis_z});
     case ShallowWaterTestCase::kGalewsky:
-      throw std::invalid_argument(
-          "requested shallow-water benchmark is not yet available");
+      return make_galewsky_state(
+          grid, config.run.start_time_s, config.planet.gravity_m_s2,
+          config.planet.rotation_rate_rad_s, config.shallow_water.mean_depth_m,
+          config.shallow_water.maximum_velocity_m_s,
+          {config.shallow_water.flow_axis_x, config.shallow_water.flow_axis_y,
+           config.shallow_water.flow_axis_z});
   }
   throw std::logic_error("unknown shallow-water test case");
 }
