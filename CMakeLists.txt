@@ -52,6 +52,7 @@ add_library(
   src/diagnostics/reductions.cpp
   src/io/checkpoint.cpp
   src/io/run_metadata.cpp
+  src/phase0/ode_experiment.cpp
 )
 target_compile_features(myplanetsim_core PUBLIC cxx_std_20)
 target_include_directories(
@@ -73,11 +74,16 @@ target_link_libraries(
 
 include(CTest)
 if(BUILD_TESTING)
-  add_test(NAME smoke.empty_program COMMAND my_planet_sim)
   add_test(NAME smoke.help COMMAND my_planet_sim --help)
   add_test(
-    NAME smoke.config
+    NAME smoke.phase0_ode
     COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase0_ode.cfg
   )
+  set_tests_properties(
+    smoke.phase0_ode
+    PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
+  )
+  add_test(NAME smoke.invalid_cli COMMAND my_planet_sim --unknown value)
+  set_tests_properties(smoke.invalid_cli PROPERTIES WILL_FAIL TRUE)
   add_subdirectory(tests)
 endif()

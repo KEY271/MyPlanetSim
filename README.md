@@ -18,14 +18,15 @@ CMake preset を利用します。
 ```sh
 cmake --preset dev
 cmake --build --preset dev
-./build/dev/my_planet_sim
+./build/dev/my_planet_sim --config configs/phase0_ode.cfg
 ctest --preset dev
 cmake --build build/dev --target format-check
 ```
 
 `release` と `asan-ubsan` preset も同じ configure/build/test 手順で使用できます。
 
-現在の実行ファイルは、正常終了するだけの空プログラムです。上記の実行とスモークテストが C++ 開発環境の最初の検証になります。
+現在の実行ファイルは、Phase 0 の製造解 `dy/dt = -lambda*y` を積分し、
+解析解との誤差と再現用 metadata を出力します。
 
 ## 将来のファイル構成
 
