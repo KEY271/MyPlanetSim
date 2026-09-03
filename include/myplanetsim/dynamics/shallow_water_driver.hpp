@@ -27,6 +27,16 @@ struct ShallowWaterResult {
   std::vector<ShallowWaterSample> samples;
 };
 
+struct ShallowWaterRunHooks {
+  using FrameObserver = void (*)(const ShallowWaterState&, void* context);
+  using CancellationPredicate = bool (*)(void* context);
+
+  FrameObserver on_frame = nullptr;
+  void* observer_context = nullptr;
+  CancellationPredicate is_cancelled = nullptr;
+  void* cancellation_context = nullptr;
+};
+
 [[nodiscard]] Real stable_shallow_water_time_step(const CubedSphereGrid& grid,
                                                   const ShallowWaterState& state,
                                                   Real gravity_m_s2, Real cfl,
@@ -38,6 +48,7 @@ struct ShallowWaterResult {
     const ExperimentConfig& config,
     std::optional<ShallowWaterState> initial_state = std::nullopt,
     std::optional<std::uint64_t> stop_after_step = std::nullopt,
-    std::span<const InitialConditionEditV1> initial_edits = {});
+    std::span<const InitialConditionEditV1> initial_edits = {},
+    ShallowWaterRunHooks hooks = {});
 
 }  // namespace mps

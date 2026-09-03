@@ -34,6 +34,25 @@ namespace {
 
 }  // namespace
 
+struct FrameTrace {
+  std::vector<std::uint64_t> steps;
+  std::uint64_t cancel_after = 0;
+};
+
+void record_frame(const mps::ShallowWaterState& state, void* context) {
+  auto& trace = *static_cast<FrameTrace*>(context);
+  trace.steps.push_back(state.step);
+}
+
+bool cancel_at_step(void* context) {
+  const auto& trace = *static_cast<const FrameTrace*>(context);
+  return trace.steps.size() > 1 && trace.steps.back() >= trace.cancel_after;
+}
+
+void throw_from_frame(const mps::ShallowWaterState&, void*) {
+  throw std::runtime_error("observer failure");
+}
+
 MPS_TEST_CASE("gravity-wave CFL respects configured bounds") {
   const mps::CubedSphereGrid grid(4, 2.0);
   const mps::ShallowWaterState state{
@@ -88,6 +107,46 @@ MPS_TEST_CASE("shallow-water diagnostics are sampled on the configured interval"
     MPS_CHECK_EQ(result.samples[index].step % 2, std::uint64_t{0});
   }
   MPS_CHECK_EQ(result.samples.back().invariants.mass, result.final_diagnostics.mass);
+}
+
+MPS_TEST_CASE("frame observer reports initial intervals and one final frame") {
+  auto value = config();
+  value.run.end_time_s = 1.1;
+  value.diagnostics.interval_steps = 2;
+  FrameTrace trace;
+  const auto result = mps::run_shallow_water(value, std::nullopt, std::nullopt, {},
+                                             {.on_frame = record_frame,
+                                              .observer_context = &trace});
+  MPS_CHECK_EQ(trace.steps.front(), std::uint64_t{0});
+  MPS_CHECK_EQ(trace.steps.back(), result.state.step);
+  for (std::size_t index = 1; index < trace.steps.size(); ++index) {
+    MPS_CHECK(trace.steps[index] > trace.steps[index - 1]);
+  }
+  for (std::size_t index = 1; index + 1 < trace.steps.size(); ++index) {
+    MPS_CHECK_EQ(trace.steps[index] % 2, std::uint64_t{0});
+  }
+}
+
+MPS_TEST_CASE("cancellation is evaluated at step boundaries") {
+  auto value = config();
+  value.run.end_time_s = 10.0;
+  FrameTrace trace{.cancel_after = 2};
+  const auto result = mps::run_shallow_water(
+      value, std::nullopt, std::nullopt, {},
+      {.on_frame = record_frame,
+       .observer_context = &trace,
+       .is_cancelled = cancel_at_step,
+       .cancellation_context = &trace});
+  MPS_CHECK(!result.reached_end_time);
+  MPS_CHECK_EQ(result.state.step, std::uint64_t{2});
+  MPS_CHECK_EQ(trace.steps.back(), result.state.step);
+}
+
+MPS_TEST_CASE("observer exceptions are propagated") {
+  MPS_CHECK_THROWS_AS(
+      mps::run_shallow_water(config(), std::nullopt, std::nullopt, {},
+                             {.on_frame = throw_from_frame}),
+      std::runtime_error);
 }
 
 int main() { return mps::test::run_all(); }
