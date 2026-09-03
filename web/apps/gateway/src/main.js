@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { spawn as defaultSpawn } from "node:child_process";
 import { join, resolve } from "node:path";
 
@@ -98,9 +98,20 @@ export function createGatewayServer(options) {
         const controlPath = join(directory, "control.request");
         await writeFile(controlPath, controlRequestText(requestValue, runId), "utf8");
         const child = spawn(binary, ["--config", configPath, "--control-request", controlPath, "--event-stream", "ndjson"], { cwd: directory, shell: false, stdio: ["ignore", "pipe", "pipe"] });
-        const run = { runId, directory, status: "running", child, events: [], stderr: "" };
+        const run = { runId, directory, status: "running", child, events: [], stderr: "", pending: "", waiters: new Set(), lastSequence: -1, cancellationRequested: false };
         runs.set(runId, run); activeRun = true;
-        child.on("close", (code, signal) => { run.status = code === 0 ? "completed" : "failed"; run.exitCode = code; run.signal = signal; activeRun = false; });
+        const publish = (event) => {
+          if (!event || event.protocolVersion !== protocolVersion || event.runId !== runId || !Number.isInteger(event.sequence) || event.sequence <= run.lastSequence) throw protocolError("event sequence is invalid");
+          run.lastSequence = event.sequence; run.events.push(event);
+          for (const waiter of run.waiters) waiter(event); run.waiters.clear();
+          if (event.type === "run.completed" || event.type === "run.cancelled" || event.type === "run.failed") { run.status = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed"; run.terminal = true; }
+        };
+        child.stdout?.on("data", (chunk) => {
+          run.pending += `${chunk}`;
+          const lines = run.pending.split("\n"); run.pending = lines.pop() ?? "";
+          for (const line of lines) if (line.trim()) { try { publish(JSON.parse(line)); } catch { run.status = "failed"; run.protocolError = true; child.kill?.("SIGTERM"); } }
+        });
+        child.on("close", (code, signal) => { if (!run.terminal) run.status = run.cancellationRequested ? "cancelled" : code === 0 ? "completed" : "failed"; run.exitCode = code; run.signal = signal; run.terminal = true; activeRun = false; for (const waiter of run.waiters) waiter(); run.waiters.clear(); });
         child.stderr?.on("data", (chunk) => { run.stderr = `${run.stderr}${chunk}`.slice(-64 * 1024); });
         return json(response, 202, { protocolVersion, runId, status: "running" });
       }
@@ -109,10 +120,53 @@ export function createGatewayServer(options) {
         const run = runs.get(match[1]); if (!run) return json(response, 404, { error: "not_found" });
         return json(response, 200, { protocolVersion, runId: run.runId, status: run.status, exitCode: run.exitCode ?? null });
       }
+      const eventsMatch = url.pathname.match(/^\/api\/v1\/runs\/([^/]+)\/events$/);
+      if (request.method === "GET" && eventsMatch) {
+        const run = runs.get(eventsMatch[1]); if (!run) return json(response, 404, { error: "not_found" });
+        const after = Number(request.headers["x-after-sequence"] ?? url.searchParams.get("after") ?? -1);
+        if (!Number.isInteger(after)) return json(response, 400, { error: "invalid_sequence" });
+        response.statusCode = 200; response.setHeader("content-type", "application/x-ndjson; charset=utf-8");
+        if (run.terminal) {
+          response.end(run.events.filter((event) => event.sequence > after).map((event) => JSON.stringify(event)).join("\n") + "\n");
+          return;
+        }
+        const send = (event) => { if (event && event.sequence > after) response.write(`${JSON.stringify(event)}\n`); };
+        for (const event of run.events) send(event);
+        const waiter = (event) => { send(event); if (run.terminal) response.end(); };
+        run.waiters.add(waiter); request.on("close", () => run.waiters.delete(waiter));
+        return;
+      }
+      const frameMatch = url.pathname.match(/^\/api\/v1\/runs\/([^/]+)\/frames\/(\d+)$/);
+      if (request.method === "GET" && frameMatch) {
+        const run = runs.get(frameMatch[1]); if (!run) return json(response, 404, { error: "not_found" });
+        const sequence = Number(frameMatch[2]); const event = run.events.find((candidate) => candidate.type === "frame.ready" && candidate.frameSequence === sequence);
+        if (!event) return json(response, 404, { error: "frame_not_published" });
+        const path = resolve(run.directory, "frames", event.relativePath); const root = resolve(run.directory, "frames");
+        if (!path.startsWith(`${root}/`) || event.relativePath.includes("..")) return json(response, 404, { error: "frame_not_published" });
+        const stat = await lstat(path); if (stat.isSymbolicLink()) return json(response, 404, { error: "frame_not_published" });
+        const realRoot = await realpath(root); if (!(await realpath(path)).startsWith(`${realRoot}/`)) return json(response, 404, { error: "frame_not_published" });
+        const bytes = await readFile(path); response.statusCode = 200; response.setHeader("content-type", "application/octet-stream"); response.setHeader("content-length", bytes.byteLength); response.end(bytes); return;
+      }
+      const cancelMatch = url.pathname.match(/^\/api\/v1\/runs\/([^/]+)\/cancel$/);
+      if (request.method === "POST" && cancelMatch) {
+        const run = runs.get(cancelMatch[1]); if (!run) return json(response, 404, { error: "not_found" });
+        if (!run.terminal) { run.cancellationRequested = true; run.status = "cancelling"; run.child.kill?.("SIGTERM"); run.forceTimer = setTimeout(() => { if (!run.terminal) run.child.kill?.("SIGKILL"); }, options.graceMilliseconds ?? 2000); }
+        return json(response, 202, { protocolVersion, runId: run.runId, status: run.status });
+      }
+      const bundleMatch = url.pathname.match(/^\/api\/v1\/runs\/([^/]+)\/bundle$/);
+      if (request.method === "GET" && bundleMatch) {
+        const run = runs.get(bundleMatch[1]); if (!run) return json(response, 404, { error: "not_found" });
+        return json(response, 200, { protocolVersion, runId: run.runId, status: run.status, events: run.events, stderr: run.stderr });
+      }
       return json(response, 404, { error: "not_found" });
     } catch (error) { return json(response, error.code === "invalid_request" ? 400 : 500, { error: error.code ?? "gateway_error", message: error.code === "invalid_request" ? error.message : "request failed" }); }
   });
-  return { server, token, runs };
+  const shutdown = async () => {
+    for (const run of runs.values()) if (!run.terminal) { run.cancellationRequested = true; run.child.kill?.("SIGTERM"); }
+    server.closeAllConnections?.();
+    await new Promise((resolveClose) => server.close(resolveClose));
+  };
+  return { server, token, runs, shutdown };
 }
 
 export async function describeSimulator(options) {
