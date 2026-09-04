@@ -31,6 +31,10 @@ struct HeldSuarezTendency {
   std::vector<Real> rayleigh_drag_rate_s_1;
   HeldSuarezDiagnostics diagnostics{};
 };
+struct HeldSuarezWorkspace {
+  HybridPressureGeometry vertical_geometry;
+  std::vector<Real> theta_mass_rates;
+};
 
 [[nodiscard]] HeldSuarezRates held_suarez_rates(Real latitude_rad, Real pressure_pa,
                                                 Real surface_pressure_pa,
@@ -40,5 +44,11 @@ struct HeldSuarezTendency {
     const CubedSphereGrid& grid, const AtmosphericHybridCoordinate& coordinate,
     const DryHydrostaticDerived& derived, std::span<const Real> surface_pressure_pa,
     const PlanetParameters& planet);
+void held_suarez_tendency(const CubedSphereGrid& grid,
+                          const AtmosphericHybridCoordinate& coordinate,
+                          const DryHydrostaticDerived& derived,
+                          std::span<const Real> surface_pressure_pa,
+                          const PlanetParameters& planet, HeldSuarezTendency& result,
+                          HeldSuarezWorkspace& workspace);
 
 }  // namespace mps

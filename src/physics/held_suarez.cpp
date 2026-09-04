@@ -48,6 +48,19 @@ HeldSuarezTendency held_suarez_tendency(const CubedSphereGrid& grid,
                                         const DryHydrostaticDerived& derived,
                                         const std::span<const Real> surface_pressure_pa,
                                         const PlanetParameters& planet) {
+  HeldSuarezTendency result;
+  HeldSuarezWorkspace workspace;
+  held_suarez_tendency(grid, coordinate, derived, surface_pressure_pa, planet, result,
+                       workspace);
+  return result;
+}
+
+void held_suarez_tendency(const CubedSphereGrid& grid,
+                          const AtmosphericHybridCoordinate& coordinate,
+                          const DryHydrostaticDerived& derived,
+                          const std::span<const Real> surface_pressure_pa,
+                          const PlanetParameters& planet, HeldSuarezTendency& result,
+                          HeldSuarezWorkspace& workspace) {
   const std::size_t volume = derived.cells * derived.levels;
   if (derived.cells != grid.cell_count() || derived.levels == 0 ||
       derived.pressure_pa.size() != volume || derived.air_mass_kg_m2.size() != volume ||
@@ -61,12 +74,13 @@ HeldSuarezTendency held_suarez_tendency(const CubedSphereGrid& grid,
     throw std::invalid_argument("Held-Suarez vertical-coordinate shape mismatch");
   }
 
-  HeldSuarezTendency result;
+  result.diagnostics = {};
   result.potential_temperature_mass_k_kg_m2_s.resize(volume);
   result.horizontal_momentum_mass_kg_m_s2.resize(volume);
   result.equilibrium_temperature_k.resize(volume);
   result.temperature_relaxation_rate_s_1.resize(volume);
   result.rayleigh_drag_rate_s_1.resize(volume);
+  workspace.theta_mass_rates.resize(derived.levels);
   const Real kappa = planet.gas_constant_j_kg_k / planet.heat_capacity_cp_j_kg_k;
   const Real cv = planet.heat_capacity_cp_j_kg_k - planet.gas_constant_j_kg_k;
 
@@ -76,10 +90,9 @@ HeldSuarezTendency held_suarez_tendency(const CubedSphereGrid& grid,
     const Vec3 east = eastward_unit(position);
     const Vec3 north = cross(position, east);
     const Real area = grid.cells()[cell].area_m2;
-    const auto vertical_geometry = coordinate.geometry(
-        surface_pressure_pa[cell], planet.gravity_m_s2, planet.gas_constant_j_kg_k,
-        planet.heat_capacity_cp_j_kg_k, planet.reference_pressure_pa);
-    std::vector<Real> theta_mass_rates(derived.levels);
+    coordinate.geometry(surface_pressure_pa[cell], planet.gravity_m_s2,
+                        planet.gas_constant_j_kg_k, planet.heat_capacity_cp_j_kg_k,
+                        planet.reference_pressure_pa, workspace.vertical_geometry);
     for (std::size_t level = 0; level < derived.levels; ++level) {
       const auto offset = dry_hydrostatic_offset(cell, level, derived.levels);
       const auto rates = held_suarez_rates(latitude, derived.pressure_pa[offset],
@@ -96,7 +109,7 @@ HeldSuarezTendency held_suarez_tendency(const CubedSphereGrid& grid,
                                  derived.velocity_m_s[offset];
 
       result.potential_temperature_mass_k_kg_m2_s[offset] = theta_mass_rate;
-      theta_mass_rates[level] = theta_mass_rate;
+      workspace.theta_mass_rates[level] = theta_mass_rate;
       result.horizontal_momentum_mass_kg_m_s2[offset] = momentum_rate;
       result.equilibrium_temperature_k[offset] = rates.equilibrium_temperature_k;
       result.temperature_relaxation_rate_s_1[offset] =
@@ -116,20 +129,21 @@ HeldSuarezTendency held_suarez_tendency(const CubedSphereGrid& grid,
     for (std::size_t reverse = derived.levels; reverse > 0; --reverse) {
       const std::size_t level = reverse - 1;
       const auto offset = dry_hydrostatic_offset(cell, level, derived.levels);
-      const Real theta_rate = theta_mass_rates[level] / derived.air_mass_kg_m2[offset];
+      const Real theta_rate =
+          workspace.theta_mass_rates[level] / derived.air_mass_kg_m2[offset];
       const Real geopotential_full_rate =
-          geopotential_half_rate + planet.heat_capacity_cp_j_kg_k * theta_rate *
-                                       (vertical_geometry.exner_half[level + 1] -
-                                        vertical_geometry.exner_full[level]);
+          geopotential_half_rate +
+          planet.heat_capacity_cp_j_kg_k * theta_rate *
+              (workspace.vertical_geometry.exner_half[level + 1] -
+               workspace.vertical_geometry.exner_full[level]);
       column_potential_energy_rate +=
           derived.air_mass_kg_m2[offset] * geopotential_full_rate;
       geopotential_half_rate += planet.heat_capacity_cp_j_kg_k * theta_rate *
-                                (vertical_geometry.exner_half[level + 1] -
-                                 vertical_geometry.exner_half[level]);
+                                (workspace.vertical_geometry.exner_half[level + 1] -
+                                 workspace.vertical_geometry.exner_half[level]);
     }
     result.diagnostics.thermal_energy_rate_w += area * column_potential_energy_rate;
   }
-  return result;
 }
 
 }  // namespace mps

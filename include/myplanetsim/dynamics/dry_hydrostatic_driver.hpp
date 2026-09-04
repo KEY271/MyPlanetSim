@@ -5,6 +5,7 @@
 
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_coupling.hpp"
+#include "myplanetsim/dynamics/dry_hydrostatic_workspace.hpp"
 #include "myplanetsim/dynamics/surface_boundary.hpp"
 #include "myplanetsim/dynamics/surface_orography.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
@@ -43,6 +44,7 @@ class DryHydrostaticDriver {
   [[nodiscard]] DryHydrostaticState initial_state() const;
   [[nodiscard]] DryHydrostaticDerived diagnose(const DryHydrostaticState&) const;
   [[nodiscard]] DryHydrostaticRhs rhs(const DryHydrostaticState&) const;
+  void rhs(const DryHydrostaticState&, DryHydrostaticRhs& result) const;
   void advance(DryHydrostaticState&, Real end_time_s,
                const DryHydrostaticObserver& observer = {},
                const DryHydrostaticCancel& cancel = {}) const;
@@ -61,5 +63,6 @@ class DryHydrostaticDriver {
   AtmosphericHybridCoordinate coordinate_;
   SurfaceOrography orography_;
   std::optional<SurfaceBoundary> surface_boundary_;
+  mutable DryHydrostaticWorkspace workspace_;
 };
 }  // namespace mps

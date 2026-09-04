@@ -19,5 +19,10 @@ struct HydrostaticColumn {
     const HybridPressureGeometry& geometry,
     const std::vector<Real>& potential_temperature_k, Real heat_capacity_cp_j_kg_k,
     Real gravity_m_s2, Real surface_geopotential_m2_s2);
+void integrate_hydrostatic_column(const HybridPressureGeometry& geometry,
+                                  std::span<const Real> potential_temperature_k,
+                                  Real heat_capacity_cp_j_kg_k, Real gravity_m_s2,
+                                  Real surface_geopotential_m2_s2,
+                                  HydrostaticColumn& result);
 
 }  // namespace mps

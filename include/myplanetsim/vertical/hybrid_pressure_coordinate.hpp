@@ -50,6 +50,9 @@ class AtmosphericHybridCoordinate {
                                                 Real gas_constant_j_kg_k,
                                                 Real heat_capacity_cp_j_kg_k,
                                                 Real reference_pressure_pa) const;
+  void geometry(Real surface_pressure_pa, Real gravity_m_s2, Real gas_constant_j_kg_k,
+                Real heat_capacity_cp_j_kg_k, Real reference_pressure_pa,
+                HybridPressureGeometry& result) const;
 
  private:
   HybridPressureCoefficients coefficients_;

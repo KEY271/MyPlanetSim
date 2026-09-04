@@ -13,6 +13,21 @@ SurfaceEnergyTendency surface_energy_tendency(
     const DryHydrostaticDerived& atmosphere,
     const std::span<const Real> surface_pressure_pa, const PlanetParameters& planet,
     const SurfaceParameters& parameters, const OrbitState& orbit_state) {
+  SurfaceEnergyTendency result;
+  surface_energy_tendency(grid, boundary, surface_temperature_k, atmosphere,
+                          surface_pressure_pa, planet, parameters, orbit_state, result);
+  return result;
+}
+
+void surface_energy_tendency(const CubedSphereGrid& grid,
+                             const SurfaceBoundary& boundary,
+                             const std::span<const Real> surface_temperature_k,
+                             const DryHydrostaticDerived& atmosphere,
+                             const std::span<const Real> surface_pressure_pa,
+                             const PlanetParameters& planet,
+                             const SurfaceParameters& parameters,
+                             const OrbitState& orbit_state,
+                             SurfaceEnergyTendency& result) {
   const std::size_t volume = atmosphere.cells * atmosphere.levels;
   if (atmosphere.cells != grid.cell_count() || atmosphere.levels == 0 ||
       atmosphere.temperature_k.size() != volume ||
@@ -23,7 +38,7 @@ SurfaceEnergyTendency surface_energy_tendency(
       boundary.land_fraction().size() != atmosphere.cells)
     throw std::invalid_argument("surface energy balance shape mismatch");
 
-  SurfaceEnergyTendency result;
+  result.diagnostics = {};
   result.stable_time_step_s = std::numeric_limits<Real>::infinity();
   result.surface_temperature_k_s.resize(atmosphere.cells);
   result.potential_temperature_mass_k_kg_m2_s.assign(volume, 0.0);
@@ -82,7 +97,6 @@ SurfaceEnergyTendency surface_energy_tendency(
        result.diagnostics.internal_heat_power_w -
        result.diagnostics.outgoing_longwave_power_w -
        result.diagnostics.sensible_to_atmosphere_power_w);
-  return result;
 }
 
 }  // namespace mps

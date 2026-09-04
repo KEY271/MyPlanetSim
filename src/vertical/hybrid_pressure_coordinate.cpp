@@ -136,6 +136,18 @@ HybridPressureGeometry AtmosphericHybridCoordinate::geometry(
     const Real surface_pressure_pa, const Real gravity_m_s2,
     const Real gas_constant_j_kg_k, const Real heat_capacity_cp_j_kg_k,
     const Real reference_pressure_pa) const {
+  HybridPressureGeometry result;
+  geometry(surface_pressure_pa, gravity_m_s2, gas_constant_j_kg_k,
+           heat_capacity_cp_j_kg_k, reference_pressure_pa, result);
+  return result;
+}
+
+void AtmosphericHybridCoordinate::geometry(const Real surface_pressure_pa,
+                                           const Real gravity_m_s2,
+                                           const Real gas_constant_j_kg_k,
+                                           const Real heat_capacity_cp_j_kg_k,
+                                           const Real reference_pressure_pa,
+                                           HybridPressureGeometry& result) const {
   if (surface_pressure_pa < minimum_surface_pressure_pa_ ||
       surface_pressure_pa > maximum_surface_pressure_pa_) {
     throw std::invalid_argument("surface pressure is outside coordinate range");
@@ -148,7 +160,6 @@ HybridPressureGeometry AtmosphericHybridCoordinate::geometry(
     throw std::invalid_argument("heat capacity must exceed gas constant");
   }
   const Real kappa = gas_constant_j_kg_k / heat_capacity_cp_j_kg_k;
-  HybridPressureGeometry result;
   result.pressure_half_pa.resize(levels() + 1);
   result.exner_half.resize(levels() + 1);
   result.pressure_full_pa.resize(levels());
@@ -181,7 +192,6 @@ HybridPressureGeometry AtmosphericHybridCoordinate::geometry(
       throw std::runtime_error("hybrid full-level pressure is outside layer");
     }
   }
-  return result;
 }
 
 }  // namespace mps

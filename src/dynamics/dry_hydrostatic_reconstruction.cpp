@@ -10,8 +10,8 @@ namespace mps {
 namespace {
 
 struct ScalarReconstruction {
-  std::vector<Vec3> gradient;
-  std::vector<Real> factor;
+  std::span<Vec3> gradient;
+  std::span<Real> factor;
 };
 
 [[nodiscard]] Real barth_factor(const Real center, const Real increment,
@@ -40,10 +40,13 @@ struct ScalarReconstruction {
 }
 
 [[nodiscard]] ScalarReconstruction prepare_scalar(const CubedSphereGrid& grid,
-                                                  const std::vector<Real>& values,
-                                                  const LimiterKind limiter) {
-  ScalarReconstruction result{.gradient = least_squares_gradient(grid, values),
-                              .factor = std::vector<Real>(values.size(), 1.0)};
+                                                  const std::span<const Real> values,
+                                                  const LimiterKind limiter,
+                                                  const std::span<Vec3> gradient,
+                                                  const std::span<Real> factor) {
+  least_squares_gradient(grid, values, gradient);
+  std::fill(factor.begin(), factor.end(), 1.0);
+  ScalarReconstruction result{.gradient = gradient, .factor = factor};
   if (limiter == LimiterKind::kNone) return result;
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
     Real minimum = values[cell];
@@ -66,7 +69,7 @@ struct ScalarReconstruction {
 
 [[nodiscard]] Real reconstruct_scalar(const std::size_t cell,
                                       const CachedCellEdgeGeometry& edge,
-                                      const std::vector<Real>& values,
+                                      const std::span<const Real> values,
                                       const ScalarReconstruction& prepared) {
   return values[cell] +
          prepared.factor[cell] * dot(prepared.gradient[cell], edge.face_displacement_m);
@@ -81,20 +84,21 @@ struct ScalarReconstruction {
 }
 
 struct VelocityReconstruction {
-  std::vector<TangentVectorGradient> gradient;
-  std::vector<Real> factor;
+  std::span<TangentVectorGradient> gradient;
+  std::span<Real> factor;
 };
 
 // Limits the reconstructed tangent velocity the same way the shallow-water path does:
 // the face normal and tangent components stay inside the neighbourhood range and the
 // face speed stays inside the neighbourhood maximum. Without this the unlimited
 // least-squares vector gradient overshoots at cubed-sphere seams.
-[[nodiscard]] VelocityReconstruction prepare_velocity(const CubedSphereGrid& grid,
-                                                      const std::vector<Vec3>& velocity,
-                                                      const LimiterKind limiter) {
-  VelocityReconstruction result{
-      .gradient = least_squares_vector_gradient(grid, velocity),
-      .factor = std::vector<Real>(velocity.size(), 1.0)};
+[[nodiscard]] VelocityReconstruction prepare_velocity(
+    const CubedSphereGrid& grid, const std::span<const Vec3> velocity,
+    const LimiterKind limiter, const std::span<TangentVectorGradient> gradient,
+    const std::span<Real> factor) {
+  least_squares_vector_gradient(grid, velocity, gradient);
+  std::fill(factor.begin(), factor.end(), 1.0);
+  VelocityReconstruction result{.gradient = gradient, .factor = factor};
   if (limiter == LimiterKind::kNone) return result;
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
     Real maximum_speed = norm(velocity[cell]);
@@ -142,7 +146,7 @@ struct VelocityReconstruction {
                                         const std::size_t cell,
                                         const EdgeGeometry& edge,
                                         const CachedCellEdgeGeometry& cached_edge,
-                                        const std::vector<Vec3>& velocity,
+                                        const std::span<const Vec3> velocity,
                                         const VelocityReconstruction& prepared) {
   const Vec3 center_at_face = project_tangent(velocity[cell], edge.center);
   const Vec3 unlimited = reconstruct_tangent_vector_cached(
@@ -151,24 +155,18 @@ struct VelocityReconstruction {
   return center_at_face + prepared.factor[cell] * (unlimited - center_at_face);
 }
 
-[[nodiscard]] std::vector<Real> level_scalar(const std::vector<Real>& volume,
-                                             const std::size_t cells,
-                                             const std::size_t levels,
-                                             const std::size_t level) {
-  std::vector<Real> result(cells);
+void copy_level_scalar(const std::span<const Real> volume, const std::size_t cells,
+                       const std::size_t levels, const std::size_t level,
+                       const std::span<Real> result) {
   for (std::size_t cell = 0; cell < cells; ++cell)
     result[cell] = volume[dry_hydrostatic_offset(cell, level, levels)];
-  return result;
 }
 
-[[nodiscard]] std::vector<Vec3> level_vector(const std::vector<Vec3>& volume,
-                                             const std::size_t cells,
-                                             const std::size_t levels,
-                                             const std::size_t level) {
-  std::vector<Vec3> result(cells);
+void copy_level_vector(const std::span<const Vec3> volume, const std::size_t cells,
+                       const std::size_t levels, const std::size_t level,
+                       const std::span<Vec3> result) {
   for (std::size_t cell = 0; cell < cells; ++cell)
     result[cell] = volume[dry_hydrostatic_offset(cell, level, levels)];
-  return result;
 }
 
 }  // namespace
@@ -183,6 +181,18 @@ const DryHydrostaticFaceStates& DryHydrostaticReconstruction::at(
 DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(
     const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
     const ReconstructionKind reconstruction, const LimiterKind limiter) {
+  DryHydrostaticReconstruction result;
+  DryHydrostaticReconstructionWorkspace workspace;
+  reconstruct_dry_hydrostatic_face_states(grid, derived, reconstruction, limiter,
+                                          result, workspace);
+  return result;
+}
+
+void reconstruct_dry_hydrostatic_face_states(
+    const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
+    const ReconstructionKind reconstruction, const LimiterKind limiter,
+    DryHydrostaticReconstruction& result,
+    DryHydrostaticReconstructionWorkspace& workspace) {
   const auto cells = grid.cell_count();
   const auto levels = derived.levels;
   const auto volume = cells * levels;
@@ -194,17 +204,31 @@ DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(
       derived.temperature_k.size() != volume)
     throw std::invalid_argument("dry reconstruction shape mismatch");
 
-  DryHydrostaticReconstruction result{
-      .levels = levels,
-      .edge_levels = std::vector<DryHydrostaticFaceStates>(grid.edge_count() * levels),
-      .limiter_activations = 0};
+  result.levels = levels;
+  result.edge_levels.resize(grid.edge_count() * levels);
+  result.limiter_activations = 0;
+  workspace.mass.resize(cells);
+  workspace.velocity.resize(cells);
+  workspace.potential_temperature.resize(cells);
+  workspace.tracer.resize(cells);
+  workspace.temperature.resize(cells);
+  for (auto& gradient : workspace.scalar_gradients) gradient.resize(cells);
+  for (auto& factor : workspace.limiter_factors) factor.resize(cells);
+  workspace.velocity_gradient.resize(cells);
   for (std::size_t level = 0; level < levels; ++level) {
-    const auto mass = level_scalar(derived.air_mass_kg_m2, cells, levels, level);
-    const auto velocity = level_vector(derived.velocity_m_s, cells, levels, level);
-    const auto theta =
-        level_scalar(derived.potential_temperature_k, cells, levels, level);
-    const auto tracer = level_scalar(derived.tracer_mixing_ratio, cells, levels, level);
-    const auto temperature = level_scalar(derived.temperature_k, cells, levels, level);
+    copy_level_scalar(derived.air_mass_kg_m2, cells, levels, level, workspace.mass);
+    copy_level_vector(derived.velocity_m_s, cells, levels, level, workspace.velocity);
+    copy_level_scalar(derived.potential_temperature_k, cells, levels, level,
+                      workspace.potential_temperature);
+    copy_level_scalar(derived.tracer_mixing_ratio, cells, levels, level,
+                      workspace.tracer);
+    copy_level_scalar(derived.temperature_k, cells, levels, level,
+                      workspace.temperature);
+    const auto& mass = workspace.mass;
+    const auto& velocity = workspace.velocity;
+    const auto& theta = workspace.potential_temperature;
+    const auto& tracer = workspace.tracer;
+    const auto& temperature = workspace.temperature;
 
     if (reconstruction == ReconstructionKind::kPiecewiseConstant) {
       for (const auto& edge : grid.edges()) {
@@ -226,11 +250,21 @@ DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(
       continue;
     }
 
-    const auto mass_reconstruction = prepare_scalar(grid, mass, limiter);
-    const auto theta_reconstruction = prepare_scalar(grid, theta, limiter);
-    const auto tracer_reconstruction = prepare_scalar(grid, tracer, limiter);
-    const auto temperature_reconstruction = prepare_scalar(grid, temperature, limiter);
-    const auto velocity_reconstruction = prepare_velocity(grid, velocity, limiter);
+    const auto mass_reconstruction =
+        prepare_scalar(grid, mass, limiter, workspace.scalar_gradients[0],
+                       workspace.limiter_factors[0]);
+    const auto theta_reconstruction =
+        prepare_scalar(grid, theta, limiter, workspace.scalar_gradients[1],
+                       workspace.limiter_factors[1]);
+    const auto tracer_reconstruction =
+        prepare_scalar(grid, tracer, limiter, workspace.scalar_gradients[2],
+                       workspace.limiter_factors[2]);
+    const auto temperature_reconstruction =
+        prepare_scalar(grid, temperature, limiter, workspace.scalar_gradients[3],
+                       workspace.limiter_factors[3]);
+    const auto velocity_reconstruction =
+        prepare_velocity(grid, velocity, limiter, workspace.velocity_gradient,
+                         workspace.limiter_factors[4]);
     for (std::size_t cell = 0; cell < cells; ++cell) {
       if (mass_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
           theta_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
@@ -261,7 +295,6 @@ DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(
                                                       .right = face(right)};
     }
   }
-  return result;
 }
 
 }  // namespace mps

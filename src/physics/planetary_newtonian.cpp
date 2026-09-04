@@ -46,8 +46,24 @@ HeldSuarezTendency planetary_newtonian_tendency(
     const DryHydrostaticDerived& derived,
     const std::span<const Real> surface_pressure_pa, const PlanetParameters& planet,
     const ForcingGeometry geometry, const OrbitState* orbit_state) {
-  if (geometry == ForcingGeometry::kAxisymmetric)
-    return held_suarez_tendency(grid, coordinate, derived, surface_pressure_pa, planet);
+  HeldSuarezTendency result;
+  HeldSuarezWorkspace workspace;
+  planetary_newtonian_tendency(grid, coordinate, derived, surface_pressure_pa, planet,
+                               geometry, orbit_state, result, workspace);
+  return result;
+}
+
+void planetary_newtonian_tendency(
+    const CubedSphereGrid& grid, const AtmosphericHybridCoordinate& coordinate,
+    const DryHydrostaticDerived& derived,
+    const std::span<const Real> surface_pressure_pa, const PlanetParameters& planet,
+    const ForcingGeometry geometry, const OrbitState* orbit_state,
+    HeldSuarezTendency& result, HeldSuarezWorkspace& workspace) {
+  if (geometry == ForcingGeometry::kAxisymmetric) {
+    held_suarez_tendency(grid, coordinate, derived, surface_pressure_pa, planet, result,
+                         workspace);
+    return;
+  }
   if (orbit_state == nullptr)
     throw std::invalid_argument("substellar forcing requires an orbit state");
   const std::size_t volume = derived.cells * derived.levels;
@@ -58,12 +74,13 @@ HeldSuarezTendency planetary_newtonian_tendency(
       coordinate.levels() != derived.levels)
     throw std::invalid_argument("planetary Newtonian derived-state shape mismatch");
 
-  HeldSuarezTendency result;
+  result.diagnostics = {};
   result.potential_temperature_mass_k_kg_m2_s.resize(volume);
   result.horizontal_momentum_mass_kg_m_s2.resize(volume);
   result.equilibrium_temperature_k.resize(volume);
   result.temperature_relaxation_rate_s_1.resize(volume);
   result.rayleigh_drag_rate_s_1.resize(volume);
+  workspace.theta_mass_rates.resize(derived.levels);
   const Real cv = planet.heat_capacity_cv_j_kg_k();
   for (std::size_t cell = 0; cell < derived.cells; ++cell) {
     const Vec3 position = grid.cells()[cell].center;
@@ -72,10 +89,9 @@ HeldSuarezTendency planetary_newtonian_tendency(
     const Vec3 east = eastward_unit(position);
     const Vec3 north = cross(position, east);
     const Real area = grid.cells()[cell].area_m2;
-    const auto vertical_geometry = coordinate.geometry(
-        surface_pressure_pa[cell], planet.gravity_m_s2, planet.gas_constant_j_kg_k,
-        planet.heat_capacity_cp_j_kg_k, planet.reference_pressure_pa);
-    std::vector<Real> theta_mass_rates(derived.levels);
+    coordinate.geometry(surface_pressure_pa[cell], planet.gravity_m_s2,
+                        planet.gas_constant_j_kg_k, planet.heat_capacity_cp_j_kg_k,
+                        planet.reference_pressure_pa, workspace.vertical_geometry);
     for (std::size_t level = 0; level < derived.levels; ++level) {
       const auto offset = dry_hydrostatic_offset(cell, level, derived.levels);
       const auto rates =
@@ -92,7 +108,7 @@ HeldSuarezTendency planetary_newtonian_tendency(
                                  rates.rayleigh_drag_rate_s_1 *
                                  derived.velocity_m_s[offset];
       result.potential_temperature_mass_k_kg_m2_s[offset] = theta_mass_rate;
-      theta_mass_rates[level] = theta_mass_rate;
+      workspace.theta_mass_rates[level] = theta_mass_rate;
       result.horizontal_momentum_mass_kg_m_s2[offset] = momentum_rate;
       result.equilibrium_temperature_k[offset] = rates.equilibrium_temperature_k;
       result.temperature_relaxation_rate_s_1[offset] =
@@ -111,19 +127,20 @@ HeldSuarezTendency planetary_newtonian_tendency(
     for (std::size_t reverse = derived.levels; reverse > 0; --reverse) {
       const std::size_t level = reverse - 1;
       const auto offset = dry_hydrostatic_offset(cell, level, derived.levels);
-      const Real theta_rate = theta_mass_rates[level] / derived.air_mass_kg_m2[offset];
+      const Real theta_rate =
+          workspace.theta_mass_rates[level] / derived.air_mass_kg_m2[offset];
       const Real geopotential_full_rate =
-          geopotential_half_rate + planet.heat_capacity_cp_j_kg_k * theta_rate *
-                                       (vertical_geometry.exner_half[level + 1] -
-                                        vertical_geometry.exner_full[level]);
+          geopotential_half_rate +
+          planet.heat_capacity_cp_j_kg_k * theta_rate *
+              (workspace.vertical_geometry.exner_half[level + 1] -
+               workspace.vertical_geometry.exner_full[level]);
       result.diagnostics.thermal_energy_rate_w +=
           area * derived.air_mass_kg_m2[offset] * geopotential_full_rate;
       geopotential_half_rate += planet.heat_capacity_cp_j_kg_k * theta_rate *
-                                (vertical_geometry.exner_half[level + 1] -
-                                 vertical_geometry.exner_half[level]);
+                                (workspace.vertical_geometry.exner_half[level + 1] -
+                                 workspace.vertical_geometry.exner_half[level]);
     }
   }
-  return result;
 }
 
 }  // namespace mps

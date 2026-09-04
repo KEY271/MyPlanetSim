@@ -39,5 +39,11 @@ struct SurfaceEnergyTendency {
     const DryHydrostaticDerived& atmosphere, std::span<const Real> surface_pressure_pa,
     const PlanetParameters& planet, const SurfaceParameters& parameters,
     const OrbitState& orbit_state);
+void surface_energy_tendency(
+    const CubedSphereGrid& grid, const SurfaceBoundary& boundary,
+    std::span<const Real> surface_temperature_k,
+    const DryHydrostaticDerived& atmosphere, std::span<const Real> surface_pressure_pa,
+    const PlanetParameters& planet, const SurfaceParameters& parameters,
+    const OrbitState& orbit_state, SurfaceEnergyTendency& result);
 
 }  // namespace mps

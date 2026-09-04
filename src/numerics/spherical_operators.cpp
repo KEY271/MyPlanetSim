@@ -83,8 +83,17 @@ std::vector<Real> finite_volume_divergence(
 
 std::vector<Vec3> least_squares_gradient(const CubedSphereGrid& grid,
                                          const std::span<const Real> cell_values) {
-  validate_cell_values(grid, cell_values);
   std::vector<Vec3> gradients(grid.cell_count());
+  least_squares_gradient(grid, cell_values, gradients);
+  return gradients;
+}
+
+void least_squares_gradient(const CubedSphereGrid& grid,
+                            const std::span<const Real> cell_values,
+                            const std::span<Vec3> gradients) {
+  validate_cell_values(grid, cell_values);
+  if (gradients.size() != grid.cell_count())
+    throw std::invalid_argument("gradient output size does not match grid");
   for (std::size_t index = 0; index < grid.cell_count(); ++index) {
     const auto& cached_cell = grid.cell_cache()[index];
     TangentComponents components{};
@@ -96,7 +105,6 @@ std::vector<Vec3> least_squares_gradient(const CubedSphereGrid& grid,
     gradients[index] = components.alpha * cached_cell.basis.alpha +
                        components.beta * cached_cell.basis.beta;
   }
-  return gradients;
 }
 
 std::vector<Real> finite_volume_laplacian(const CubedSphereGrid& grid,
@@ -148,8 +156,17 @@ std::vector<Real> finite_volume_vector_divergence(
 
 std::vector<TangentVectorGradient> least_squares_vector_gradient(
     const CubedSphereGrid& grid, const std::span<const Vec3> cell_vectors) {
-  validate_cell_vectors(grid, cell_vectors);
   std::vector<TangentVectorGradient> gradients(grid.cell_count());
+  least_squares_vector_gradient(grid, cell_vectors, gradients);
+  return gradients;
+}
+
+void least_squares_vector_gradient(const CubedSphereGrid& grid,
+                                   const std::span<const Vec3> cell_vectors,
+                                   const std::span<TangentVectorGradient> gradients) {
+  validate_cell_vectors(grid, cell_vectors);
+  if (gradients.size() != grid.cell_count())
+    throw std::invalid_argument("vector gradient output size does not match grid");
   for (std::size_t index = 0; index < grid.cell_count(); ++index) {
     const auto& cell = grid.cells()[index];
     const auto& cached_cell = grid.cell_cache()[index];
@@ -170,7 +187,6 @@ std::vector<TangentVectorGradient> least_squares_vector_gradient(
     }
     gradients[index] = gradient;
   }
-  return gradients;
 }
 
 Vec3 reconstruct_tangent_vector(const CubedSphereGrid& grid,

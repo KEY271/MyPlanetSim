@@ -22,6 +22,9 @@ struct TangentVectorGradient {
     const CubedSphereGrid& grid, std::span<const Real> oriented_edge_flux);
 [[nodiscard]] std::vector<Vec3> least_squares_gradient(
     const CubedSphereGrid& grid, std::span<const Real> cell_values);
+void least_squares_gradient(const CubedSphereGrid& grid,
+                            std::span<const Real> cell_values,
+                            std::span<Vec3> gradients);
 [[nodiscard]] std::vector<Real> finite_volume_laplacian(
     const CubedSphereGrid& grid, std::span<const Real> cell_values);
 [[nodiscard]] std::vector<Real> finite_volume_curl(const CubedSphereGrid& grid,
@@ -30,6 +33,9 @@ struct TangentVectorGradient {
     const CubedSphereGrid& grid, std::span<const Vec3> cell_vectors);
 [[nodiscard]] std::vector<TangentVectorGradient> least_squares_vector_gradient(
     const CubedSphereGrid& grid, std::span<const Vec3> cell_vectors);
+void least_squares_vector_gradient(const CubedSphereGrid& grid,
+                                   std::span<const Vec3> cell_vectors,
+                                   std::span<TangentVectorGradient> gradients);
 [[nodiscard]] Vec3 reconstruct_tangent_vector(const CubedSphereGrid& grid,
                                               std::size_t cell, Vec3 cell_value,
                                               Vec3 face_position,

@@ -16,5 +16,11 @@ namespace mps {
     const DryHydrostaticDerived& derived, std::span<const Real> surface_pressure_pa,
     const PlanetParameters& planet, ForcingGeometry geometry,
     const OrbitState* orbit_state = nullptr);
+void planetary_newtonian_tendency(
+    const CubedSphereGrid& grid, const AtmosphericHybridCoordinate& coordinate,
+    const DryHydrostaticDerived& derived, std::span<const Real> surface_pressure_pa,
+    const PlanetParameters& planet, ForcingGeometry geometry,
+    const OrbitState* orbit_state, HeldSuarezTendency& result,
+    HeldSuarezWorkspace& workspace);
 
 }  // namespace mps

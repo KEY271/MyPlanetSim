@@ -12,6 +12,19 @@ HydrostaticColumn integrate_hydrostatic_column(
     const std::vector<Real>& potential_temperature_k,
     const Real heat_capacity_cp_j_kg_k, const Real gravity_m_s2,
     const Real surface_geopotential_m2_s2) {
+  HydrostaticColumn result;
+  integrate_hydrostatic_column(geometry, potential_temperature_k,
+                               heat_capacity_cp_j_kg_k, gravity_m_s2,
+                               surface_geopotential_m2_s2, result);
+  return result;
+}
+
+void integrate_hydrostatic_column(const HybridPressureGeometry& geometry,
+                                  const std::span<const Real> potential_temperature_k,
+                                  const Real heat_capacity_cp_j_kg_k,
+                                  const Real gravity_m_s2,
+                                  const Real surface_geopotential_m2_s2,
+                                  HydrostaticColumn& result) {
   require_positive(heat_capacity_cp_j_kg_k, "heat capacity");
   require_positive(gravity_m_s2, "gravity");
   require_finite(surface_geopotential_m2_s2, "surface geopotential");
@@ -19,7 +32,6 @@ HydrostaticColumn integrate_hydrostatic_column(
   if (potential_temperature_k.size() != nz || geometry.exner_half.size() != nz + 1) {
     throw std::invalid_argument("hydrostatic geometry and theta shapes differ");
   }
-  HydrostaticColumn result;
   result.geopotential_half_m2_s2.resize(nz + 1);
   result.geopotential_full_m2_s2.resize(nz);
   result.height_half_m.resize(nz + 1);
@@ -48,7 +60,6 @@ HydrostaticColumn integrate_hydrostatic_column(
       result.height_full_m[k] = result.geopotential_full_m2_s2[k] / gravity_m_s2;
     }
   }
-  return result;
 }
 
 }  // namespace mps
