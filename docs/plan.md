@@ -253,6 +253,10 @@ validation gap を閉じてから実装を開始する。
 
 ### Phase 7 — 理想化乾燥物理と気候統計
 
+forcing、physics--dynamics coupling、気候統計、production matrix の実装順と境界は
+[Phase 7 実装計画](phase-7-plan.md) に定める。Phase 5/6 の production validation と
+ADR 0006 の SSP-RK3 実装一致を閉じてから開始し、汎用 physics framework や Web 拡張は含めない。
+
 実装するもの:
 
 - Held–Suarez 型 Newtonian relaxation と Rayleigh friction
@@ -262,7 +266,7 @@ validation gap を閉じてから実装を開始する。
 検証するもの:
 
 - Held–Suarez の帯状平均温度・東西風、Hadley cell、eddy statistics を公開結果と比較
-- 時間刻み、解像度、拡散、coupling interval に対する気候統計の感度
+- 時間刻み、解像度、拡散に対する気候統計の限定的な一要因感度
 - 強制・散逸を含むエネルギー budget が閉じること
 - restart が瞬時値だけでなく長時間統計を変えないこと
 - 少なくとも複数 seed/微小摂動で内部変動の幅を見積もること
@@ -325,17 +329,17 @@ validation gap を閉じてから実装を開始する。
 
 ## 5. 直近の実装順
 
-Phase 0–4 と Phase 5 の実装列は完了しているが、Phase 5 検証報告には quantitative 3D
-convergence と UMJS14 reference-envelope gap が残る。次の実装スプリントは新しい地形機能ではなく、
-この gate と ADR 0006 に対する実装一致を閉じる。
+Phase 6 の C++ 実装列は完了したが、Phase 5/6 検証報告には production 規模の定量的 gap が残る。
+次のスプリントは新しい physics を追加する前にこれを閉じ、dry driver と ADR 0006 の SSP-RK3 契約を
+一致させる。その後は [Phase 7 実装計画](phase-7-plan.md) の限定した順序で進める。
 
-1. Phase 5 の pressure-gradient、linear-wave、3D transport convergence を再生成する。
-2. UMJS14 steady/perturbed case を公開 reference envelope と比較する。
-3. state、再構築、SSP-RK3、CFL が ADR 0006 の契約と一致することを test で固定する。
-4. Phase 5 validation report を完了してから ADR 0008 を accepted にする。
-5. Phase 6 は flat identity、cellwise lower boundary、sloping pressure gradient の順に追加する。
-6. DCMIP 2-0-0、Williamson 5、linear hydrostatic response、JW06 の C++ gate を通す。
-7. 最後に strict lat-lon CSV 一形式と bounded smoothing を追加し、Web は変更しない。
+1. Phase 5 の pressure-gradient、linear-wave、3D transport convergence と UMJS14 envelope を閉じる。
+2. ADR 0006 の state、reconstruction、SSP-RK3、CFL 契約を実装・test と一致させる。
+3. Phase 6 の DCMIP 2-0-0、Williamson 5、linear response、JW06 production gate を閉じる。
+4. Phase 5/6 validation report を完了し、ADR 0008 を accepted にする。
+5. Held--Suarez の式、stage coupling、統計定義、reference envelope を ADR 0009 に固定する。
+6. 一つの forcing kernel、source budget、online climate statistics の順に実装する。
+7. short CI gate の後に 3 seed と三つの一要因感度だけを実行し、Web は変更しない。
 
 ## 6. 調査資料と計画への反映
 

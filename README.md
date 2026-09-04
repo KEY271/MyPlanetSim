@@ -14,6 +14,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 4 実装計画](docs/phase-4-plan.md): 鉛直 1D の C++ column core と、C++ 検証後に行う offline profile 可視化
 - [Phase 5 実装計画](docs/phase-5-plan.md): 地形なし乾燥 3D 静水圧コアを C++ で先に完成し、最後に live visualizer を更新する設計
 - [Phase 6 実装計画](docs/phase-6-plan.md): 固定地形、傾いた hybrid 面の pressure gradient、山岳 benchmark と最小の地形入力設計
+- [Phase 7 実装計画](docs/phase-7-plan.md): Held--Suarez 型の理想化乾燥物理、source budget、長時間気候統計の限定実装
 - [科学・数値規約](docs/conventions.md): 単位、座標、添字、符号、誤差・保存量の共通定義
 - [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
 - [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果
