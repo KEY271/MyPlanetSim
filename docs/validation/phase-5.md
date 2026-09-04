@@ -140,18 +140,16 @@ npm run test:browser --workspace @myplanetsim/ui
 `web/apps/ui/test/browser.test.js` starts the native gateway and two dev servers, one with
 an injected session and one without, then opens the real pages in Chromium. It checks that
 the session-less server announces the offline demo and offers only the shallow-water preset;
-that the plain URL of the session-carrying server reports the native engine and offers a
-moving dry preset; that selecting it announces the level count and shows the level and `K`
-controls before any run; and that a `K = 12` baroclinic run then yields a level slider
-spanning `0..11`, a column profile, an inspected value that differs between the first and
-last frame, and an inspector that follows the level slider. It skips when the binary, the
-preset, or the Chromium download is absent.
+that the plain URL of the session-carrying server reports the native engine and offers only
+the steady dry preset in addition to it; that selecting the dry preset announces the level
+count and shows the level and `K` controls before any run; and that a `K = 12` run yields a
+level slider spanning `0..11`, a column profile, an inspected value that remains steady
+between frames, and an inspector that follows the level slider. It skips when the binary,
+the preset, or the Chromium download is absent.
 
-`live.test.js` additionally runs every preset in `configs/interactive_dry_presets.txt` and
-requires its surface pressure to change over 600 s, except `phase5_visualizer_rest_n4`,
-which must not change at all. That pairing is the point: the steady case proves the coupled
-core leaves a resting atmosphere alone, and every other offered preset has to produce
-something to look at.
+`live.test.js` additionally requires `configs/interactive_dry_presets.txt` to contain only
+`phase5_visualizer_rest_n4` and verifies that its surface pressure does not change. The
+steady case proves the coupled core leaves a resting atmosphere alone.
 
 ### Known gaps
 

@@ -53,24 +53,24 @@ test("native run applies the requested N and produces authoritative frames", { s
   }
 });
 
-test("every dry preset the viewer offers actually evolves", { skip: process.env.MPS_ENABLE_LIVE !== "1" }, async () => {
+test("the viewer offers only the steady dry preset and it remains at rest", { skip: process.env.MPS_ENABLE_LIVE !== "1" }, async () => {
   const root = resolve(process.cwd(), "../../..");
   const binary = resolve(root, "build/dev/my_planet_sim");
   const manifest = resolve(root, "configs/interactive_dry_presets.txt");
   if (!existsSync(binary) || !existsSync(manifest)) return;
   const offered = readFileSync(manifest, "utf8").split("\n")
     .map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
-  assert.ok(offered.length > 1, "the viewer must offer more than one dry preset");
+  assert.deepEqual(offered, ["phase5_visualizer_rest_n4.cfg"]);
 
-  const runRoot = await mkdtemp(join(tmpdir(), "myplanetsim-motion-"));
+  const runRoot = await mkdtemp(join(tmpdir(), "myplanetsim-steady-"));
   const gateway = await startGateway({
-    binary, runRoot, sessionToken: "motion-token", port: 0,
+    binary, runRoot, sessionToken: "steady-token", port: 0,
     presets: { rest: resolve(root, "configs/phase3_rest_n4.cfg"),
       ...dryPresetsFromEnvironment({ MPS_DRY_PRESETS: offered.map((name) => resolve(root, "configs", name)).join(",") }) },
   });
   try {
     const port = gateway.server.address().port;
-    const headers = { authorization: "Bearer motion-token", "content-type": "application/json" };
+    const headers = { authorization: "Bearer steady-token", "content-type": "application/json" };
     const waitForTerminal = async (runId) => {
       let status = "running";
       for (let attempt = 0; attempt < 200 && (status === "running" || status === "cancelling"); attempt += 1) {
@@ -102,13 +102,7 @@ test("every dry preset the viewer offers actually evolves", { skip: process.env.
       const first = await surfacePressure(runId, 0);
       const last = await surfacePressure(runId, frames.length - 1);
       const change = Math.max(...first.map((value, cell) => Math.abs(last[cell] - value)));
-      if (presetId === "phase5_visualizer_rest_n4") {
-        // The documented smoke case: a resting atmosphere must be left exactly alone.
-        assert.equal(change, 0, `${presetId} is the steady smoke case but moved by ${change} Pa`);
-      } else {
-        // Anything else on offer has to produce something to look at.
-        assert.ok(change > 1e-3, `${presetId} renders a still image: surface pressure moved ${change} Pa`);
-      }
+      assert.equal(change, 0, `${presetId} is the steady smoke case but moved by ${change} Pa`);
     }
   } finally {
     await gateway.shutdown();

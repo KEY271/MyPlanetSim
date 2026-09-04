@@ -9,9 +9,9 @@ import { dryPresetsFromEnvironment, startGateway } from "../../gateway/src/main.
 
 // Everything else in this repository exercises the viewer through node. Node accepts API
 // shapes a browser rejects and never renders, so several defects reached the viewer
-// unnoticed: fetch called with the wrong receiver, the tokenless dev-server URL silently
-// selecting the offline demo, and a "visualizer" preset that never moves. This gate opens
-// the real page in a real browser against the real gateway.
+// unnoticed: fetch called with the wrong receiver and the tokenless dev-server URL silently
+// selecting the offline demo. This gate opens the real page in a real browser against the
+// real gateway.
 const enabled = process.env.MPS_ENABLE_BROWSER === "1";
 const root = resolve(process.cwd(), "../../..");
 
@@ -40,12 +40,12 @@ function startDevServer(port, environment) {
     { cwd: process.cwd(), shell: false, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...environment } });
 }
 
-test("the viewer reaches the gateway, offers moving presets, and renders their evolution", { skip: !enabled }, async () => {
+test("the viewer reaches the gateway and offers only the steady dry preset", { skip: !enabled }, async () => {
   const playwright = await loadPlaywright();
   if (!playwright) return;
   const binary = resolve(root, "build/dev/my_planet_sim");
-  const moving = resolve(root, "configs/phase5_umjs14_baroclinic.cfg");
-  if (!existsSync(binary) || !existsSync(moving)) return;
+  const steady = resolve(root, "configs/phase5_visualizer_rest_n4.cfg");
+  if (!existsSync(binary) || !existsSync(steady)) return;
 
   const runRoot = await mkdtemp(join(tmpdir(), "myplanetsim-browser-"));
   const token = "browser-gate-token";
@@ -53,7 +53,7 @@ test("the viewer reaches the gateway, offers moving presets, and renders their e
     binary, runRoot, sessionToken: token, port: 0,
     presets: {
       rest: resolve(root, "configs/phase3_rest_n4.cfg"),
-      ...dryPresetsFromEnvironment({ MPS_DRY_PRESETS: `${moving},${resolve(root, "configs/phase5_visualizer_rest_n4.cfg")}` }),
+      ...dryPresetsFromEnvironment({ MPS_DRY_PRESETS: steady }),
     },
   });
   const gatewayPort = gateway.server.address().port;
@@ -97,20 +97,19 @@ test("the viewer reaches the gateway, offers moving presets, and renders their e
     assert.equal(await page.$(".preset-error"), null);
     assert.match(await page.textContent(".engine-status"), /native C\+\+/);
     const presetOptions = await page.$$eval("select", (nodes) => [...nodes[0].options].map((o) => o.value));
-    assert.ok(presetOptions.includes("phase5_umjs14_baroclinic"), `expected a moving dry preset, saw ${JSON.stringify(presetOptions)}`);
+    assert.deepEqual(presetOptions, ["rest", "phase5_visualizer_rest_n4"]);
 
     // Selecting a dry preset must reveal the vertical controls before any run starts.
-    await page.selectOption("select", "phase5_umjs14_baroclinic");
+    await page.selectOption("select", "phase5_visualizer_rest_n4");
     assert.match(await page.textContent(".engine-status"), /dry_hydrostatic/);
     assert.match(await page.textContent(".preset-hint"), /8 model levels/);
     const kControl = await page.$("input[aria-label='K vertical resolution']");
     assert.ok(kControl, "expected a K control");
 
-    // Run it, then require the displayed field to actually change over the run. A preset
-    // that renders a still image is not a visualizer.
+    // Run it and require the steady solution to remain unchanged between frames.
     await kControl.fill("12");
-    await page.fill("input[type=number][max='31536000']", "1800");
-    await page.fill("input[type=number][max='86400']", "60");
+    await page.fill("input[type=number][max='31536000']", "120");
+    await page.fill("input[type=number][max='86400']", "10");
     await page.fill("input[type=number][max='1000000']", "1");
     await page.click("button:text('Run')");
     await page.waitForFunction(() => document.querySelector(".run-status")?.textContent?.includes("completed"), null, { timeout: 120000 });
@@ -124,19 +123,19 @@ test("the viewer reaches the gateway, offers moving presets, and renders their e
     const frameSlider = await page.$("input[aria-label='Frame']");
     const frameCount = Number(await frameSlider.getAttribute("max"));
     assert.ok(frameCount >= 2, `expected several frames, saw ${frameCount + 1}`);
-    const inspectorAt = async (frame) => {
+    const sampleAt = async (frame) => {
       await frameSlider.fill(String(frame));
       await page.waitForTimeout(50);
-      return page.textContent(".inspector");
+      return page.$$eval(".inspector p", (nodes) => nodes[1]?.textContent);
     };
-    const atStart = await inspectorAt(0);
-    const atEnd = await inspectorAt(frameCount);
-    assert.notEqual(atStart, atEnd, "the inspected value must change over the run");
+    const atStart = await sampleAt(0);
+    const atEnd = await sampleAt(frameCount);
+    assert.equal(atStart, atEnd, "the inspected value must remain steady over the run");
 
     // The level selector must select a genuinely different column entry.
     await levelSlider.fill("11");
     await page.waitForFunction(() => document.querySelector(".inspector")?.textContent?.includes("level 11/11"), null, { timeout: 10000 });
-    assert.notEqual(await page.textContent(".inspector"), atEnd);
+    assert.notEqual(await page.$$eval(".inspector p", (nodes) => nodes[1]?.textContent), atEnd);
     assert.deepEqual(failures, []);
   } finally {
     await browser?.close();

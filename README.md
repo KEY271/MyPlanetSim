@@ -88,7 +88,7 @@ API request に使います。
 ```sh
 MPS_SIMULATOR_BINARY="$PWD/../build/dev/my_planet_sim" \
 MPS_REST_PRESET="$PWD/../configs/phase3_rest_n4.cfg" \
-MPS_DRY_PRESETS="$PWD/../configs/phase5_umjs14_baroclinic.cfg" \
+MPS_DRY_PRESETS="$PWD/../configs/phase5_visualizer_rest_n4.cfg" \
 MPS_RUN_ROOT="$PWD/../.runs" \
 npm run start --workspace @myplanetsim/gateway
 ```
@@ -96,8 +96,8 @@ npm run start --workspace @myplanetsim/gateway
 `MPS_DRY_PRESETS` は任意で、comma 区切りの config path を取ります。指定すると capabilities が
 Phase 5 の dry hydrostatic preset を additive に返し、UI の preset selector に現れます。
 `just` 経由の場合は `configs/interactive_dry_presets.txt` の一覧が使われます。この一覧の
-preset は live gate で「600 s で実際に変化すること」を検査します（静止解である
-`phase5_visualizer_rest_n4` だけは逆に「一切変化しないこと」を検査する smoke case です）。gateway は
+提供対象は静止解 `phase5_visualizer_rest_n4` のみで、live gate は「一切変化しないこと」を
+検査します。gateway は
 起動時に `--describe-control` と preset descriptor の compatibility を検査し、preset ごとの
 N 上限、edit 可否、累積 published byte 予算 (既定 256 MiB) を強制します。shallow-water
 preset は Phase 3 の FrameV1 と Gaussian edit を維持し、dry hydrostatic preset は FrameV2 を

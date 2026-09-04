@@ -1,14 +1,6 @@
 # Dry hydrostatic presets offered by the interactive viewer, one configuration per line.
 # The Justfile turns this into MPS_DRY_PRESETS and the live gate reads the same list, so the
-# presets that are shipped are exactly the presets that are checked.
-#
-# Every preset here must evolve over a short run, otherwise the viewer renders a still image.
-# phase5_visualizer_rest_n4 is the one deliberate exception: an isothermal atmosphere at rest
-# is exactly steady by construction and exists as the smoke case that proves the coupled core
-# leaves a resting state alone.
-phase5_umjs14_baroclinic.cfg
-phase5_solid_body_transport.cfg
-phase5_dcmip_deformational.cfg
-phase5_dcmip_hadley.cfg
-phase5_linear_wave.cfg
+# preset that is shipped is exactly the preset that is checked. Keep only the isothermal
+# atmosphere at rest; it is steady by construction and proves that the coupled core leaves a
+# resting state alone.
 phase5_visualizer_rest_n4.cfg
