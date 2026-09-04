@@ -273,12 +273,16 @@ std::vector<Vec3> finite_volume_vector_laplacian(
   const auto vorticity = finite_volume_curl(grid, cell_vectors);
   const auto divergence_gradient = least_squares_gradient(grid, divergence);
   const auto vorticity_gradient = least_squares_gradient(grid, vorticity);
+  // lap(v) = grad(div v) + k_hat x grad(zeta) + v / a^2 (ADR 0011). The curvature term
+  // is the same +v/a^2 for the rotational and the divergent part.
+  const Real inverse_radius_squared = 1.0 / (grid.radius_m() * grid.radius_m());
   std::vector<Vec3> result(grid.cell_count());
   for (std::size_t cell = 0; cell < result.size(); ++cell) {
-    result[cell] =
-        project_tangent(divergence_gradient[cell] -
-                            cross(grid.cells()[cell].center, vorticity_gradient[cell]),
-                        grid.cells()[cell].center);
+    const Vec3 center = grid.cells()[cell].center;
+    result[cell] = project_tangent(
+        divergence_gradient[cell] + cross(center, vorticity_gradient[cell]) +
+            inverse_radius_squared * project_tangent(cell_vectors[cell], center),
+        center);
   }
   return result;
 }
