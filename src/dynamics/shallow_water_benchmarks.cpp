@@ -334,6 +334,7 @@ ShallowWaterState make_shallow_water_initial_state(const CubedSphereGrid& grid,
       return make_geostrophic_adjustment_state(grid, config.run.start_time_s,
                                                config.shallow_water.mean_depth_m);
     case ShallowWaterTestCase::kWilliamson2:
+    case ShallowWaterTestCase::kWilliamson5:
       return make_williamson2_state(
           grid, config.run.start_time_s, config.planet.gravity_m_s2,
           config.planet.rotation_rate_rad_s, config.shallow_water.mean_depth_m,

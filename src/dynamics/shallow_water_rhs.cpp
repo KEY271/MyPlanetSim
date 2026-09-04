@@ -44,12 +44,16 @@ void divide_by_area_and_project(const CubedSphereGrid& grid,
 ShallowWaterRhsComponents assemble_shallow_water_rhs(
     const CubedSphereGrid& grid, const ShallowWaterState& state,
     const ShallowWaterParameters& parameters, const Real gravity_m_s2,
-    const Vec3 rotation_vector_rad_s) {
+    const Vec3 rotation_vector_rad_s,
+    const std::span<const Real> surface_geopotential_m2_s2) {
   require_positive(gravity_m_s2, "shallow-water gravity");
   if (!is_finite(rotation_vector_rad_s)) {
     throw std::invalid_argument("shallow-water rotation vector is non-finite");
   }
   validate_shallow_water_state(grid, state, parameters.depth_floor_m);
+  if (!surface_geopotential_m2_s2.empty() &&
+      surface_geopotential_m2_s2.size() != grid.cell_count())
+    throw std::invalid_argument("shallow-water orography shape mismatch");
   const auto reconstructed = reconstruct_shallow_water_face_states(
       grid, state, parameters.reconstruction, parameters.limiter,
       parameters.depth_floor_m);
@@ -58,6 +62,7 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
       .pressure = zero_tendency(grid.cell_count()),
       .coriolis = zero_tendency(grid.cell_count()),
       .diffusion = zero_tendency(grid.cell_count()),
+      .orography = zero_tendency(grid.cell_count()),
       .total = zero_tendency(grid.cell_count()),
       .maximum_wave_speed_m_s = 0.0,
       .limiter_activations = reconstructed.limiter_activations,
@@ -82,6 +87,14 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
   divide_by_area_and_project(grid, result.pressure);
   result.diffusion = shallow_water_diffusion_tendency(
       grid, state, parameters.diffusion_kind, parameters.diffusion_coefficient);
+  const bool has_orography =
+      !surface_geopotential_m2_s2.empty() &&
+      std::ranges::any_of(surface_geopotential_m2_s2,
+                          [](const Real value) { return value != 0.0; });
+  std::vector<Vec3> orography_gradient;
+  if (has_orography)
+    orography_gradient =
+        least_squares_gradient(grid, surface_geopotential_m2_s2);
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
     Vec3 pressure_geometry_correction{};
     for (const std::size_t edge_id : grid.cell_edges(grid.cell_id(cell))) {
@@ -100,10 +113,16 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
     result.coriolis.momentum[cell] =
         -2.0 * project_tangent(cross(rotation_vector_rad_s, state.momentum[cell]),
                                grid.cells()[cell].center);
+    if (has_orography)
+      result.orography.momentum[cell] =
+          -state.depth[cell] * orography_gradient[cell];
     result.total.depth[cell] = result.flux.depth[cell];
     result.total.momentum[cell] = project_tangent(
         result.flux.momentum[cell] + result.pressure.momentum[cell] +
             result.coriolis.momentum[cell] + result.diffusion.momentum[cell],
+        grid.cells()[cell].center);
+    result.total.momentum[cell] = project_tangent(
+        result.total.momentum[cell] + result.orography.momentum[cell],
         grid.cells()[cell].center);
     result.total.depth[cell] += result.diffusion.depth[cell];
   }

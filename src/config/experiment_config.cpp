@@ -297,6 +297,8 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.shallow_water.test_case = ShallowWaterTestCase::kGeostrophicAdjustment;
     } else if (value == "williamson2") {
       config.shallow_water.test_case = ShallowWaterTestCase::kWilliamson2;
+    } else if (value == "williamson5") {
+      config.shallow_water.test_case = ShallowWaterTestCase::kWilliamson5;
     } else if (value == "williamson6") {
       config.shallow_water.test_case = ShallowWaterTestCase::kWilliamson6;
     } else if (value == "galewsky") {
@@ -564,6 +566,14 @@ void ExperimentConfig::validate() const {
     if (diagnostics.interval_steps == 0) {
       throw std::invalid_argument("diagnostics.interval_steps must be positive");
     }
+    if ((shallow_water.test_case == ShallowWaterTestCase::kWilliamson5) !=
+        (orography.kind == OrographyKind::kWilliamson5))
+      throw std::invalid_argument(
+          "williamson5 test case requires williamson5 orography and vice versa");
+    if (orography.kind != OrographyKind::kFlat &&
+        shallow_water.scheme == ShallowWaterScheme::kCompatible)
+      throw std::invalid_argument(
+          "non-flat shallow-water runs require the Rusanov scheme");
   } else {
     if (vertical.levels <= 0) {
       throw std::invalid_argument("vertical.levels must be positive");
@@ -1039,6 +1049,8 @@ std::string_view shallow_water_test_case_name(
       return "geostrophic_adjustment";
     case ShallowWaterTestCase::kWilliamson2:
       return "williamson2";
+    case ShallowWaterTestCase::kWilliamson5:
+      return "williamson5";
     case ShallowWaterTestCase::kWilliamson6:
       return "williamson6";
     case ShallowWaterTestCase::kGalewsky:

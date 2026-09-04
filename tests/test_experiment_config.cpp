@@ -284,6 +284,20 @@ MPS_TEST_CASE("shallow-water configuration rejects invalid numerical choices") {
                       std::invalid_argument);
 }
 
+MPS_TEST_CASE("Williamson 5 is Rusanov-only and requires its named terrain") {
+  auto text = std::string(kValidShallowWaterConfig);
+  auto position = text.find("williamson2");
+  text.replace(position, std::string("williamson2").size(), "williamson5");
+  const auto valid = parse(text + "orography.kind = williamson5\n");
+  MPS_CHECK(valid.shallow_water.test_case ==
+            mps::ShallowWaterTestCase::kWilliamson5);
+  position = text.find("shallow_water.scheme = rusanov");
+  text.replace(position, std::string("shallow_water.scheme = rusanov").size(),
+               "shallow_water.scheme = compatible");
+  MPS_CHECK_THROWS_AS(parse(text + "orography.kind = williamson5\n"),
+                      std::invalid_argument);
+}
+
 MPS_TEST_CASE("vertical-column configuration has a strict canonical round trip") {
   const auto first = parse(kValidVerticalConfig);
   MPS_CHECK(first.kind == mps::ExperimentKind::kVerticalColumn);

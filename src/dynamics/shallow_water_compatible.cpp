@@ -102,6 +102,7 @@ ShallowWaterRhsComponents assemble_compatible_shallow_water_rhs(
       .pressure = zero_tendency(grid.cell_count()),
       .coriolis = zero_tendency(grid.cell_count()),
       .diffusion = zero_tendency(grid.cell_count()),
+      .orography = zero_tendency(grid.cell_count()),
       .total = zero_tendency(grid.cell_count()),
       .maximum_wave_speed_m_s = 0.0,
       .limiter_activations = 0,

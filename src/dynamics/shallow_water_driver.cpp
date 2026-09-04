@@ -14,12 +14,14 @@
 #include "myplanetsim/dynamics/shallow_water_diffusion.hpp"
 #include "myplanetsim/dynamics/shallow_water_initial_edits.hpp"
 #include "myplanetsim/dynamics/shallow_water_rhs.hpp"
+#include "myplanetsim/dynamics/surface_orography.hpp"
 
 namespace mps {
 namespace {
 
 [[nodiscard]] Vec3 rotation_vector(const ExperimentConfig& config) {
   if (config.shallow_water.test_case == ShallowWaterTestCase::kWilliamson2 ||
+      config.shallow_water.test_case == ShallowWaterTestCase::kWilliamson5 ||
       config.shallow_water.test_case == ShallowWaterTestCase::kWilliamson6 ||
       config.shallow_water.test_case == ShallowWaterTestCase::kGalewsky) {
     return config.planet.rotation_rate_rad_s *
@@ -77,14 +79,16 @@ void project_and_validate_stage(const CubedSphereGrid& grid, ShallowWaterState& 
 void ssp_rk3_step(const CubedSphereGrid& grid, ShallowWaterState& state,
                   const Real time_step_s, const ShallowWaterParameters& parameters,
                   const CubedSphereDualTopology* dual, const Real gravity_m_s2,
-                  const Vec3 rotation_vector_rad_s, const Real cfl) {
+                  const Vec3 rotation_vector_rad_s, const Real cfl,
+                  const std::span<const Real> surface_geopotential_m2_s2) {
   const auto assemble = [&](const ShallowWaterState& stage) {
     if (dual != nullptr) {
       return assemble_compatible_shallow_water_rhs(grid, *dual, stage, parameters,
                                                    gravity_m_s2, rotation_vector_rad_s);
     }
     return assemble_shallow_water_rhs(grid, stage, parameters, gravity_m_s2,
-                                      rotation_vector_rad_s);
+                                      rotation_vector_rad_s,
+                                      surface_geopotential_m2_s2);
   };
   const ShallowWaterState initial = state;
   const auto rhs1 = assemble(initial);
@@ -163,6 +167,8 @@ ShallowWaterResult run_shallow_water(
     throw std::invalid_argument("shallow-water driver requires shallow_water config");
   }
   const CubedSphereGrid grid(config.grid.cells_per_panel, config.planet.radius_m);
+  const auto orography = make_surface_orography(
+      config.orography, grid, config.planet.gravity_m_s2);
   const Vec3 omega = rotation_vector(config);
   std::optional<CubedSphereDualTopology> dual;
   if (config.shallow_water.scheme == ShallowWaterScheme::kCompatible) {
@@ -221,7 +227,7 @@ ShallowWaterResult run_shallow_water(
     maximum_cfl = std::max(maximum_cfl, actual_cfl);
     ssp_rk3_step(grid, state, time_step, config.shallow_water,
                  dual.has_value() ? &*dual : nullptr, config.planet.gravity_m_s2, omega,
-                 actual_cfl);
+                 actual_cfl, orography.surface_geopotential_m2_s2());
     state.time_s += time_step;
     ++state.step;
     if (state.step % config.diagnostics.interval_steps == 0) {

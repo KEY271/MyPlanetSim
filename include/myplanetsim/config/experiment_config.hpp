@@ -41,6 +41,7 @@ enum class ShallowWaterTestCase {
   kLinearWave,
   kGeostrophicAdjustment,
   kWilliamson2,
+  kWilliamson5,
   kWilliamson6,
   kGalewsky
 };

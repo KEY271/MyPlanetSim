@@ -30,5 +30,6 @@ class SurfaceOrography {
     const OrographyParameters& parameters, const CubedSphereGrid& grid,
     Real gravity_m_s2);
 [[nodiscard]] Real dcmip_2_0_0_surface_height_m(Vec3 position);
+[[nodiscard]] Real williamson5_surface_height_m(Vec3 position);
 
 }  // namespace mps
