@@ -20,6 +20,7 @@
 
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/control/control_request.hpp"
+#include "myplanetsim/diagnostics/climate_statistics.hpp"
 #include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
 #include "myplanetsim/diagnostics/reductions.hpp"
 #include "myplanetsim/diagnostics/vertical_column_diagnostics.hpp"
@@ -812,19 +813,32 @@ int main(const int argc, const char* const argv[]) {
                                                      checkpoint.state, cells, levels);
       }
       std::optional<PhysicsDiagnosticsAccumulator> physics_diagnostics;
+      std::optional<mps::ClimateStatisticsAccumulator> climate_statistics;
       if (config.physics.kind == mps::PhysicsKind::kHeldSuarez) {
         physics_diagnostics.emplace(config, driver.grid());
+        climate_statistics.emplace(driver.grid(),
+                                   static_cast<std::size_t>(config.vertical.levels));
       }
-      driver.advance(
-          state, config.run.end_time_s,
-          [&physics_diagnostics](const mps::DryHydrostaticState& sampled,
-                                 const mps::DryHydrostaticDerived& derived,
-                                 const mps::DryHydrostaticStepDiagnostics& step) {
-            if (physics_diagnostics.has_value()) {
-              physics_diagnostics->observe(sampled, derived, step);
-            }
-          });
+      driver.advance(state, config.run.end_time_s,
+                     [&physics_diagnostics, &climate_statistics](
+                         const mps::DryHydrostaticState& sampled,
+                         const mps::DryHydrostaticDerived& derived,
+                         const mps::DryHydrostaticStepDiagnostics& step) {
+                       if (physics_diagnostics.has_value()) {
+                         physics_diagnostics->observe(sampled, derived, step);
+                       }
+                       if (climate_statistics.has_value()) {
+                         climate_statistics->observe(sampled, derived);
+                       }
+                     });
       if (physics_diagnostics.has_value()) physics_diagnostics->write();
+      if (climate_statistics.has_value()) {
+        const std::filesystem::path directory(config.output_directory);
+        std::filesystem::create_directories(directory);
+        std::ofstream output(directory / "climate_statistics.csv", std::ios::trunc);
+        if (!output) throw std::runtime_error("unable to open climate statistics CSV");
+        mps::write_climate_statistics_csv(output, climate_statistics->rows());
+      }
       if (command_line.checkpoint_path.has_value()) {
         mps::write_checkpoint_file(
             *command_line.checkpoint_path,

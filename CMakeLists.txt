@@ -51,6 +51,7 @@ add_library(
   src/core/validation.cpp
   src/core/version.cpp
   src/diagnostics/reductions.cpp
+  src/diagnostics/climate_statistics.cpp
   src/diagnostics/shallow_water_diagnostics.cpp
   src/diagnostics/vertical_column_diagnostics.cpp
   src/diagnostics/dry_hydrostatic_diagnostics.cpp
