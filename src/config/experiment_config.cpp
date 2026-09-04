@@ -493,6 +493,18 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.physics.kind = PhysicsKind::kHeldSuarez;
     else
       throw parse_error(line, "unknown physics.kind " + std::string(value));
+  } else if (key == "surface.geography") {
+    if (!config.surface.has_value()) config.surface.emplace();
+    auto& surface = *config.surface;
+    if (value == "uniform")
+      surface.geography = SurfaceGeography::kUniform;
+    else if (value == "earth")
+      surface.geography = SurfaceGeography::kEarth;
+    else
+      throw parse_error(line, "unknown surface.geography " + std::string(value));
+  } else if (key == "surface.uniform_land_fraction") {
+    if (!config.surface.has_value()) config.surface.emplace();
+    config.surface->uniform_land_fraction = parse_real(value, line, key);
   } else if (key == "orography.input_file") {
     config.orography.input_file = value;
   } else if (key == "orography.input_fingerprint_fnv1a64") {
@@ -707,8 +719,19 @@ void ExperimentConfig::validate() const {
           planet.reference_pressure_pa != earth.reference_pressure_pa)
         throw std::invalid_argument("held_suarez requires registered Earth constants");
     }
+    if (surface.has_value()) {
+      require_finite(surface->uniform_land_fraction, "surface.uniform_land_fraction");
+      if (surface->uniform_land_fraction < 0.0 || surface->uniform_land_fraction > 1.0)
+        throw std::invalid_argument("surface.uniform_land_fraction must be in [0, 1]");
+      if (surface->geography == SurfaceGeography::kEarth &&
+          surface->uniform_land_fraction != 0.0)
+        throw std::invalid_argument(
+            "earth geography does not accept a uniform land fraction");
+    }
   } else if (physics.kind != PhysicsKind::kNone) {
     throw std::invalid_argument("physics is supported only for dry_hydrostatic");
+  } else if (surface.has_value()) {
+    throw std::invalid_argument("surface is supported only for dry_hydrostatic");
   }
 
   if (orography.kind == OrographyKind::kFlat) {
@@ -785,7 +808,8 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     for (const auto& key : seen_keys) {
       if (key.starts_with("grid.") || key.starts_with("transport.") ||
           key.starts_with("shallow_water.") || key.starts_with("diagnostics.") ||
-          key.starts_with("orography.") || key.starts_with("physics.")) {
+          key.starts_with("orography.") || key.starts_with("physics.") ||
+          key.starts_with("surface.")) {
         throw std::runtime_error("key " + key + " is not valid for ode experiment");
       }
     }
@@ -794,7 +818,7 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     for (const auto& key : seen_keys) {
       if (key.starts_with("ode.") || key.starts_with("shallow_water.") ||
           key.starts_with("diagnostics.") || key.starts_with("orography.") ||
-          key.starts_with("physics.")) {
+          key.starts_with("physics.") || key.starts_with("surface.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for sphere_transport experiment");
       }
@@ -803,7 +827,7 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     require_keys(seen_keys, kShallowWaterRequiredKeys);
     for (const auto& key : seen_keys) {
       if (key.starts_with("ode.") || key.starts_with("transport.") ||
-          key.starts_with("physics.")) {
+          key.starts_with("physics.") || key.starts_with("surface.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for shallow_water experiment");
       }
@@ -813,7 +837,8 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     for (const auto& key : seen_keys) {
       if (key.starts_with("ode.") || key.starts_with("grid.") ||
           key.starts_with("transport.") || key.starts_with("shallow_water.") ||
-          key.starts_with("orography.") || key.starts_with("physics.")) {
+          key.starts_with("orography.") || key.starts_with("physics.") ||
+          key.starts_with("surface.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for vertical_column experiment");
       }
@@ -844,6 +869,19 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
   if (config.orography.kind != OrographyKind::kLatLonCsv &&
       (has_input_file || has_input_fingerprint || has_smoothing))
     throw std::runtime_error("orography input options are valid only for latlon_csv");
+
+  const bool has_surface_geography = seen_keys.contains("surface.geography");
+  const bool has_uniform_fraction = seen_keys.contains("surface.uniform_land_fraction");
+  if (!has_surface_geography && has_uniform_fraction)
+    throw std::runtime_error("surface options require surface.geography");
+  if (has_surface_geography &&
+      config.surface->geography == SurfaceGeography::kUniform && !has_uniform_fraction)
+    throw std::runtime_error(
+        "uniform surface geography requires surface.uniform_land_fraction");
+  if (has_surface_geography && config.surface->geography == SurfaceGeography::kEarth &&
+      has_uniform_fraction)
+    throw std::runtime_error(
+        "earth surface geography rejects surface.uniform_land_fraction");
 
   config.validate();
   return config;
@@ -982,6 +1020,13 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
              << config.dry_hydrostatic.diffusion_coefficient << '\n';
       if (config.physics.kind != PhysicsKind::kNone)
         output << "physics.kind = " << physics_kind_name(config.physics.kind) << '\n';
+      if (config.surface.has_value()) {
+        output << "surface.geography = "
+               << surface_geography_name(config.surface->geography) << '\n';
+        if (config.surface->geography == SurfaceGeography::kUniform)
+          output << "surface.uniform_land_fraction = "
+                 << config.surface->uniform_land_fraction << '\n';
+      }
     }
     if (config.orography.kind != OrographyKind::kFlat) {
       output << "orography.kind = " << orography_kind_name(config.orography.kind)
@@ -1072,6 +1117,16 @@ std::string_view physics_kind_name(const PhysicsKind kind) noexcept {
       return "none";
     case PhysicsKind::kHeldSuarez:
       return "held_suarez";
+  }
+  return "unknown";
+}
+
+std::string_view surface_geography_name(const SurfaceGeography geography) noexcept {
+  switch (geography) {
+    case SurfaceGeography::kUniform:
+      return "uniform";
+    case SurfaceGeography::kEarth:
+      return "earth";
   }
   return "unknown";
 }

@@ -66,6 +66,7 @@ add_library(
   src/dynamics/dry_hydrostatic_driver.cpp
   src/dynamics/dry_hydrostatic_benchmarks.cpp
   src/dynamics/surface_orography.cpp
+  src/dynamics/surface_boundary.cpp
   src/dynamics/vertical_column_state.cpp
   src/dynamics/vertical_column_driver.cpp
   src/dynamics/shallow_water_compatible.cpp

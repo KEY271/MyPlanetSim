@@ -164,6 +164,32 @@ MPS_TEST_CASE("valid configuration is parsed") {
   MPS_CHECK_EQ(config.output_directory, "output data");
 }
 
+MPS_TEST_CASE("fractional surface configuration is optional and strict") {
+  const auto old_config = parse(kValidDryHydrostaticConfig);
+  MPS_CHECK(!old_config.surface.has_value());
+  std::ostringstream old_text;
+  mps::write_experiment_config(old_text, old_config);
+  MPS_CHECK(old_text.str().find("surface.") == std::string::npos);
+
+  const auto configured = parse(std::string(kValidDryHydrostaticConfig) +
+                                "surface.geography = uniform\n"
+                                "surface.uniform_land_fraction = 0.25\n");
+  MPS_CHECK(configured.surface.has_value());
+  MPS_CHECK_EQ(configured.surface->uniform_land_fraction, 0.25);
+  std::ostringstream canonical;
+  mps::write_experiment_config(canonical, configured);
+  const auto round_trip = parse(canonical.str());
+  MPS_CHECK_EQ(round_trip.surface->uniform_land_fraction, 0.25);
+
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidDryHydrostaticConfig) +
+                            "surface.uniform_land_fraction = 0.25\n"),
+                      std::runtime_error);
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidDryHydrostaticConfig) +
+                            "surface.geography = earth\n"
+                            "surface.uniform_land_fraction = 0\n"),
+                      std::runtime_error);
+}
+
 MPS_TEST_CASE("configuration has a canonical round trip") {
   const auto first = parse(kValidConfig);
   std::ostringstream output;

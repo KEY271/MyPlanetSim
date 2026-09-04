@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <iosfwd>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -55,6 +56,7 @@ enum class OrographyKind {
   kJw06,
   kLatLonCsv
 };
+enum class SurfaceGeography { kUniform, kEarth };
 enum class InitialConditionKind {
   kConstant,
   kGaussianHill,
@@ -159,6 +161,11 @@ struct PhysicsParameters {
   PhysicsKind kind = PhysicsKind::kNone;
 };
 
+struct SurfaceParameters {
+  SurfaceGeography geography = SurfaceGeography::kUniform;
+  Real uniform_land_fraction = 0.0;
+};
+
 struct ExperimentConfig {
   ExperimentKind kind = ExperimentKind::kOde;
   PlanetParameters planet;
@@ -171,6 +178,7 @@ struct ExperimentConfig {
   DryHydrostaticParameters dry_hydrostatic{};
   OrographyParameters orography{};
   PhysicsParameters physics{};
+  std::optional<SurfaceParameters> surface;
   DiagnosticsParameters diagnostics{};
   std::string output_directory;
   // Runtime-only origin used to resolve portable config-relative inputs.
@@ -203,6 +211,8 @@ struct ExperimentConfig {
     DryHydrostaticTestCase test_case) noexcept;
 [[nodiscard]] std::string_view orography_kind_name(OrographyKind kind) noexcept;
 [[nodiscard]] std::string_view physics_kind_name(PhysicsKind kind) noexcept;
+[[nodiscard]] std::string_view surface_geography_name(
+    SurfaceGeography geography) noexcept;
 
 [[nodiscard]] ExperimentConfig parse_experiment_config(std::istream& input);
 [[nodiscard]] ExperimentConfig load_experiment_config(
