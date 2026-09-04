@@ -581,6 +581,8 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.surface->air_exchange_coefficient_w_m2_k = parsed;
     else if (key == "surface.internal_heat_flux_w_m2")
       config.surface->internal_heat_flux_w_m2 = parsed;
+    else if (key == "surface.cfl")
+      config.surface->cfl = parsed;
     else
       throw parse_error(line, "unknown key " + std::string(key));
   } else if (key == "orography.input_file") {
@@ -827,6 +829,8 @@ void ExperimentConfig::validate() const {
                            "surface.air_exchange_coefficient_w_m2_k");
       require_finite(surface->internal_heat_flux_w_m2,
                      "surface.internal_heat_flux_w_m2");
+      if (!(surface->cfl > 0.0) || !(surface->cfl <= 1.0))
+        throw std::invalid_argument("surface.cfl must be in (0, 1]");
     }
     if (surface.has_value()) {
       require_finite(surface->uniform_land_fraction, "surface.uniform_land_fraction");
@@ -1240,7 +1244,8 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
                  << "surface.air_exchange_coefficient_w_m2_k = "
                  << config.surface->air_exchange_coefficient_w_m2_k << '\n'
                  << "surface.internal_heat_flux_w_m2 = "
-                 << config.surface->internal_heat_flux_w_m2 << '\n';
+                 << config.surface->internal_heat_flux_w_m2 << '\n'
+                 << "surface.cfl = " << config.surface->cfl << '\n';
       }
     }
     if (config.orography.kind != OrographyKind::kFlat) {

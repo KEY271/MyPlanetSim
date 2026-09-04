@@ -137,4 +137,32 @@ MPS_TEST_CASE("driver advances the coupled surface at SSP-RK3 stages") {
     MPS_CHECK(temperature > 0.0);
 }
 
+// ADR 0011: the reservoir is integrated explicitly, so its step is bounded before the
+// fact. Previously only positivity was checked, and a small heat capacity could
+// oscillate inside the positive range without failing any gate.
+MPS_TEST_CASE("the surface reservoir reports its own stability limit") {
+  const Fixture fixture;
+  auto small = parameters();
+  small.land_heat_capacity_j_m2_k = 1.0e4;
+  const std::vector<mps::Real> temperature(fixture.grid.cell_count(), 300.0);
+  const auto tendency = mps::surface_energy_tendency(
+      fixture.grid, boundary(fixture, 1.0), temperature, fixture.atmosphere,
+      fixture.surface_pressure, {2.0, 1.0e-4, 9.8, 287.0, 1004.0, 100000.0}, small,
+      fixture.orbit);
+
+  const mps::Real relaxation =
+      4.0 * small.emissivity * mps::kStefanBoltzmannWm2K4 * std::pow(300.0, 3);
+  MPS_CHECK_NEAR(tendency.stable_time_step_s,
+                 small.cfl * small.land_heat_capacity_j_m2_k / relaxation, 1.0e-9);
+
+  // A twenty-times larger reservoir relaxes twenty times more slowly.
+  auto large = small;
+  large.land_heat_capacity_j_m2_k = 2.0e5;
+  const auto slower = mps::surface_energy_tendency(
+      fixture.grid, boundary(fixture, 1.0), temperature, fixture.atmosphere,
+      fixture.surface_pressure, {2.0, 1.0e-4, 9.8, 287.0, 1004.0, 100000.0}, large,
+      fixture.orbit);
+  MPS_CHECK_NEAR(slower.stable_time_step_s, 20.0 * tendency.stable_time_step_s, 1.0e-6);
+}
+
 int main() { return mps::test::run_all(); }

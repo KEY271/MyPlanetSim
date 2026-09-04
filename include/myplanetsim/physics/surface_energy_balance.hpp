@@ -27,6 +27,10 @@ struct SurfaceEnergyTendency {
   std::vector<Real> potential_temperature_mass_k_kg_m2_s;
   std::vector<Vec3> horizontal_momentum_mass_kg_m_s2;
   SurfaceEnergyDiagnostics diagnostics;
+  // cfl * min_c tau_surface(c) with tau = C / (4 eps sigma_SB T_s^3) (ADR 0011). The
+  // reservoir is integrated explicitly, so this bounds it before the fact instead of
+  // relying on the positivity retry to notice an oscillation.
+  Real stable_time_step_s = 0.0;
 };
 
 [[nodiscard]] SurfaceEnergyTendency surface_energy_tendency(

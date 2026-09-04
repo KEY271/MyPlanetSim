@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace mps {
@@ -23,6 +24,7 @@ SurfaceEnergyTendency surface_energy_tendency(
     throw std::invalid_argument("surface energy balance shape mismatch");
 
   SurfaceEnergyTendency result;
+  result.stable_time_step_s = std::numeric_limits<Real>::infinity();
   result.surface_temperature_k_s.resize(atmosphere.cells);
   result.potential_temperature_mass_k_kg_m2_s.assign(volume, 0.0);
   result.horizontal_momentum_mass_kg_m_s2.assign(volume, {});
@@ -66,6 +68,13 @@ SurfaceEnergyTendency surface_energy_tendency(
     result.diagnostics.sensible_to_atmosphere_power_w += area * sensible;
     result.diagnostics.surface_storage_rate_w +=
         area * capacity * result.surface_temperature_k_s[cell];
+
+    const Real longwave_relaxation = 4.0 * parameters.emissivity *
+                                     kStefanBoltzmannWm2K4 *
+                                     std::pow(surface_temperature, 3);
+    if (longwave_relaxation > 0.0)
+      result.stable_time_step_s = std::min(
+          result.stable_time_step_s, parameters.cfl * capacity / longwave_relaxation);
   }
   result.diagnostics.surface_budget_residual_w =
       result.diagnostics.surface_storage_rate_w -

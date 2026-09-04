@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <limits>
 #include <optional>
 
 #include "myplanetsim/config/experiment_config.hpp"
@@ -15,6 +16,7 @@ struct DryHydrostaticRhs {
   DryHydrostaticTransportTendency tendency;
   Real horizontal_stable_time_step_s;
   Real vertical_stable_time_step_s;
+  Real surface_stable_time_step_s = std::numeric_limits<Real>::infinity();
   Real maximum_continuity_residual_pa_s;
   HeldSuarezDiagnostics physics_diagnostics{};
   std::vector<Real> surface_temperature_k_s;

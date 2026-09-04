@@ -183,6 +183,9 @@ struct SurfaceParameters {
   Real emissivity = 0.0;
   Real air_exchange_coefficient_w_m2_k = 0.0;
   Real internal_heat_flux_w_m2 = 0.0;
+  // Stability fraction for the explicit surface reservoir (ADR 0011):
+  // dt <= cfl * min_c C_surface[c] / (4 eps sigma_SB T_s[c]^3).
+  Real cfl = 0.5;
 };
 
 struct ExperimentConfig {

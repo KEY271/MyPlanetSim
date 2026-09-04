@@ -146,7 +146,7 @@ Two of the assumptions above have been measured and are wrong. This amendment ch
 production candidate and unblocks the six-run matrix. It changes nothing about the forcing
 constants, the 200-to-1200-day window, or the registered sanity envelopes.
 
-- **The candidate's time step becomes about 264 s, not 600 s.** The dry core limited its
+- **The candidate's time step becomes 200 s, not 600 s.** The dry core limited its
   horizontal step per edge rather than per cell, which is roughly four times too weak on a
   quadrilateral cell. The candidate reports CFL 0.45 but runs at an effective cell CFL of
   about 1.02. [ADR 0011](0011-vector-operators-and-time-step-normalization.md) normalizes
@@ -159,7 +159,7 @@ constants, the 200-to-1200-day window, or the registered sanity envelopes.
   every earlier run, so the five existing members are unchanged.
 
 The consequence is cost, not meaning: at the corrected step a 1200-day run is about
-392,700 steps. [ADR 0012](0012-static-grid-cache-and-performance-gates.md) registers the
+518,400 steps. [ADR 0012](0012-static-grid-cache-and-performance-gates.md) registers the
 performance work that makes the six-run matrix affordable without MPI or OpenMP. The
 matrix itself is still not run by Phase 9, which delivers one pilot run and its measured
 cost.

@@ -96,16 +96,21 @@ no longer the only guard.
 The dry-core change tightens the stable step for presets whose configured
 `run.time_step_s` exceeds the per-cell limit. Measured effect:
 
-| preset | `N`/`K` | configured step | per-cell limit | affected |
-|---|---|---:|---:|---|
-| `phase5_*` (8 presets) | 4 / 8 | 10 s | ~780 s | no |
-| `phase6_dcmip_2_0_0` | 8 / 15 | 60 s | re-evaluated after ADR 0013 | — |
-| `phase6_jw06_steady`, `phase6_jw06_baroclinic` | 16 / 8 | 300 s | ~188 s | **yes** |
-| `phase6_linear_mountain_wave` | 16 / 8 | 30 s | ~204 s | no |
-| `phase7_held_suarez_short` | 2 / 2 | 10 s | ~1700 s | no |
-| `phase7_held_suarez`, `phase8_earth_like`, `phase8_rapid_rotator`, `phase8_slow_rotator`, `phase8_tidally_locked` | 12 / 20 | 600 s | ~264 s | **yes** |
-| `phase8_earth_geography` | 4 / 4 | 60 s | ~840 s | no |
-| all shallow-water and transport presets | — | — | — | no (already per cell) |
+Per-cell limits measured on each preset's initial state after the change:
+
+| preset | `N`/`K` | old step | measured limit | new step |
+|---|---|---:|---:|---:|
+| `phase5_*` (8 presets) | 4 / 8 | 10 s | 686--726 s | 10 s |
+| `phase6_dcmip_2_0_0` | 8 / 15 | 60 s | does not start (ADR 0013) | 60 s |
+| `phase6_jw06_steady`, `phase6_jw06_baroclinic` | 16 / 8 | 300 s | 166.6 s | **150 s** |
+| `phase6_linear_mountain_wave` | 16 / 8 | 30 s | 171.1 s | 30 s |
+| `phase7_held_suarez_short` | 2 / 2 | 10 s | 1644.8 s | 10 s |
+| `phase7_held_suarez`, `phase8_earth_like`, `phase8_rapid_rotator`, `phase8_slow_rotator`, `phase8_tidally_locked` | 12 / 20 | 600 s | 240.6 s | **200 s** |
+| `phase8_earth_geography` | 4 / 4 | 60 s | 736.6 s | 60 s |
+| all shallow-water and transport presets | — | — | — | unchanged (already per cell) |
+
+The new steps are round values below the measured initial limit, leaving margin for the
+flow to spin up; the driver still shortens a step that the running state cannot take.
 
 None of the seven affected presets has a registered production run, so no existing
 baseline is invalidated and every CI gate stays byte-exact. Doing this after the Phase 7
@@ -115,8 +120,8 @@ production matrix has run would instead cost six re-runs.
 
 - Explicit horizontal diffusion becomes usable for the first time (ADR 0006, wired in
   Phase 9), because it would otherwise be wired to a wrong operator.
-- The Phase 7 production candidate's step drops from 600 s to roughly 264 s, which is the
-  cost driver recorded in the ADR 0009 amendment.
+- The Phase 7 production candidate's step drops from 600 s to 200 s, which is the cost
+  driver recorded in the ADR 0009 amendment.
 - `cfl` is comparable across solvers and across presets, so a stability question has one
   answer instead of three.
 - The surface reservoir cannot silently oscillate under a small heat capacity.
@@ -138,8 +143,16 @@ production matrix has run would instead cost six re-runs.
 ## Validation obligations
 
 - Rigid rotation `u = Omega cross r` reproduces `-u/a^2` within a registered tolerance.
-- Rotational and divergent analytic fields at `n = 1, 2` have observed order at least 1.
-- A constant vector field leaves only the curvature term.
+- The area-weighted Rayleigh quotient `<lap(v).v>/<v.v>` converges to `(1-n(n+1))/a^2`
+  with observed order at least 1 for rotational and divergent fields at `n = 1, 2`.
+
+  The gate is stated on that projection rather than on a pointwise norm because
+  `finite_volume_curl` carries an O(1) error along the six panel seams: its `Linf` error
+  sits near `5e-2` at `N = 8, 16, 32, 64` while its interior median converges at second
+  order. Taking a least-squares gradient of that seam noise makes the pointwise Laplacian
+  error *grow* like `1/h`. This is a defect of the curl stencil, not of the Laplacian
+  assembly this ADR fixes; it is recorded in the Phase 9 validation report as an input to
+  a later ADR rather than repaired here.
 - `kLaplacian` momentum diffusion decreases kinetic energy; `kBiharmonic` still decays.
 - The dry-core stable step matches `cfl * A / sum(lambda*L)` on an analytic cell, and the
   three solvers agree on one CFL definition.

@@ -117,7 +117,8 @@ void halve_time_step(const DryHydrostaticState& state, Real& time_step_s) {
 }
 
 [[nodiscard]] Real stable_time_step(const DryHydrostaticRhs& rhs) {
-  return std::min(rhs.horizontal_stable_time_step_s, rhs.vertical_stable_time_step_s);
+  return std::min({rhs.horizontal_stable_time_step_s, rhs.vertical_stable_time_step_s,
+                   rhs.surface_stable_time_step_s});
 }
 
 [[nodiscard]] bool surface_temperature_is_positive(const DryHydrostaticState& state) {
@@ -171,7 +172,10 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
   h.momentum.assign(C * K, {});
   h.potential_temperature_mass.assign(C * K, 0);
   h.tracer_mass.assign(C * K, 0);
-  Real dt = std::numeric_limits<Real>::infinity();
+  // Per-cell Courant condition (ADR 0011): dt * sum_f(lambda_f * L_f) / A_cell <= cfl,
+  // the same definition the transport and shallow-water solvers already use. The
+  // previous per-edge form was about four times weaker on a quadrilateral cell.
+  std::vector<Real> face_speed_length(C * K, 0.0);
   const auto reconstructed = reconstruct_dry_hydrostatic_face_states(
       grid_, d, config_.dry_hydrostatic.reconstruction,
       config_.dry_hydrostatic.limiter);
@@ -192,13 +196,19 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
         h.potential_temperature_mass[n] +=
             scale * f.potential_temperature_mass_k_kg_m_s;
         h.tracer_mass[n] += scale * f.tracer_mass_kg_m_s;
+        face_speed_length[n] += e.length_m * f.maximum_wave_speed_m_s;
       };
       add(l, -1);
       add(r, 1);
-      dt = std::min(dt,
-                    config_.dry_hydrostatic.cfl *
-                        std::min(grid_.cells()[l].area_m2, grid_.cells()[r].area_m2) /
-                        (e.length_m * f.maximum_wave_speed_m_s));
+    }
+  }
+  Real dt = std::numeric_limits<Real>::infinity();
+  for (std::size_t c = 0; c < C; ++c) {
+    for (std::size_t k = 0; k < K; ++k) {
+      const Real denominator = face_speed_length[dry_hydrostatic_offset(c, k, K)];
+      if (denominator > 0.0)
+        dt = std::min(
+            dt, config_.dry_hydrostatic.cfl * grid_.cells()[c].area_m2 / denominator);
     }
   }
   auto coupled = couple_dry_hydrostatic_columns(
@@ -249,6 +259,7 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
   }
   HeldSuarezDiagnostics physics_diagnostics{};
   SurfaceEnergyDiagnostics surface_diagnostics{};
+  Real surface_dt = std::numeric_limits<Real>::infinity();
   std::vector<Real> surface_temperature_rate;
   if (config_.physics.kind == PhysicsKind::kHeldSuarez) {
     auto physics = held_suarez_tendency(grid_, coordinate_, d, s.surface_pressure_pa,
@@ -275,6 +286,7 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
     }
     surface_temperature_rate = std::move(physics.surface_temperature_k_s);
     surface_diagnostics = physics.diagnostics;
+    surface_dt = physics.stable_time_step_s;
   } else if (config_.physics.kind == PhysicsKind::kPlanetaryNewtonian) {
     std::optional<OrbitState> orbit_state;
     if (config_.physics.geometry == ForcingGeometry::kSubstellar)
@@ -295,6 +307,7 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
           .tendency = std::move(coupled.tendency),
           .horizontal_stable_time_step_s = dt,
           .vertical_stable_time_step_s = vertical_dt,
+          .surface_stable_time_step_s = surface_dt,
           .maximum_continuity_residual_pa_s = coupled.maximum_continuity_residual_pa_s,
           .physics_diagnostics = physics_diagnostics,
           .surface_temperature_k_s = std::move(surface_temperature_rate),
