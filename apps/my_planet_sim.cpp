@@ -19,9 +19,9 @@
 
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/control/control_request.hpp"
+#include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
 #include "myplanetsim/diagnostics/reductions.hpp"
 #include "myplanetsim/diagnostics/vertical_column_diagnostics.hpp"
-#include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
 #include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
 #include "myplanetsim/dynamics/shallow_water_driver.hpp"
@@ -183,10 +183,52 @@ void write_machine_frame(const mps::ShallowWaterState& state, void* context) {
           "\",\"byteLength\":" + std::to_string(std::filesystem::file_size(path)));
 }
 
+// Dry hydrostatic runs publish a FrameV2 snapshot instead of the shallow-water FrameV1
+// payload, so the context carries the level count and the frame interval the control
+// request asked for. The driver observes every accepted step; only the requested
+// interval and the final step are published.
+struct MachineFrameV2Context {
+  std::filesystem::path directory;
+  std::string config_fingerprint;
+  mps::Index cells_per_panel = 0;
+  mps::Index levels = 0;
+  std::uint64_t frame_interval_steps = 1;
+  MachineEventWriter* events = nullptr;
+  std::uint64_t frame_sequence = 0;
+  std::uint64_t last_published_step = std::numeric_limits<std::uint64_t>::max();
+};
+
+void write_machine_frame_v2(MachineFrameV2Context& frame,
+                            const mps::DryHydrostaticState& state,
+                            const mps::DryHydrostaticDerived& derived) {
+  const auto sequence = frame.frame_sequence++;
+  const std::string filename = "frame_" + std::to_string(sequence) + ".bin";
+  const auto path = frame.directory / filename;
+  mps::write_frame_v2_file(path,
+                           {.cells_per_panel = frame.cells_per_panel,
+                            .levels = frame.levels,
+                            .time_s = state.time_s,
+                            .step = state.step,
+                            .config_fingerprint = frame.config_fingerprint},
+                           state.surface_pressure_pa, derived);
+  frame.last_published_step = state.step;
+  frame.events->emit(
+      "frame.ready",
+      "\"frameSequence\":" + std::to_string(sequence) + ",\"timeSeconds\":" +
+          std::to_string(state.time_s) + ",\"step\":" + std::to_string(state.step) +
+          ",\"relativePath\":\"" + json_escape(filename) +
+          "\",\"byteLength\":" + std::to_string(std::filesystem::file_size(path)) +
+          ",\"frameSchemaVersion\":2");
+}
+
 void print_control_description() {
   std::cout << "{\"protocolVersion\":1,\"supportedEdits\":[\"gaussian_depth\"],"
                "\"maxEditCount\":64,\"maxEndTimeSeconds\":31536000,"
-               "\"maxTimeStepSeconds\":86400,\"maxFrameIntervalSteps\":1000000}\n";
+               "\"maxTimeStepSeconds\":86400,\"maxFrameIntervalSteps\":1000000,"
+               "\"modelKinds\":[\"shallow_water\",\"dry_hydrostatic\"],"
+               "\"frameSchemaVersions\":[1,2],"
+               "\"dryHydrostatic\":{\"maxCellsPerPanel\":24,\"maxLevels\":30,"
+               "\"supportedEdits\":[]}}\n";
 }
 
 void write_result(std::ostream& output, const mps::OdeResult& result,
@@ -572,11 +614,70 @@ int main(const int argc, const char* const argv[]) {
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
       write_vertical_column_result(std::cout, result, diagnostics);
     } else if (config.kind == mps::ExperimentKind::kDryHydrostatic) {
-      if (command_line.integrator != mps::IntegratorKind::kSspRk3 ||
-          command_line.control_request_path.has_value() ||
-          command_line.event_stream_ndjson) {
-        throw std::invalid_argument(
-            "dry hydrostatic standalone mode supports only ssprk3");
+      if (command_line.integrator != mps::IntegratorKind::kSspRk3) {
+        throw std::invalid_argument("dry hydrostatic supports only ssprk3");
+      }
+      if (command_line.control_request_path.has_value()) {
+        if (command_line.restart_path.has_value() ||
+            command_line.checkpoint_path.has_value()) {
+          throw std::invalid_argument(
+              "machine control mode does not accept checkpoint or restart options");
+        }
+        const auto control_request =
+            mps::load_control_request(*command_line.control_request_path);
+        if (!control_request.initial_edits.empty()) {
+          throw std::invalid_argument(
+              "dry hydrostatic runs do not accept initial condition edits");
+        }
+        const auto run_config = mps::apply_control_request(config, control_request);
+        machine_events = std::make_unique<MachineEventWriter>();
+        machine_events->run_id = control_request.run_id;
+        machine_events->emit("run.accepted");
+        const mps::DryHydrostaticDriver driver(run_config);
+        auto state = driver.initial_state();
+        MachineFrameV2Context frame_context{
+            .directory = run_config.output_directory,
+            .config_fingerprint = mps::config_fingerprint(run_config),
+            .cells_per_panel = run_config.grid.cells_per_panel,
+            .levels = run_config.vertical.levels,
+            .frame_interval_steps = run_config.diagnostics.interval_steps,
+            .events = machine_events.get()};
+        machine_events->emit("run.started");
+        std::signal(SIGINT, request_cancellation);
+        std::signal(SIGTERM, request_cancellation);
+        driver.advance(
+            state, run_config.run.end_time_s,
+            [&frame_context](const mps::DryHydrostaticState& sampled,
+                             const mps::DryHydrostaticDerived& derived) {
+              if (sampled.step % frame_context.frame_interval_steps == 0) {
+                write_machine_frame_v2(frame_context, sampled, derived);
+              }
+            },
+            [] { return g_cancel_requested.load(); });
+        const auto derived = driver.diagnose(state);
+        if (frame_context.last_published_step != state.step) {
+          write_machine_frame_v2(frame_context, state, derived);
+        }
+        std::ofstream metadata(
+            std::filesystem::path(run_config.output_directory) / "run-metadata.txt",
+            std::ios::trunc);
+        if (!metadata) {
+          throw std::runtime_error("unable to open machine run metadata");
+        }
+        mps::write_run_metadata(metadata, mps::make_run_metadata(run_config),
+                                run_config);
+        const auto diagnostics = mps::diagnose_dry_hydrostatic_budgets(
+            driver.grid(), state, derived, run_config.planet);
+        machine_events->emit(
+            "diagnostics.sample",
+            "\"timeSeconds\":" + std::to_string(state.time_s) +
+                ",\"step\":" + std::to_string(state.step) +
+                ",\"mass\":" + std::to_string(diagnostics.dry_mass_kg) +
+                ",\"energy\":" + std::to_string(diagnostics.total_energy_j));
+        machine_events->emit(state.time_s < run_config.run.end_time_s
+                                 ? "run.cancelled"
+                                 : "run.completed");
+        return 0;
       }
       mps::DryHydrostaticDriver driver(config);
       auto state = driver.initial_state();
@@ -586,8 +687,8 @@ int main(const int argc, const char* const argv[]) {
         auto checkpoint = mps::read_checkpoint_file(
             *command_line.restart_path, fingerprint,
             mps::kDryHydrostaticCheckpointLayout, cells + 5 * cells * levels);
-        state = mps::unflatten_dry_hydrostatic_state(
-            checkpoint.time_s, checkpoint.step, checkpoint.state, cells, levels);
+        state = mps::unflatten_dry_hydrostatic_state(checkpoint.time_s, checkpoint.step,
+                                                     checkpoint.state, cells, levels);
       }
       driver.advance(state, config.run.end_time_s);
       if (command_line.checkpoint_path.has_value()) {
