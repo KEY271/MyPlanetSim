@@ -13,6 +13,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 3 実装計画](docs/phase-3-plan.md): C++ 制御付き独立 Web UI、初期条件編集、3D/2D cubed-sphere 表示の設計とコミット列
 - [Phase 4 実装計画](docs/phase-4-plan.md): 鉛直 1D の C++ column core と、C++ 検証後に行う offline profile 可視化
 - [Phase 5 実装計画](docs/phase-5-plan.md): 地形なし乾燥 3D 静水圧コアを C++ で先に完成し、最後に live visualizer を更新する設計
+- [Phase 6 実装計画](docs/phase-6-plan.md): 固定地形、傾いた hybrid 面の pressure gradient、山岳 benchmark と最小の地形入力設計
 - [科学・数値規約](docs/conventions.md): 単位、座標、添字、符号、誤差・保存量の共通定義
 - [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
 - [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果
@@ -22,6 +23,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [水平離散化 ADR](docs/adr/0003-shallow-water-horizontal-discretization.md): 基準 Rusanov 法と compatible 候補の比較と採否
 - [鉛直座標 ADR](docs/adr/0005-hybrid-vertical-coordinate-and-column-state.md): hybrid `A/B`、column state、鉛直 mass flux の規約
 - [乾燥 3D 結合 ADR](docs/adr/0006-dry-hydrostatic-state-and-coupling.md): 3D state、水平・鉛直 flux、pressure gradient、実装順序の規約
+- [固定地形 ADR](docs/adr/0008-fixed-orography-and-lower-boundary.md): 不変な surface geopotential、下部境界、地形 source と I/O 境界
 
 ## ビルドと実行
 

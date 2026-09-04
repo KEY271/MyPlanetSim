@@ -227,6 +227,11 @@ state、数値結合、C++ gate、最後に visualizer を更新するコミッ�
 
 ### Phase 6 — 地形と下部境界
 
+固定地形の data contract、数値式、C++ gate、コミット順は
+[Phase 6 実装計画](phase-6-plan.md) に定める。地形は予報 state へ追加せず、判断は
+[ADR 0008](adr/0008-fixed-orography-and-lower-boundary.md) に記録する。Phase 5 の既知の定量的
+validation gap を閉じてから実装を開始する。
+
 実装するもの:
 
 - geopotential/orography field と地表境界条件
@@ -320,16 +325,17 @@ state、数値結合、C++ gate、最後に visualizer を更新するコミッ�
 
 ## 5. 直近の実装順
 
-Phase 0–3 と Phase 4 の C++ 鉛直 1D column core は完了済みである。次の実装スプリントは
-Phase 4 の最終段として、確定済み CSV を読む offline column profile visualizer を対象にする。
+Phase 0–4 と Phase 5 の実装列は完了しているが、Phase 5 検証報告には quantitative 3D
+convergence と UMJS14 reference-envelope gap が残る。次の実装スプリントは新しい地形機能ではなく、
+この gate と ADR 0006 に対する実装一致を閉じる。
 
-1. hybrid `A/B`、full/half level、column state、mass-flux 規約を ADR 0005 に固定する。
-2. C++ に coordinate geometry、乾燥熱力学、静水圧積分を追加する。
-3. surface-pressure tendency、鉛直 mass flux、保存型 theta/tracer 輸送を追加する。
-4. static、moving-`ps`、manufactured transport の driver と diagnostics/I/O を追加する。
-5. coordinate limit、解析的静水圧、space/time convergence、budget、restart gate を実行する。
-6. C++ gate 後に strict CSV parser と offline column profile view を追加し、Web 回帰 gate を通す。
-7. Phase 5 で cubed-sphere と結合し、3D state の検証後に frame/gateway/live visualizer を更新する。
+1. Phase 5 の pressure-gradient、linear-wave、3D transport convergence を再生成する。
+2. UMJS14 steady/perturbed case を公開 reference envelope と比較する。
+3. state、再構築、SSP-RK3、CFL が ADR 0006 の契約と一致することを test で固定する。
+4. Phase 5 validation report を完了してから ADR 0008 を accepted にする。
+5. Phase 6 は flat identity、cellwise lower boundary、sloping pressure gradient の順に追加する。
+6. DCMIP 2-0-0、Williamson 5、linear hydrostatic response、JW06 の C++ gate を通す。
+7. 最後に strict lat-lon CSV 一形式と bounded smoothing を追加し、Web は変更しない。
 
 ## 6. 調査資料と計画への反映
 
