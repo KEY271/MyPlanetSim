@@ -460,6 +460,25 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
                         "unknown dry_hydrostatic.diffusion_kind " + std::string(value));
   } else if (key == "dry_hydrostatic.diffusion_coefficient") {
     config.dry_hydrostatic.diffusion_coefficient = parse_real(value, line, key);
+  } else if (key == "orography.kind") {
+    if (value == "dcmip_2_0_0")
+      config.orography.kind = OrographyKind::kDcmip200;
+    else if (value == "williamson5")
+      config.orography.kind = OrographyKind::kWilliamson5;
+    else if (value == "linear_bell")
+      config.orography.kind = OrographyKind::kLinearBell;
+    else if (value == "jw06")
+      config.orography.kind = OrographyKind::kJw06;
+    else if (value == "latlon_csv")
+      config.orography.kind = OrographyKind::kLatLonCsv;
+    else
+      throw parse_error(line, "unknown orography.kind " + std::string(value));
+  } else if (key == "orography.input_file") {
+    config.orography.input_file = value;
+  } else if (key == "orography.input_fingerprint_fnv1a64") {
+    config.orography.input_fingerprint_fnv1a64 = value;
+  } else if (key == "orography.smoothing_passes") {
+    config.orography.smoothing_passes = parse_index(value, line, key);
   } else if (key == "output.directory") {
     config.output_directory = value;
   } else {
@@ -630,6 +649,29 @@ void ExperimentConfig::validate() const {
           "none");
   }
 
+  if (orography.kind == OrographyKind::kFlat) {
+    if (!orography.input_file.empty() ||
+        !orography.input_fingerprint_fnv1a64.empty() ||
+        orography.smoothing_passes != 0)
+      throw std::invalid_argument("flat orography does not accept input options");
+  } else if (orography.kind == OrographyKind::kLatLonCsv) {
+    if (orography.input_file.empty() ||
+        orography.input_file.find_first_of("\r\n") != std::string::npos)
+      throw std::invalid_argument("latlon_csv requires a single-line input file");
+    if (orography.input_fingerprint_fnv1a64.size() != 16 ||
+        !std::ranges::all_of(orography.input_fingerprint_fnv1a64, [](char value) {
+          return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f');
+        }))
+      throw std::invalid_argument(
+          "latlon_csv fingerprint must be 16 lowercase hexadecimal digits");
+    if (orography.smoothing_passes < 0)
+      throw std::invalid_argument("orography smoothing passes must be nonnegative");
+  } else if (!orography.input_file.empty() ||
+             !orography.input_fingerprint_fnv1a64.empty() ||
+             orography.smoothing_passes != 0) {
+    throw std::invalid_argument("analytic orography does not accept input options");
+  }
+
   if (run.end_time_s <= run.start_time_s) {
     throw std::invalid_argument("run.end_time_s must be greater than run.start_time_s");
   }
@@ -680,7 +722,8 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     require_keys(seen_keys, kOdeRequiredKeys);
     for (const auto& key : seen_keys) {
       if (key.starts_with("grid.") || key.starts_with("transport.") ||
-          key.starts_with("shallow_water.") || key.starts_with("diagnostics.")) {
+          key.starts_with("shallow_water.") || key.starts_with("diagnostics.") ||
+          key.starts_with("orography.")) {
         throw std::runtime_error("key " + key + " is not valid for ode experiment");
       }
     }
@@ -688,7 +731,7 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     require_keys(seen_keys, kTransportRequiredKeys);
     for (const auto& key : seen_keys) {
       if (key.starts_with("ode.") || key.starts_with("shallow_water.") ||
-          key.starts_with("diagnostics.")) {
+          key.starts_with("diagnostics.") || key.starts_with("orography.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for sphere_transport experiment");
       }
@@ -705,7 +748,8 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     require_keys(seen_keys, kVerticalRequiredKeys);
     for (const auto& key : seen_keys) {
       if (key.starts_with("ode.") || key.starts_with("grid.") ||
-          key.starts_with("transport.") || key.starts_with("shallow_water.")) {
+          key.starts_with("transport.") || key.starts_with("shallow_water.") ||
+          key.starts_with("orography.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for vertical_column experiment");
       }
@@ -721,6 +765,21 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
       }
     }
   }
+
+
+  const bool has_orography_kind = seen_keys.contains("orography.kind");
+  const bool has_input_file = seen_keys.contains("orography.input_file");
+  const bool has_input_fingerprint =
+      seen_keys.contains("orography.input_fingerprint_fnv1a64");
+  const bool has_smoothing = seen_keys.contains("orography.smoothing_passes");
+  if (!has_orography_kind && (has_input_file || has_input_fingerprint || has_smoothing))
+    throw std::runtime_error("orography options require orography.kind");
+  if (config.orography.kind == OrographyKind::kLatLonCsv &&
+      !(has_input_file && has_input_fingerprint && has_smoothing))
+    throw std::runtime_error("latlon_csv requires input, fingerprint, and smoothing keys");
+  if (config.orography.kind != OrographyKind::kLatLonCsv &&
+      (has_input_file || has_input_fingerprint || has_smoothing))
+    throw std::runtime_error("orography input options are valid only for latlon_csv");
 
   config.validate();
   return config;
@@ -853,9 +912,19 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
              << "dry_hydrostatic.cfl = " << config.dry_hydrostatic.cfl << '\n'
              << "dry_hydrostatic.diffusion_kind = "
              << diffusion_kind_name(config.dry_hydrostatic.diffusion_kind) << '\n'
-             << "dry_hydrostatic.diffusion_coefficient = "
-             << config.dry_hydrostatic.diffusion_coefficient << '\n';
-    }
+           << "dry_hydrostatic.diffusion_coefficient = "
+           << config.dry_hydrostatic.diffusion_coefficient << '\n';
+  }
+  if (config.orography.kind != OrographyKind::kFlat) {
+    output << "orography.kind = " << orography_kind_name(config.orography.kind)
+           << '\n';
+    if (config.orography.kind == OrographyKind::kLatLonCsv)
+      output << "orography.input_file = " << config.orography.input_file << '\n'
+             << "orography.input_fingerprint_fnv1a64 = "
+             << config.orography.input_fingerprint_fnv1a64 << '\n'
+             << "orography.smoothing_passes = "
+             << config.orography.smoothing_passes << '\n';
+  }
   }
   output << "output.directory = " << config.output_directory << '\n';
 
@@ -897,6 +966,24 @@ std::string_view dry_hydrostatic_test_case_name(
       return "umjs14_steady";
     case DryHydrostaticTestCase::kUmjs14Baroclinic:
       return "umjs14_baroclinic";
+  }
+  return "unknown";
+}
+
+std::string_view orography_kind_name(const OrographyKind kind) noexcept {
+  switch (kind) {
+    case OrographyKind::kFlat:
+      return "flat";
+    case OrographyKind::kDcmip200:
+      return "dcmip_2_0_0";
+    case OrographyKind::kWilliamson5:
+      return "williamson5";
+    case OrographyKind::kLinearBell:
+      return "linear_bell";
+    case OrographyKind::kJw06:
+      return "jw06";
+    case OrographyKind::kLatLonCsv:
+      return "latlon_csv";
   }
   return "unknown";
 }

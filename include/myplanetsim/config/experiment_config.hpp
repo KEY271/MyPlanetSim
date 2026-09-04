@@ -45,6 +45,14 @@ enum class ShallowWaterTestCase {
   kGalewsky
 };
 enum class DiffusionKind { kNone, kLaplacian, kBiharmonic };
+enum class OrographyKind {
+  kFlat,
+  kDcmip200,
+  kWilliamson5,
+  kLinearBell,
+  kJw06,
+  kLatLonCsv
+};
 enum class InitialConditionKind {
   kConstant,
   kGaussianHill,
@@ -129,6 +137,13 @@ struct DryHydrostaticParameters {
   Real diffusion_coefficient = 0.0;
 };
 
+struct OrographyParameters {
+  OrographyKind kind = OrographyKind::kFlat;
+  std::string input_file;
+  std::string input_fingerprint_fnv1a64;
+  Index smoothing_passes = 0;
+};
+
 struct DiagnosticsParameters {
   std::uint64_t interval_steps = 1;
 };
@@ -143,6 +158,7 @@ struct ExperimentConfig {
   ShallowWaterParameters shallow_water{};
   VerticalColumnParameters vertical{};
   DryHydrostaticParameters dry_hydrostatic{};
+  OrographyParameters orography{};
   DiagnosticsParameters diagnostics{};
   std::string output_directory;
 
@@ -171,6 +187,7 @@ struct ExperimentConfig {
     VerticalLimiterKind limiter) noexcept;
 [[nodiscard]] std::string_view dry_hydrostatic_test_case_name(
     DryHydrostaticTestCase test_case) noexcept;
+[[nodiscard]] std::string_view orography_kind_name(OrographyKind kind) noexcept;
 
 [[nodiscard]] ExperimentConfig parse_experiment_config(std::istream& input);
 [[nodiscard]] ExperimentConfig load_experiment_config(

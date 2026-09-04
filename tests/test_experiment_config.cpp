@@ -315,4 +315,42 @@ MPS_TEST_CASE("dry-hydrostatic configuration reuses vertical schema strictly") {
                       std::runtime_error);
 }
 
+MPS_TEST_CASE("orography configuration is bounded and conditionally canonical") {
+  const auto flat = parse(kValidDryHydrostaticConfig);
+  std::ostringstream flat_output;
+  mps::write_experiment_config(flat_output, flat);
+  MPS_CHECK(flat_output.str().find("orography.") == std::string::npos);
+
+  const auto analytic =
+      parse(std::string(kValidDryHydrostaticConfig) +
+            "orography.kind = dcmip_2_0_0\n");
+  MPS_CHECK(analytic.orography.kind == mps::OrographyKind::kDcmip200);
+  std::ostringstream analytic_output;
+  mps::write_experiment_config(analytic_output, analytic);
+  MPS_CHECK(analytic_output.str().find("orography.kind = dcmip_2_0_0\n") !=
+            std::string::npos);
+
+  const std::string imported =
+      std::string(kValidDryHydrostaticConfig) +
+      "orography.kind = latlon_csv\n"
+      "orography.input_file = terrain.csv\n"
+      "orography.input_fingerprint_fnv1a64 = 0123456789abcdef\n"
+      "orography.smoothing_passes = 2\n";
+  const auto csv = parse(imported);
+  MPS_CHECK_EQ(csv.orography.smoothing_passes, 2);
+  std::ostringstream csv_output;
+  mps::write_experiment_config(csv_output, csv);
+  MPS_CHECK_EQ(parse(csv_output.str()).orography.input_file, "terrain.csv");
+
+  MPS_CHECK_THROWS_AS(
+      parse(std::string(kValidDryHydrostaticConfig) +
+            "orography.kind = linear_bell\n"
+            "orography.smoothing_passes = 1\n"),
+      std::runtime_error);
+  MPS_CHECK_THROWS_AS(
+      parse(std::string(kValidDryHydrostaticConfig) +
+            "orography.kind = latlon_csv\n"),
+      std::runtime_error);
+}
+
 int main() { return mps::test::run_all(); }
