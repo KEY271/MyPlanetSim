@@ -278,9 +278,16 @@ entry gate と Phase 7 の 1200 日 production matrix は保留されており�
 
 ### Phase 8 — 架空惑星化
 
+惑星・軌道、解析的 benchmark forcing、Earth を含む固定 surface geography、fractional land--ocean
+surface の詳細設計と実装順は [Phase 8 実装計画](phase-8-plan.md) に定める。海洋は深さや輸送を持たず、
+陸海で異なる面積熱容量だけを持つ。海岸 cell は二値化せず `0<f_land<1` を保持する。主要な判断は
+[ADR 0010](adr/0010-planetary-forcing-and-fractional-surface.md) に記録する。
+
 実装するもの:
 
 - 惑星半径 `R`、重力 `g`、自転 `Omega`、気体定数 `Rd`、`cp`、基準気圧、熱的強制、軌道/恒星日の設定化
+- Earth の elevation と fractional land field、および `0<f_land<1` の海岸 cell
+- 深さ・輸送を持たず、陸海で面積熱容量だけが異なる surface energy reservoir
 - Earth-like、slow rotator、rapid rotator、tidally locked の実験 preset
 - 次元量と無次元量（Rossby 数、Burger 数、変形半径、放射/回転時間尺度など）の metadata
 
