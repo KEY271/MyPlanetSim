@@ -111,7 +111,7 @@ export function createGatewayServer(options) {
           const lines = run.pending.split("\n"); run.pending = lines.pop() ?? "";
           for (const line of lines) if (line.trim()) { try { publish(JSON.parse(line)); } catch { run.status = "failed"; run.protocolError = true; child.kill?.("SIGTERM"); } }
         });
-        child.on("close", (code, signal) => { if (!run.terminal) run.status = run.cancellationRequested ? "cancelled" : code === 0 ? "completed" : "failed"; run.exitCode = code; run.signal = signal; run.terminal = true; activeRun = false; for (const waiter of run.waiters) waiter(); run.waiters.clear(); });
+        child.on("close", (code, signal) => { if (!run.terminal) run.status = run.cancellationRequested ? "cancelled" : code === 0 ? "completed" : "failed"; run.exitCode = code; run.signal = signal; run.terminal = true; activeRun = false; if (run.forceTimer) clearTimeout(run.forceTimer); for (const waiter of run.waiters) waiter(); run.waiters.clear(); });
         child.stderr?.on("data", (chunk) => { run.stderr = `${run.stderr}${chunk}`.slice(-64 * 1024); });
         return json(response, 202, { protocolVersion, runId, status: "running" });
       }

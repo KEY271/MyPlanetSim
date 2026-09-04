@@ -6,7 +6,8 @@
     "build": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.js",
+    "test": "node --test test/gateway.test.js",
+    "test:live": "MPS_ENABLE_LIVE=1 node --test test/live.test.js",
     "start": "node src/main.js"
   },
   "devDependencies": {

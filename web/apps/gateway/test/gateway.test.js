@@ -27,6 +27,9 @@ test("gateway uses loopback auth and shell-free argv", async () => {
   const gateway = createGatewayServer({ binary: "/configured/simulator", presets: { rest: preset }, runRoot: root, sessionToken: "token", spawn: fakeSpawn });
   await new Promise((resolve) => gateway.server.listen(0, "127.0.0.1", resolve));
   const port = gateway.server.address().port;
+  const unauthorized = await fetch(`http://127.0.0.1:${port}/api/v1/capabilities`);
+  assert.equal(unauthorized.status, 401);
+  await unauthorized.arrayBuffer();
   const response = await fetch(`http://127.0.0.1:${port}/api/v1/runs`, { method: "POST", headers: { authorization: "Bearer token", host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "content-type": "application/json" }, body: JSON.stringify(request) });
   assert.equal(response.status, 202); assert.equal(spawnOptions.shell, false); assert.deepEqual(spawnArgs.slice(-2), ["--event-stream", "ndjson"]);
   gateway.server.close();
