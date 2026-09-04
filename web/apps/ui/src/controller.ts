@@ -1,4 +1,4 @@
-import { addShallowWaterDerivedFields, decodeFrameV1, EventV1, ProtocolError, RunRequestV1, RunState, transitionRunState } from "@myplanetsim/protocol";
+import { addShallowWaterDerivedFields, decodeFrameV1, EventV1, ProtocolError, RunBundleV1, RunRequestV1, RunState, transitionRunState } from "@myplanetsim/protocol";
 import { SimulationClient } from "@myplanetsim/protocol/client";
 
 export interface ControllerSnapshot {
@@ -8,10 +8,11 @@ export interface ControllerSnapshot {
   readonly frames: readonly ReturnType<typeof decodeFrameV1>[];
   readonly currentFrame: number;
   readonly error: string | null;
+  readonly request: RunRequestV1 | null;
 }
 
 export class SimulationController {
-  private snapshot: ControllerSnapshot = { state: "draft", runId: null, events: [], frames: [], currentFrame: 0, error: null };
+  private snapshot: ControllerSnapshot = { state: "draft", runId: null, events: [], frames: [], currentFrame: 0, error: null, request: null };
   private listeners = new Set<(snapshot: ControllerSnapshot) => void>();
   private client: SimulationClient;
 
@@ -22,7 +23,7 @@ export class SimulationController {
 
   async start(request: RunRequestV1) {
     if (this.snapshot.state !== "draft" && this.snapshot.state !== "completed" && this.snapshot.state !== "failed" && this.snapshot.state !== "cancelled") throw new ProtocolError("run_in_progress", "a run is already active");
-    this.update({ state: "submitting", events: [], frames: [], currentFrame: 0, error: null });
+    this.update({ state: "submitting", events: [], frames: [], currentFrame: 0, error: null, request });
     try {
       const submitted = await this.client.submit(request); this.update({ runId: submitted.runId });
       await this.consume(submitted.runId, -1);
@@ -47,4 +48,5 @@ export class SimulationController {
   async reconnect() { if (this.snapshot.runId) await this.consume(this.snapshot.runId, this.snapshot.events.at(-1)?.sequence ?? -1); }
   async cancel() { if (this.snapshot.runId && this.snapshot.state === "running") { this.update({ state: transitionRunState("running", "cancelling") }); await this.client.cancel(this.snapshot.runId); } }
   setCurrentFrame(index: number) { if (index >= 0 && index < this.snapshot.frames.length) this.update({ currentFrame: index }); }
+  async bundle(): Promise<RunBundleV1 | null> { return this.snapshot.runId ? this.client.bundle(this.snapshot.runId) : null; }
 }

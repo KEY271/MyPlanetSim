@@ -98,7 +98,7 @@ export function createGatewayServer(options) {
         const controlPath = join(directory, "control.request");
         await writeFile(controlPath, controlRequestText(requestValue, runId), "utf8");
         const child = spawn(binary, ["--config", configPath, "--control-request", controlPath, "--event-stream", "ndjson"], { cwd: directory, shell: false, stdio: ["ignore", "pipe", "pipe"] });
-        const run = { runId, directory, status: "running", child, events: [], stderr: "", pending: "", waiters: new Set(), lastSequence: -1, cancellationRequested: false };
+        const run = { runId, directory, status: "running", child, request: requestValue, controlRequest: controlRequestText(requestValue, runId), events: [], stderr: "", pending: "", waiters: new Set(), lastSequence: -1, cancellationRequested: false };
         runs.set(runId, run); activeRun = true;
         const publish = (event) => {
           if (!event || event.protocolVersion !== protocolVersion || event.runId !== runId || !Number.isInteger(event.sequence) || event.sequence <= run.lastSequence) throw protocolError("event sequence is invalid");
@@ -156,7 +156,7 @@ export function createGatewayServer(options) {
       const bundleMatch = url.pathname.match(/^\/api\/v1\/runs\/([^/]+)\/bundle$/);
       if (request.method === "GET" && bundleMatch) {
         const run = runs.get(bundleMatch[1]); if (!run) return json(response, 404, { error: "not_found" });
-        return json(response, 200, { protocolVersion, runId: run.runId, status: run.status, events: run.events, stderr: run.stderr });
+        return json(response, 200, { protocolVersion, runId: run.runId, status: run.status, request: run.request, controlRequest: run.controlRequest, events: run.events, stderr: run.stderr });
       }
       return json(response, 404, { error: "not_found" });
     } catch (error) { return json(response, error.code === "invalid_request" ? 400 : 500, { error: error.code ?? "gateway_error", message: error.code === "invalid_request" ? error.message : "request failed" }); }

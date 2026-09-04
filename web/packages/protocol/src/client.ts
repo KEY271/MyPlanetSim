@@ -1,6 +1,7 @@
 import {
   EventV1,
   ProtocolError,
+  RunBundleV1,
   RunRequestV1,
   validateEvent,
   validateRunRequest,
@@ -17,6 +18,7 @@ export interface SimulationClient {
   submit(request: RunRequestV1): Promise<{ runId: string }>;
   events(runId: string, afterSequence?: number): AsyncIterable<EventV1>;
   frame(runId: string, sequence: number): Promise<ArrayBuffer>;
+  bundle(runId: string): Promise<RunBundleV1>;
   cancel(runId: string): Promise<void>;
 }
 
@@ -68,6 +70,10 @@ export class HttpSimulationClient implements SimulationClient {
     const response = await this.fetcher(`${this.baseUrl}/api/v1/runs/${encodeURIComponent(runId)}/frames/${sequence}`);
     if (!response.ok) throw new ProtocolError("http_error", `frame failed: ${response.status}`);
     return response.arrayBuffer();
+  }
+
+  async bundle(runId: string): Promise<RunBundleV1> {
+    return this.json<RunBundleV1>(`/api/v1/runs/${encodeURIComponent(runId)}/bundle`, { method: "GET" });
   }
 
   private async json<T>(path: string, init: RequestInit): Promise<T> {
@@ -128,5 +134,9 @@ export class DeterministicMockSimulationClient implements SimulationClient {
     const offset = 52 + fingerprint.length;
     for (let index = 0; index < cellCount; index += 1) view.setFloat64(offset + index * 8, 1, true);
     return bytes;
+  }
+
+  async bundle(runId: string): Promise<RunBundleV1> {
+    return { protocolVersion: 1, runId, status: "completed", request: { protocolVersion: 1, presetId: "rest", run: { endTimeSeconds: 1, maximumTimeStepSeconds: 1, frameIntervalSteps: 1 }, initialCondition: { edits: [] } }, controlRequest: "", events: [], stderr: "" };
   }
 }

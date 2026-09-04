@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { addShallowWaterDerivedFields, parseShallowWaterCsv, UnitVector, cubedSphereCells } from "@myplanetsim/protocol";
+import { addShallowWaterDerivedFields, diagnosticEvents, parseShallowWaterCsv, UnitVector, cubedSphereCells } from "@myplanetsim/protocol";
 import { DeterministicMockSimulationClient } from "@myplanetsim/protocol/client";
 import { Globe3D } from "./Globe3D";
 import { Map2D } from "./Map2D";
@@ -39,6 +39,8 @@ function App() {
   const requestSummary = () => { try { return JSON.stringify(toRunRequest(draft), null, 2); } catch (error) { return error instanceof Error ? error.message : "invalid request"; } };
   const start = () => { try { void controller.start(toRunRequest(draft)); } catch (error) { setMessage(error instanceof Error ? error.message : "invalid request"); } };
   const displayed = run.frames.length > 0 ? currentDataset : dataset;
+  const diagnostics = diagnosticEvents(run.events);
+  const downloadBundle = async () => { const bundle = await controller.bundle(); if (!bundle) return; const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" })); link.download = `${bundle.runId}.json`; link.click(); URL.revokeObjectURL(link.href); };
   return <main className="app-shell">
     <p className="eyebrow">MyPlanetSim · Phase 3</p><h1>Interactive shallow-water visualizer</h1><p>{message}</p>
     <section className="control-panel" aria-label="Initial condition editor">
@@ -52,6 +54,7 @@ function App() {
     <p role="status">Run state: {run.state}{run.error ? ` · ${run.error}` : ""}</p>
     <section className="view-grid"><div><h2>3D globe</h2><Globe3D dataset={displayed} fieldId={fieldId} gridMode={gridMode} pendingOrigin={run.frames.length === 0 ? selectedOrigin : undefined} onPick={addFromCell} /></div><div><h2>2D global map</h2><Map2D dataset={displayed} fieldId={fieldId} gridMode={gridMode} pendingOrigin={run.frames.length === 0 ? selectedOrigin : undefined} onPick={addFromCell} /></div></section>
     <section className="timeline"><button type="button" onClick={() => controller.setCurrentFrame(Math.max(0, run.currentFrame - 1))}>Previous frame</button><button type="button" onClick={() => setPlaying((value) => !value)} disabled={run.frames.length < 2}>{playing ? "Pause" : "Play"}</button><input aria-label="Frame" type="range" min="0" max={Math.max(0, run.frames.length - 1)} value={run.currentFrame} onChange={(event) => controller.setCurrentFrame(Number(event.target.value))} /><span>{run.frames.length ? `${run.currentFrame + 1}/${run.frames.length}` : "No frames"}</span></section>
+    <section className="diagnostics"><h2>Diagnostics</h2><button type="button" onClick={() => void downloadBundle()} disabled={!run.runId}>Download run bundle</button>{diagnostics.map((sample) => <p key={sample.sequence}>step {sample.step} · mass {sample.mass ?? "n/a"} · energy {sample.energy ?? "n/a"}</p>)}</section>
     <section className="request-panel"><h2>Request summary</h2><pre>{requestSummary()}</pre></section>
   </main>;
 }

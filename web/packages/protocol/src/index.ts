@@ -48,7 +48,7 @@ export type EventV1 =
       relativePath: string;
       byteLength: number;
     })
-  | (EventBaseV1 & { type: "diagnostics.sample"; timeSeconds: number; step: number })
+  | (EventBaseV1 & { type: "diagnostics.sample"; timeSeconds: number; step: number; mass?: number; energy?: number; potentialEnstrophy?: number; axialAngularMomentum?: number; maximumCfl?: number })
   | (EventBaseV1 & { type: "run.completed" | "run.cancelled" })
   | (EventBaseV1 & { type: "run.failed"; code: string; message: string });
 
@@ -153,6 +153,21 @@ export function transitionRunState(state: RunState, next: RunState): RunState {
     throw new ProtocolError("invalid_state_transition", `${state} cannot transition to ${next}`);
   }
   return next;
+}
+
+export interface RunBundleV1 {
+  readonly protocolVersion: typeof protocolVersion;
+  readonly runId: string;
+  readonly status: RunState;
+  readonly request: RunRequestV1;
+  readonly controlRequest: string;
+  readonly events: readonly EventV1[];
+  readonly stderr: string;
+  readonly buildMetadata?: Record<string, string>;
+}
+
+export function diagnosticEvents(events: readonly EventV1[]) {
+  return events.filter((event): event is Extract<EventV1, { type: "diagnostics.sample" }> => event.type === "diagnostics.sample");
 }
 
 export * from "./visual";

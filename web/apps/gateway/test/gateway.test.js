@@ -56,5 +56,7 @@ test("gateway serves only published frames and supports reconnect sequence", asy
   assert.match(eventText, /frame.ready/);
   const frame = await fetch(`http://127.0.0.1:${port}/api/v1/runs/${runId}/frames/0`, { headers: { authorization: "Bearer token" } });
   assert.deepEqual([...new Uint8Array(await frame.arrayBuffer())], [1, 2, 3]);
+  const bundle = await fetch(`http://127.0.0.1:${port}/api/v1/runs/${runId}/bundle`, { headers: { authorization: "Bearer token" } });
+  assert.equal((await bundle.json()).request.presetId, "rest");
   gateway.server.closeAllConnections?.(); await gateway.shutdown();
 });
