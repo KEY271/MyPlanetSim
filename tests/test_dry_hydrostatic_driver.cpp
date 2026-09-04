@@ -171,7 +171,7 @@ MPS_TEST_CASE("Held-Suarez forcing is part of every accepted SSP-RK3 step") {
   std::vector<mps::DryHydrostaticStepDiagnostics> samples;
   driver.advance(
       state, 10.0,
-      [&samples](const mps::DryHydrostaticState&, const mps::DryHydrostaticDerived&,
+      [&samples](const mps::DryHydrostaticState&, const mps::DryHydrostaticDerived*,
                  const mps::DryHydrostaticStepDiagnostics& diagnostics) {
         samples.push_back(diagnostics);
       });
@@ -190,6 +190,46 @@ MPS_TEST_CASE("Held-Suarez forcing is part of every accepted SSP-RK3 step") {
     final_total += driver.grid().cells()[cell].area_m2 * final_mass[index];
   }
   MPS_CHECK_NEAR(final_total, initial_total, 2e-15 * initial_total);
+}
+
+MPS_TEST_CASE("observer intervals only reduce derived diagnostic samples") {
+  struct Trace {
+    std::size_t calls = 0;
+    std::vector<std::uint64_t> sampled_steps;
+    mps::Real thermal_energy_j = 0.0;
+    mps::Real drag_energy_j = 0.0;
+  } every_step, interval;
+
+  const auto run = [](const std::uint64_t interval_steps, Trace& trace) {
+    auto parameters = held_suarez_config();
+    parameters.diagnostics.interval_steps = interval_steps;
+    const mps::DryHydrostaticDriver driver(parameters);
+    auto state = driver.initial_state();
+    driver.advance(
+        state, parameters.run.end_time_s,
+        [&trace](const mps::DryHydrostaticState& sampled,
+                 const mps::DryHydrostaticDerived* derived,
+                 const mps::DryHydrostaticStepDiagnostics& diagnostics) {
+          ++trace.calls;
+          trace.thermal_energy_j += diagnostics.thermal_energy_contribution_j;
+          trace.drag_energy_j += diagnostics.rayleigh_drag_energy_contribution_j;
+          if (derived != nullptr) trace.sampled_steps.push_back(sampled.step);
+        });
+    return state;
+  };
+
+  const auto dense_state = run(1, every_step);
+  const auto sparse_state = run(3, interval);
+  MPS_CHECK(mps::flatten_dry_hydrostatic_state(dense_state, 2) ==
+            mps::flatten_dry_hydrostatic_state(sparse_state, 2));
+  MPS_CHECK_EQ(every_step.calls, interval.calls);
+  MPS_CHECK_EQ(every_step.thermal_energy_j, interval.thermal_energy_j);
+  MPS_CHECK_EQ(every_step.drag_energy_j, interval.drag_energy_j);
+  MPS_CHECK(interval.sampled_steps.size() < every_step.sampled_steps.size());
+  MPS_CHECK_EQ(interval.sampled_steps.front(), 0U);
+  MPS_CHECK_EQ(interval.sampled_steps.back(), sparse_state.step);
+  for (std::size_t index = 1; index + 1 < interval.sampled_steps.size(); ++index)
+    MPS_CHECK_EQ(interval.sampled_steps[index] % 3, 0U);
 }
 
 MPS_TEST_CASE("none physics leaves the dry RHS exactly unchanged") {

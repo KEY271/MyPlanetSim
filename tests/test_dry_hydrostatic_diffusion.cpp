@@ -51,7 +51,7 @@ mps::ExperimentConfig config(const mps::DiffusionKind kind,
   auto state = driver.initial_state();
   diffusion_energy_j = 0.0;
   driver.advance(state, 600.0,
-                 [&](const mps::DryHydrostaticState&, const mps::DryHydrostaticDerived&,
+                 [&](const mps::DryHydrostaticState&, const mps::DryHydrostaticDerived*,
                      const mps::DryHydrostaticStepDiagnostics& step) {
                    diffusion_energy_j += step.diffusion_energy_contribution_j;
                  });

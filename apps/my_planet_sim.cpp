@@ -536,20 +536,25 @@ class PhysicsDiagnosticsAccumulator {
                                 const mps::CubedSphereGrid& grid)
       : config_(config), grid_(grid) {}
 
-  void observe(const mps::DryHydrostaticState& state,
-               const mps::DryHydrostaticDerived& derived,
-               const mps::DryHydrostaticStepDiagnostics& step) {
+  void observe_step(const mps::DryHydrostaticState& state,
+                    const mps::DryHydrostaticStepDiagnostics& step) {
+    constexpr mps::Real spin_up_end_s = 200.0 * 86400.0;
+    if (previous_time_s_.has_value() && *previous_time_s_ >= spin_up_end_s) {
+      cumulative_thermal_energy_j_ += step.thermal_energy_contribution_j;
+      cumulative_drag_energy_j_ += step.rayleigh_drag_energy_contribution_j;
+    }
+    previous_time_s_ = state.time_s;
+  }
+
+  void observe_sample(const mps::DryHydrostaticState& state,
+                      const mps::DryHydrostaticDerived& derived,
+                      const mps::DryHydrostaticStepDiagnostics& step) {
     constexpr mps::Real spin_up_end_s = 200.0 * 86400.0;
     const auto health =
         mps::diagnose_dry_hydrostatic_budgets(grid_, state, derived, config_.planet);
     if (state.time_s >= spin_up_end_s && !window_energy_j_.has_value()) {
       window_energy_j_ = health.total_energy_j;
     }
-    if (previous_time_s_.has_value() && *previous_time_s_ >= spin_up_end_s) {
-      cumulative_thermal_energy_j_ += step.thermal_energy_contribution_j;
-      cumulative_drag_energy_j_ += step.rayleigh_drag_energy_contribution_j;
-    }
-    previous_time_s_ = state.time_s;
 
     mps::Real maximum_wind = 0.0;
     std::uint64_t non_finite_count = 0;
@@ -766,10 +771,10 @@ int main(const int argc, const char* const argv[]) {
         driver.advance(
             state, run_config.run.end_time_s,
             [&frame_context](const mps::DryHydrostaticState& sampled,
-                             const mps::DryHydrostaticDerived& derived,
+                             const mps::DryHydrostaticDerived* derived,
                              const mps::DryHydrostaticStepDiagnostics&) {
-              if (sampled.step % frame_context.frame_interval_steps == 0) {
-                write_machine_frame_v2(frame_context, sampled, derived);
+              if (derived != nullptr) {
+                write_machine_frame_v2(frame_context, sampled, *derived);
               }
             },
             [] { return g_cancel_requested.load(); });
@@ -839,16 +844,18 @@ int main(const int argc, const char* const argv[]) {
           state, config.run.end_time_s,
           [&physics_diagnostics, &climate_statistics, &surface_diagnostics, &config](
               const mps::DryHydrostaticState& sampled,
-              const mps::DryHydrostaticDerived& derived,
+              const mps::DryHydrostaticDerived* derived,
               const mps::DryHydrostaticStepDiagnostics& step) {
             if (physics_diagnostics.has_value()) {
-              physics_diagnostics->observe(sampled, derived, step);
+              physics_diagnostics->observe_step(sampled, step);
+              if (derived != nullptr)
+                physics_diagnostics->observe_sample(sampled, *derived, step);
             }
-            if (climate_statistics.has_value()) {
-              climate_statistics->observe(sampled, derived);
+            if (climate_statistics.has_value() && derived != nullptr) {
+              climate_statistics->observe(sampled, *derived);
             }
             if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance &&
-                sampled.step % config.diagnostics.interval_steps == 0)
+                derived != nullptr)
               surface_diagnostics.emplace_back(sampled.time_s, step.surface_rates);
           });
       if (physics_diagnostics.has_value()) physics_diagnostics->write();

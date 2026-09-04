@@ -34,8 +34,10 @@ struct DryHydrostaticStepDiagnostics {
   SurfaceEnergyDiagnostics surface_rates{};
   Real diffusion_energy_contribution_j = 0.0;
 };
+// The derived pointer is non-null at the configured diagnostic interval, initially,
+// and at the final time. Step-integrated budgets are delivered on every accepted step.
 using DryHydrostaticObserver =
-    std::function<void(const DryHydrostaticState&, const DryHydrostaticDerived&,
+    std::function<void(const DryHydrostaticState&, const DryHydrostaticDerived*,
                        const DryHydrostaticStepDiagnostics&)>;
 using DryHydrostaticCancel = std::function<bool()>;
 class DryHydrostaticDriver {

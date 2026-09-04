@@ -72,7 +72,7 @@ MPS_TEST_CASE(
   mps::Real thermal_contribution = 0.0;
   mps::Real drag_contribution = 0.0;
   driver.advance(state, parameters.run.end_time_s,
-                 [&](const mps::DryHydrostaticState&, const mps::DryHydrostaticDerived&,
+                 [&](const mps::DryHydrostaticState&, const mps::DryHydrostaticDerived*,
                      const mps::DryHydrostaticStepDiagnostics& diagnostics) {
                    thermal_contribution += diagnostics.thermal_energy_contribution_j;
                    drag_contribution += diagnostics.rayleigh_drag_energy_contribution_j;
@@ -110,9 +110,10 @@ MPS_TEST_CASE(
   mps::Real uninterrupted_energy = 0.0;
   driver.advance(uninterrupted, parameters.run.end_time_s,
                  [&](const mps::DryHydrostaticState& state,
-                     const mps::DryHydrostaticDerived& derived,
+                     const mps::DryHydrostaticDerived* derived,
                      const mps::DryHydrostaticStepDiagnostics& diagnostics) {
-                   uninterrupted_statistics.observe(state, derived);
+                   MPS_CHECK(derived != nullptr);
+                   uninterrupted_statistics.observe(state, *derived);
                    if (state.time_s > statistics_start)
                      uninterrupted_energy +=
                          diagnostics.thermal_energy_contribution_j +
@@ -129,9 +130,10 @@ MPS_TEST_CASE(
   mps::Real restarted_energy = 0.0;
   driver.advance(restarted, parameters.run.end_time_s,
                  [&](const mps::DryHydrostaticState& state,
-                     const mps::DryHydrostaticDerived& derived,
+                     const mps::DryHydrostaticDerived* derived,
                      const mps::DryHydrostaticStepDiagnostics& diagnostics) {
-                   restarted_statistics.observe(state, derived);
+                   MPS_CHECK(derived != nullptr);
+                   restarted_statistics.observe(state, *derived);
                    if (state.time_s > statistics_start)
                      restarted_energy +=
                          diagnostics.thermal_energy_contribution_j +

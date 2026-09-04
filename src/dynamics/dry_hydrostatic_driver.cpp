@@ -333,37 +333,50 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
 void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                                    const DryHydrostaticObserver& obs,
                                    const DryHydrostaticCancel& cancel) const {
+  const std::uint64_t initial_observer_step = s.step;
   const auto observe = [&](const DryHydrostaticState& state,
                            const DryHydrostaticStepDiagnostics& step) {
     if (!obs) return;
-    const auto derived = diagnose(state);
+    const bool needs_sample = state.step == initial_observer_step ||
+                              state.step % config_.diagnostics.interval_steps == 0 ||
+                              state.time_s >= end;
+    if (!needs_sample) {
+      obs(state, nullptr, step);
+      return;
+    }
+    workspace_.column_potential_temperature.resize(coordinate_.levels());
+    diagnose_dry_hydrostatic_state(
+        state, coordinate_, config_.planet, orography_.surface_geopotential_m2_s2(),
+        workspace_.derived, workspace_.vertical_geometry, workspace_.hydrostatic_column,
+        workspace_.column_potential_temperature);
+    const auto& derived = workspace_.derived;
     auto sampled = step;
     if (config_.physics.kind == PhysicsKind::kHeldSuarez) {
-      sampled.physics_rates =
-          held_suarez_tendency(grid_, coordinate_, derived, state.surface_pressure_pa,
-                               config_.planet)
-              .diagnostics;
+      held_suarez_tendency(grid_, coordinate_, derived, state.surface_pressure_pa,
+                           config_.planet, workspace_.atmospheric_physics,
+                           workspace_.atmospheric_physics_workspace);
+      sampled.physics_rates = workspace_.atmospheric_physics.diagnostics;
     } else if (config_.physics.kind == PhysicsKind::kPlanetaryNewtonian) {
       std::optional<OrbitState> orbit_state;
       if (config_.physics.geometry == ForcingGeometry::kSubstellar)
         orbit_state = evaluate_orbit(*config_.orbit, config_.planet.rotation_rate_rad_s,
                                      state.time_s - config_.run.start_time_s);
-      sampled.physics_rates =
-          planetary_newtonian_tendency(
-              grid_, coordinate_, derived, state.surface_pressure_pa, config_.planet,
-              config_.physics.geometry, orbit_state ? &*orbit_state : nullptr)
-              .diagnostics;
+      planetary_newtonian_tendency(
+          grid_, coordinate_, derived, state.surface_pressure_pa, config_.planet,
+          config_.physics.geometry, orbit_state ? &*orbit_state : nullptr,
+          workspace_.atmospheric_physics, workspace_.atmospheric_physics_workspace);
+      sampled.physics_rates = workspace_.atmospheric_physics.diagnostics;
     } else if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
       const auto orbit_state =
           evaluate_orbit(*config_.orbit, config_.planet.rotation_rate_rad_s,
                          state.time_s - config_.run.start_time_s);
-      sampled.surface_rates =
-          surface_energy_tendency(
-              grid_, *surface_boundary_, state.surface_temperature_k, derived,
-              state.surface_pressure_pa, config_.planet, *config_.surface, orbit_state)
-              .diagnostics;
+      surface_energy_tendency(grid_, *surface_boundary_, state.surface_temperature_k,
+                              derived, state.surface_pressure_pa, config_.planet,
+                              *config_.surface, orbit_state,
+                              workspace_.surface_physics);
+      sampled.surface_rates = workspace_.surface_physics.diagnostics;
     }
-    obs(state, derived, sampled);
+    obs(state, &derived, sampled);
   };
   observe(s, {});
   std::vector<Vec3> centres;
