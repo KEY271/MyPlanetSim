@@ -81,11 +81,16 @@ dev gateway_port="8787" ui_port="5173":
 	  echo "gateway did not become ready" >&2
 	  exit 1
 	fi
+	ui_path="/#token=$token&gateway=http%3A%2F%2F127.0.0.1%3A{{gateway_port}}"
 	echo
-	echo "Live UI: http://127.0.0.1:{{ui_port}}/#token=$token&gateway=http%3A%2F%2F127.0.0.1%3A{{gateway_port}}"
+	echo "Live UI: http://127.0.0.1:{{ui_port}}$ui_path"
+	echo
+	echo "NOTE: the plain http://127.0.0.1:{{ui_port}}/ that Vite prints below has no session"
+	echo "      token and falls back to the offline demo, which serves only the shallow-water"
+	echo "      preset. Use the Live UI link above; --open below opens it for you."
 	echo "Press Ctrl-C to stop the UI and gateway."
 	echo
-	npm run dev --workspace @myplanetsim/ui -- --host 127.0.0.1 --port "{{ui_port}}"
+	npm run dev --workspace @myplanetsim/ui -- --host 127.0.0.1 --port "{{ui_port}}" --open "$ui_path"
 
 # C++・Web・native live の主要ゲートを実行する
 check:
@@ -94,3 +99,4 @@ check:
 	cmake --build build/dev --target format-check
 	cd "{{web_dir}}" && npm run lint && npm run test && npm run build
 	cd "{{web_dir}}" && npm run test:live --workspace @myplanetsim/gateway
+	cd "{{web_dir}}" && npm run test:browser --workspace @myplanetsim/ui

@@ -110,9 +110,19 @@ control text、event log、diagnostics をまとめて取得できます。frame
 npm run test:live --workspace @myplanetsim/gateway
 ```
 
+UI を実ブラウザで開いて gateway 接続・preset・model level・column profile まで確認する
+gate も用意しています。Chromium が未取得なら skip します。
+
+```sh
+npx playwright install chromium
+npm run test:browser --workspace @myplanetsim/ui
+```
+
 ブラウザ UI を live gateway へ接続するには、別terminalでUIを起動し、gateway起動時に
 表示された `port` と `token` をURL fragmentへ指定します。fragmentはclient生成後にURLから
-除去され、tokenはgateway以外へ送信されません。
+除去され、tokenはgateway以外へ送信されません。**Vite が最後に表示する token なしの
+`http://127.0.0.1:5173/` を開くと offline demo にフォールバックし、shallow-water preset
+しか出ません**（UI 上部に警告が出ます）。`just dev` は token 付き URL を自動で開きます。
 
 ```text
 http://localhost:5173/#token=<token>&gateway=http%3A%2F%2F127.0.0.1%3A<port>

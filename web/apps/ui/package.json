@@ -7,7 +7,8 @@
     "dev": "vite",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:browser": "MPS_ENABLE_BROWSER=1 node --test test/browser.test.js"
   },
   "dependencies": {
     "@myplanetsim/protocol": "file:../../packages/protocol",
@@ -17,13 +18,14 @@
     "three": "^0.179.1"
   },
   "devDependencies": {
-    "@types/react": "^19.1.10",
     "@types/d3-geo": "^3.1.0",
+    "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@types/three": "^0.179.0",
     "@vitejs/plugin-react": "^5.0.2",
+    "playwright": "^1.62.1",
+    "typescript": "^5.9.2",
     "vite": "^7.1.3",
-    "vitest": "^3.2.4",
-    "typescript": "^5.9.2"
+    "vitest": "^3.2.4"
   }
 }

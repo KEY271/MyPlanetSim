@@ -163,6 +163,18 @@ h1 { margin: 0; font-size: clamp(1.05rem, 2vw, 1.45rem); }
   text-align: center;
 }
 
+.demo-banner {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.7rem;
+  color: #ffe2a8;
+  background: #3a2f16;
+  border: 1px solid #7a6224;
+  border-radius: 0.35rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.demo-banner code { color: #ffcf56; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
 .preset-error { margin: 0.2rem 0; color: #ff9c9c; font-size: 0.78rem; }
 .preset-hint { margin: 0.2rem 0; color: #7bdff2; font-size: 0.78rem; }
 

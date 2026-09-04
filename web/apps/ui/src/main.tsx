@@ -131,6 +131,15 @@ function App() {
   return <main className="app-shell">
     <header className="top-panel">
       <div className="title-row"><p className="eyebrow">MyPlanetSim · Phase 5</p><h1>Interactive cubed-sphere visualizer</h1><p className="message">{message}</p></div>
+      {/* Opening the plain dev-server URL instead of the tokenised one silently selected
+          the offline demo, which serves only the shallow-water preset. That looked exactly
+          like the dry hydrostatic model being missing, so the fallback is stated up front. */}
+      {startupToken ? null : <p className="demo-banner" role="status">
+        Offline demo — no gateway session token in the URL. Only the shallow-water preset is
+        available; the dry hydrostatic model, model levels, and column profiles need the
+        native gateway. Start it with <code>just dev</code> and open the <code>Live UI</code>
+        link it prints (the one containing <code>#token=</code>), not the plain dev-server URL.
+      </p>}
       <section className="control-panel" aria-label="Run and view controls">
         <label>Preset <select value={draft.presetId} onChange={(event) => selectPreset(event.target.value)}>{presets.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.id}</option>)}</select></label>
         <label>Field <select value={fieldId} onChange={(event) => dryFrame ? setDryFieldId(event.target.value as FrameV2FieldId) : setShallowFieldId(event.target.value)}>

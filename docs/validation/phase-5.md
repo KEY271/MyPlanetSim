@@ -107,23 +107,42 @@ generated coordinate, a configuration fingerprint distinct from the preset's, an
 of `K = 0` and `K = 31` before the solver is started. The shallow-water
 FrameV1 live run and cancel in the same file are unchanged.
 
-### Browser transport
+### Browser gate
 
-Node's `fetch` accepts any receiver, so the viewer's HTTP client passed the whole node
-suite while calling `fetch` as a method of the client, which a browser rejects with
-`Illegal invocation`. Every request from the browser therefore failed, and the viewer fell
-back to its built-in shallow-water preset without reporting anything. `frame-v2.test.ts`
-now asserts that the client never invokes `fetch` with itself as the receiver, and drives
-the real client over a real socket through a `fetch` that enforces the browser rule. Both
-checks fail with the browser error if the binding is removed.
+Every other gate drives the viewer through node, which accepts API shapes a browser
+rejects and never renders. Two defects reached the viewer that way.
+
+The HTTP client called `fetch` as a method of the client. A browser's `fetch` is a WebIDL
+operation on Window and rejects a foreign receiver with `Illegal invocation`, so every
+request from the browser failed. `frame-v2.test.ts` now asserts that the client never
+invokes `fetch` with itself as the receiver, and drives the real client over a real socket
+through a `fetch` that enforces the browser rule; both fail with the browser error if the
+binding is removed.
+
+Separately, opening the plain dev-server URL instead of the tokenised one printed by
+`just dev` silently selected the offline demo, which serves only the shallow-water preset.
+That is indistinguishable from the dry hydrostatic model being absent. `just dev` now opens
+the tokenised URL itself and warns about the Vite banner, and the viewer states the offline
+fallback in a banner.
+
+```sh
+npx playwright install chromium
+npm run test:browser --workspace @myplanetsim/ui
+```
+
+`web/apps/ui/test/browser.test.js` starts the native gateway and the dev server, then opens
+the real page in Chromium. It checks that the tokenless URL announces the offline demo and
+offers only the shallow-water preset; that the tokenised URL reports the native engine and
+offers the dry preset; that selecting the dry preset announces its level count and shows the
+level and `K` controls before any run; and that a `K = 12` run then yields a level slider
+spanning `0..11`, a column profile, and an inspector whose level and pressure follow the
+slider. It skips when the binary, the preset, or the Chromium download is absent.
 
 ### Known gaps
 
 - The offline/mock client publishes FrameV1 only, so the dry hydrostatic viewer requires
   the native gateway; there is no browser-side dry model to regress against.
-- Browser matrix coverage (Chromium/Firefox/WebKit) and a WebGL-failure path for the
-  profile panel remain the Phase 3 automation gap and are not extended here. The browser
-  transport gate above simulates the receiver rule rather than running a real browser, so a
-  different browser-only API mismatch could still reach the viewer unnoticed.
+- The browser gate runs Chromium only. Firefox and WebKit coverage, and a WebGL-failure
+  path for the profile panel, remain the Phase 3 automation gap.
 - The interactive allowlist is bounded at `N <= 24`, `K <= 30` and a 256 MiB run budget.
   Partial frame retrieval is deliberately not designed until a measurement needs it.

@@ -47,6 +47,12 @@ jobs:
       # the binary that was just built, including preset restrictions and cancellation.
       - name: Run the live gateway gate
         run: npm run test:live --prefix web --workspace @myplanetsim/gateway
+      - name: Install Chromium
+        run: npx --prefix web playwright install --with-deps chromium
+      # Node accepts API shapes a browser rejects and never renders, so the viewer is also
+      # opened in a real browser against the gateway that was just started.
+      - name: Run the browser gate
+        run: npm run test:browser --prefix web --workspace @myplanetsim/ui
 
   build-and-test:
     runs-on: ubuntu-24.04
