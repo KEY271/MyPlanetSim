@@ -57,8 +57,9 @@ struct EdgeInterpolationWeights {
 
 [[nodiscard]] Vec3 dual_edge_direction(const CubedSphereGrid& grid,
                                        const EdgeGeometry& edge) {
+  const auto& cached = grid.edge_cache()[edge.id];
   return normalize(project_tangent(
-      grid.cell(edge.right_cell).center - grid.cell(edge.left_cell).center,
+      grid.cells()[cached.right_cell].center - grid.cells()[cached.left_cell].center,
       edge.center));
 }
 
@@ -68,7 +69,8 @@ std::vector<CompatibleEdgeMetric> compatible_edge_metrics(
     const CubedSphereGrid& grid, const CubedSphereDualTopology& dual) {
   std::vector<CompatibleEdgeMetric> metrics(grid.edge_count());
   for (const auto& edge : grid.edges()) {
-    const auto basis = edge_tangent_basis(edge);
+    const auto& cached = grid.edge_cache()[edge.id];
+    const EdgeTangentBasis basis{cached.normal, cached.tangent};
     const Vec3 direction = dual_edge_direction(grid, edge);
     metrics[edge.id] = {
         .hodge_ratio = edge.length_m / dual.edges()[edge.id].dual_length_m,
@@ -90,11 +92,11 @@ std::vector<Real> edge_normal_velocity(const CubedSphereGrid& grid,
   }
   std::vector<Real> normal_velocity(grid.edge_count());
   for (const auto& edge : grid.edges()) {
+    const auto& cached = grid.edge_cache()[edge.id];
     const auto weights = interpolation_weights(dual.edges()[edge.id]);
-    const Vec3 velocity =
-        weights.left * cell_velocity[grid.cell_index(edge.left_cell)] +
-        weights.right * cell_velocity[grid.cell_index(edge.right_cell)];
-    normal_velocity[edge.id] = dot(velocity, edge_tangent_basis(edge).normal);
+    const Vec3 velocity = weights.left * cell_velocity[cached.left_cell] +
+                          weights.right * cell_velocity[cached.right_cell];
+    normal_velocity[edge.id] = dot(velocity, cached.normal);
   }
   return normal_velocity;
 }
@@ -106,11 +108,10 @@ std::vector<Vec3> perot_cell_velocity(
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
     const Vec3 center = grid.cells()[cell].center;
     Vec3 accumulated{};
-    for (const std::size_t edge_id : grid.cell_edges(grid.cell_id(cell))) {
-      const auto& edge = grid.edge(edge_id);
+    for (const auto& cached_edge : grid.cell_cache()[cell].edges) {
+      const auto& edge = grid.edges()[cached_edge.edge];
       const Real outward =
-          static_cast<Real>(grid.edge_sign_for_cell(edge_id, grid.cell_id(cell))) *
-          edge_normal_velocity[edge_id];
+          static_cast<Real>(cached_edge.sign) * edge_normal_velocity[cached_edge.edge];
       const Vec3 displacement =
           grid.radius_m() * project_tangent(edge.center - center, center);
       accumulated = accumulated + (edge.length_m * outward) * displacement;
@@ -128,11 +129,11 @@ std::vector<Real> vertex_relative_vorticity(
   const auto cell_velocity = perot_cell_velocity(grid, edge_normal_velocity);
   std::vector<Real> dual_velocity(grid.edge_count());
   for (const auto& edge : grid.edges()) {
+    const auto& cached = grid.edge_cache()[edge.id];
     const auto weights = interpolation_weights(dual.edges()[edge.id]);
-    const Vec3 reconstructed =
-        weights.left * cell_velocity[grid.cell_index(edge.left_cell)] +
-        weights.right * cell_velocity[grid.cell_index(edge.right_cell)];
-    const Real tangential = dot(reconstructed, edge_tangent_basis(edge).tangent);
+    const Vec3 reconstructed = weights.left * cell_velocity[cached.left_cell] +
+                               weights.right * cell_velocity[cached.right_cell];
+    const Real tangential = dot(reconstructed, cached.tangent);
     dual_velocity[edge.id] =
         metrics[edge.id].normal_projection * edge_normal_velocity[edge.id] +
         metrics[edge.id].tangent_projection * tangential;

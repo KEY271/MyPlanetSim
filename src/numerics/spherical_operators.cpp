@@ -61,12 +61,13 @@ void scatter_oriented_edge_flux(const CubedSphereGrid& grid,
   }
   std::fill(cell_tendency.begin(), cell_tendency.end(), 0.0);
   for (const auto& edge : grid.edges()) {
+    const auto& cached = grid.edge_cache()[edge.id];
     const Real flux = edge_flux[edge.id];
     if (!std::isfinite(flux)) {
       throw std::invalid_argument("edge flux contains a non-finite value");
     }
-    cell_tendency[grid.cell_index(edge.left_cell)] -= flux;
-    cell_tendency[grid.cell_index(edge.right_cell)] += flux;
+    cell_tendency[cached.left_cell] -= flux;
+    cell_tendency[cached.right_cell] += flux;
   }
 }
 
@@ -85,23 +86,16 @@ std::vector<Vec3> least_squares_gradient(const CubedSphereGrid& grid,
   validate_cell_values(grid, cell_values);
   std::vector<Vec3> gradients(grid.cell_count());
   for (std::size_t index = 0; index < grid.cell_count(); ++index) {
-    const auto& cell = grid.cells()[index];
-    const auto coordinates = inverse_map(cell.center);
-    const auto basis =
-        tangent_basis(coordinates.panel, coordinates.alpha, coordinates.beta);
+    const auto& cached_cell = grid.cell_cache()[index];
     Real a00 = 0.0;
     Real a01 = 0.0;
     Real a11 = 0.0;
     Real b0 = 0.0;
     Real b1 = 0.0;
-    for (const std::size_t edge_id : grid.cell_edges(cell.id)) {
-      const CellId neighbor = grid.neighbor_across(edge_id, cell.id);
-      const Vec3 displacement = logarithmic_displacement(
-          cell.center, grid.cell(neighbor).center, grid.radius_m());
-      const Real x = dot(displacement, basis.alpha);
-      const Real y = dot(displacement, basis.beta);
-      const Real difference =
-          cell_values[grid.cell_index(neighbor)] - cell_values[index];
+    for (const auto& cached_edge : cached_cell.edges) {
+      const Real x = cached_edge.neighbor_coordinates_m.alpha;
+      const Real y = cached_edge.neighbor_coordinates_m.beta;
+      const Real difference = cell_values[cached_edge.neighbor] - cell_values[index];
       const Real weight = 1.0 / std::max(x * x + y * y, 1.0e-300);
       a00 += weight * x * x;
       a01 += weight * x * y;
@@ -115,7 +109,7 @@ std::vector<Vec3> least_squares_gradient(const CubedSphereGrid& grid,
     }
     const Real gx = (a11 * b0 - a01 * b1) / determinant;
     const Real gy = (a00 * b1 - a01 * b0) / determinant;
-    gradients[index] = gx * basis.alpha + gy * basis.beta;
+    gradients[index] = gx * cached_cell.basis.alpha + gy * cached_cell.basis.beta;
   }
   return gradients;
 }
@@ -125,12 +119,11 @@ std::vector<Real> finite_volume_laplacian(const CubedSphereGrid& grid,
   validate_cell_values(grid, cell_values);
   std::vector<Real> edge_flux(grid.edge_count());
   for (const auto& edge : grid.edges()) {
-    const auto left = grid.cell_index(edge.left_cell);
-    const auto right = grid.cell_index(edge.right_cell);
-    const Real distance = grid.radius_m() * safe_angle(grid.cells()[left].center,
-                                                       grid.cells()[right].center);
-    edge_flux[edge.id] =
-        (cell_values[right] - cell_values[left]) * edge.length_m / distance;
+    const auto& cached = grid.edge_cache()[edge.id];
+    const auto left = cached.left_cell;
+    const auto right = cached.right_cell;
+    edge_flux[edge.id] = (cell_values[right] - cell_values[left]) * edge.length_m /
+                         cached.center_distance_m;
   }
   return finite_volume_divergence(grid, edge_flux);
 }
@@ -140,14 +133,11 @@ std::vector<Real> finite_volume_curl(const CubedSphereGrid& grid,
   validate_cell_vectors(grid, cell_vectors);
   std::vector<Real> circulation(grid.cell_count(), 0.0);
   for (const auto& edge : grid.edges()) {
-    const auto left = grid.cell_index(edge.left_cell);
-    const auto right = grid.cell_index(edge.right_cell);
-    const Vec3 tangent =
-        normalize(project_tangent(grid.vertices()[edge.second_vertex].position -
-                                      grid.vertices()[edge.first_vertex].position,
-                                  edge.center));
+    const auto& cached = grid.edge_cache()[edge.id];
+    const auto left = cached.left_cell;
+    const auto right = cached.right_cell;
     const Vec3 average = 0.5 * (cell_vectors[left] + cell_vectors[right]);
-    const Real integral = dot(average, tangent) * edge.length_m;
+    const Real integral = dot(average, cached.circulation_tangent) * edge.length_m;
     circulation[left] += integral;
     circulation[right] -= integral;
   }
@@ -162,8 +152,9 @@ std::vector<Real> finite_volume_vector_divergence(
   validate_cell_vectors(grid, cell_vectors);
   std::vector<Real> edge_flux(grid.edge_count());
   for (const auto& edge : grid.edges()) {
-    const std::size_t left = grid.cell_index(edge.left_cell);
-    const std::size_t right = grid.cell_index(edge.right_cell);
+    const auto& cached = grid.edge_cache()[edge.id];
+    const std::size_t left = cached.left_cell;
+    const std::size_t right = cached.right_cell;
     const Vec3 average = 0.5 * (cell_vectors[left] + cell_vectors[right]);
     edge_flux[edge.id] = dot(average, edge.outward_normal_from_left) * edge.length_m;
   }
@@ -176,21 +167,16 @@ std::vector<TangentVectorGradient> least_squares_vector_gradient(
   std::vector<TangentVectorGradient> gradients(grid.cell_count());
   for (std::size_t index = 0; index < grid.cell_count(); ++index) {
     const auto& cell = grid.cells()[index];
-    const auto coordinates = inverse_map(cell.center);
-    const auto basis =
-        tangent_basis(coordinates.panel, coordinates.alpha, coordinates.beta);
+    const auto& cached_cell = grid.cell_cache()[index];
     Real a00 = 0.0;
     Real a01 = 0.0;
     Real a11 = 0.0;
     Vec3 b0{};
     Vec3 b1{};
-    for (const std::size_t edge_id : grid.cell_edges(cell.id)) {
-      const CellId neighbor_id = grid.neighbor_across(edge_id, cell.id);
-      const std::size_t neighbor = grid.cell_index(neighbor_id);
-      const Vec3 displacement = logarithmic_displacement(
-          cell.center, grid.cells()[neighbor].center, grid.radius_m());
-      const Real x = dot(displacement, basis.alpha);
-      const Real y = dot(displacement, basis.beta);
+    for (const auto& cached_edge : cached_cell.edges) {
+      const std::size_t neighbor = cached_edge.neighbor;
+      const Real x = cached_edge.neighbor_coordinates_m.alpha;
+      const Real y = cached_edge.neighbor_coordinates_m.beta;
       const Vec3 transported = parallel_transport(
           project_tangent(cell_vectors[neighbor], grid.cells()[neighbor].center),
           grid.cells()[neighbor].center, cell.center);
@@ -223,19 +209,31 @@ Vec3 reconstruct_tangent_vector(const CubedSphereGrid& grid,
     throw std::out_of_range("vector reconstruction cell is out of range");
   }
   const auto& cell = grid.cells()[cell_index];
-  const auto coordinates = inverse_map(cell.center);
-  const auto basis =
-      tangent_basis(coordinates.panel, coordinates.alpha, coordinates.beta);
   const Vec3 face = normalize(face_position);
   const Vec3 displacement =
       logarithmic_displacement(cell.center, face, grid.radius_m());
+  return reconstruct_tangent_vector_cached(grid, cell_index, cell_value, face,
+                                           displacement, gradient);
+}
+
+Vec3 reconstruct_tangent_vector_cached(const CubedSphereGrid& grid,
+                                       const std::size_t cell_index,
+                                       const Vec3 cell_value, const Vec3 face_position,
+                                       const Vec3 face_displacement_m,
+                                       const TangentVectorGradient& gradient) {
+  if (cell_index >= grid.cell_count()) {
+    throw std::out_of_range("vector reconstruction cell is out of range");
+  }
+  const auto& cell = grid.cells()[cell_index];
+  const auto& basis = grid.cell_cache()[cell_index].basis;
+  const Vec3 face = normalize(face_position);
   if (!is_finite(cell_value)) {
     throw std::invalid_argument("vector reconstruction value is non-finite");
   }
   const Vec3 increment = project_tangent(gradient.alpha_derivative, cell.center) *
-                             dot(displacement, basis.alpha) +
+                             dot(face_displacement_m, basis.alpha) +
                          project_tangent(gradient.beta_derivative, cell.center) *
-                             dot(displacement, basis.beta);
+                             dot(face_displacement_m, basis.beta);
   const Vec3 reconstructed = parallel_transport(
       project_tangent(cell_value, cell.center) + increment, cell.center, face);
   return project_tangent(reconstructed, face);

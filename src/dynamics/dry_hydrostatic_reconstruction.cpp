@@ -14,15 +14,6 @@ struct ScalarReconstruction {
   std::vector<Real> factor;
 };
 
-[[nodiscard]] Vec3 logarithmic_displacement(const Vec3 from, const Vec3 to,
-                                            const Real radius_m) {
-  const Real cosine = std::clamp(dot(from, to), -1.0, 1.0);
-  const Real angle = std::acos(cosine);
-  const Real sine = std::sin(angle);
-  if (!(sine > 0.0)) return {};
-  return (radius_m * angle / sine) * (to - cosine * from);
-}
-
 [[nodiscard]] Real barth_factor(const Real center, const Real increment,
                                 const Real minimum, const Real maximum) {
   if (increment > 0.0) return std::min(1.0, (maximum - center) / increment);
@@ -57,18 +48,15 @@ struct ScalarReconstruction {
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
     Real minimum = values[cell];
     Real maximum = values[cell];
-    for (const auto edge_id : grid.cell_edges(grid.cell_id(cell))) {
-      const auto neighbor =
-          grid.cell_index(grid.neighbor_across(edge_id, grid.cell_id(cell)));
-      minimum = std::min(minimum, values[neighbor]);
-      maximum = std::max(maximum, values[neighbor]);
+    for (const auto& edge : grid.cell_cache()[cell].edges) {
+      minimum = std::min(minimum, values[edge.neighbor]);
+      maximum = std::max(maximum, values[edge.neighbor]);
     }
-    for (const auto edge_id : grid.cell_edges(grid.cell_id(cell))) {
-      const auto displacement = logarithmic_displacement(
-          grid.cells()[cell].center, grid.edge(edge_id).center, grid.radius_m());
+    for (const auto& edge : grid.cell_cache()[cell].edges) {
       result.factor[cell] =
           std::min(result.factor[cell],
-                   barth_factor(values[cell], dot(result.gradient[cell], displacement),
+                   barth_factor(values[cell],
+                                dot(result.gradient[cell], edge.face_displacement_m),
                                 minimum, maximum));
     }
     result.factor[cell] = std::clamp(result.factor[cell], 0.0, 1.0);
@@ -76,14 +64,20 @@ struct ScalarReconstruction {
   return result;
 }
 
-[[nodiscard]] Real reconstruct_scalar(const CubedSphereGrid& grid,
-                                      const std::size_t cell, const EdgeGeometry& edge,
+[[nodiscard]] Real reconstruct_scalar(const std::size_t cell,
+                                      const CachedCellEdgeGeometry& edge,
                                       const std::vector<Real>& values,
                                       const ScalarReconstruction& prepared) {
-  const auto displacement =
-      logarithmic_displacement(grid.cells()[cell].center, edge.center, grid.radius_m());
   return values[cell] +
-         prepared.factor[cell] * dot(prepared.gradient[cell], displacement);
+         prepared.factor[cell] * dot(prepared.gradient[cell], edge.face_displacement_m);
+}
+
+[[nodiscard]] const CachedCellEdgeGeometry& cached_cell_edge(
+    const CubedSphereGrid& grid, const std::size_t cell, const std::size_t edge) {
+  for (const auto& cached : grid.cell_cache()[cell].edges) {
+    if (cached.edge == edge) return cached;
+  }
+  throw std::logic_error("cached edge is not incident to cell");
 }
 
 struct VelocityReconstruction {
@@ -103,28 +97,26 @@ struct VelocityReconstruction {
       .factor = std::vector<Real>(velocity.size(), 1.0)};
   if (limiter == LimiterKind::kNone) return result;
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
-    const auto cell_id = grid.cell_id(cell);
     Real maximum_speed = norm(velocity[cell]);
-    for (const auto edge_id : grid.cell_edges(cell_id))
-      maximum_speed = std::max(
-          maximum_speed,
-          norm(velocity[grid.cell_index(grid.neighbor_across(edge_id, cell_id))]));
-    for (const auto edge_id : grid.cell_edges(cell_id)) {
-      const auto& edge = grid.edge(edge_id);
-      const auto basis = edge_tangent_basis(edge);
+    for (const auto& edge : grid.cell_cache()[cell].edges)
+      maximum_speed = std::max(maximum_speed, norm(velocity[edge.neighbor]));
+    for (const auto& cached_edge : grid.cell_cache()[cell].edges) {
+      const auto& edge = grid.edges()[cached_edge.edge];
+      const auto& edge_cache = grid.edge_cache()[cached_edge.edge];
+      const EdgeTangentBasis basis{edge_cache.normal, edge_cache.tangent};
       const Vec3 center_at_face = project_tangent(velocity[cell], edge.center);
       const Vec3 increment =
-          reconstruct_tangent_vector(grid, cell, velocity[cell], edge.center,
-                                     result.gradient[cell]) -
+          reconstruct_tangent_vector_cached(grid, cell, velocity[cell], edge.center,
+                                            cached_edge.normalized_face_displacement_m,
+                                            result.gradient[cell]) -
           center_at_face;
       Real minimum_normal = dot(center_at_face, basis.normal);
       Real maximum_normal = minimum_normal;
       Real minimum_tangent = dot(center_at_face, basis.tangent);
       Real maximum_tangent = minimum_tangent;
-      for (const auto neighbor_edge : grid.cell_edges(cell_id)) {
-        const auto neighbor =
-            grid.cell_index(grid.neighbor_across(neighbor_edge, cell_id));
-        const Vec3 at_face = project_tangent(velocity[neighbor], edge.center);
+      for (const auto& neighbor_edge : grid.cell_cache()[cell].edges) {
+        const Vec3 at_face =
+            project_tangent(velocity[neighbor_edge.neighbor], edge.center);
         minimum_normal = std::min(minimum_normal, dot(at_face, basis.normal));
         maximum_normal = std::max(maximum_normal, dot(at_face, basis.normal));
         minimum_tangent = std::min(minimum_tangent, dot(at_face, basis.tangent));
@@ -149,11 +141,13 @@ struct VelocityReconstruction {
 [[nodiscard]] Vec3 reconstruct_velocity(const CubedSphereGrid& grid,
                                         const std::size_t cell,
                                         const EdgeGeometry& edge,
+                                        const CachedCellEdgeGeometry& cached_edge,
                                         const std::vector<Vec3>& velocity,
                                         const VelocityReconstruction& prepared) {
   const Vec3 center_at_face = project_tangent(velocity[cell], edge.center);
-  const Vec3 unlimited = reconstruct_tangent_vector(
-      grid, cell, velocity[cell], edge.center, prepared.gradient[cell]);
+  const Vec3 unlimited = reconstruct_tangent_vector_cached(
+      grid, cell, velocity[cell], edge.center,
+      cached_edge.normalized_face_displacement_m, prepared.gradient[cell]);
   return center_at_face + prepared.factor[cell] * (unlimited - center_at_face);
 }
 
@@ -214,8 +208,9 @@ DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(
 
     if (reconstruction == ReconstructionKind::kPiecewiseConstant) {
       for (const auto& edge : grid.edges()) {
-        const auto left = grid.cell_index(edge.left_cell);
-        const auto right = grid.cell_index(edge.right_cell);
+        const auto& cached = grid.edge_cache()[edge.id];
+        const auto left = cached.left_cell;
+        const auto right = cached.right_cell;
         result.edge_levels[edge.id * levels + level] = {
             .left = {.air_mass_kg_m2 = mass[left],
                      .velocity_m_s = project_tangent(velocity[left], edge.center),
@@ -245,19 +240,21 @@ DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(
         ++result.limiter_activations;
     }
     for (const auto& edge : grid.edges()) {
-      const auto left = grid.cell_index(edge.left_cell);
-      const auto right = grid.cell_index(edge.right_cell);
+      const auto& cached_edge = grid.edge_cache()[edge.id];
+      const auto left = cached_edge.left_cell;
+      const auto right = cached_edge.right_cell;
       const auto face = [&](const std::size_t cell) {
+        const auto& cell_edge = cached_cell_edge(grid, cell, edge.id);
         return DryHydrostaticPrimitive{
             .air_mass_kg_m2 =
-                reconstruct_scalar(grid, cell, edge, mass, mass_reconstruction),
-            .velocity_m_s = reconstruct_velocity(grid, cell, edge, velocity,
+                reconstruct_scalar(cell, cell_edge, mass, mass_reconstruction),
+            .velocity_m_s = reconstruct_velocity(grid, cell, edge, cell_edge, velocity,
                                                  velocity_reconstruction),
             .potential_temperature_k =
-                reconstruct_scalar(grid, cell, edge, theta, theta_reconstruction),
+                reconstruct_scalar(cell, cell_edge, theta, theta_reconstruction),
             .tracer_mixing_ratio =
-                reconstruct_scalar(grid, cell, edge, tracer, tracer_reconstruction),
-            .temperature_k = reconstruct_scalar(grid, cell, edge, temperature,
+                reconstruct_scalar(cell, cell_edge, tracer, tracer_reconstruction),
+            .temperature_k = reconstruct_scalar(cell, cell_edge, temperature,
                                                 temperature_reconstruction)};
       };
       result.edge_levels[edge.id * levels + level] = {.left = face(left),

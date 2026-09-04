@@ -7,6 +7,7 @@
 
 #include "myplanetsim/core/types.hpp"
 #include "myplanetsim/geometry/cubed_sphere.hpp"
+#include "myplanetsim/grid/cubed_sphere_cache.hpp"
 
 namespace mps {
 
@@ -55,6 +56,12 @@ class CubedSphereGrid {
   [[nodiscard]] std::span<const VertexGeometry> vertices() const noexcept {
     return vertices_;
   }
+  [[nodiscard]] std::span<const CachedCellGeometry> cell_cache() const noexcept {
+    return cell_cache_;
+  }
+  [[nodiscard]] std::span<const CachedEdgeGeometry> edge_cache() const noexcept {
+    return edge_cache_;
+  }
 
   [[nodiscard]] std::size_t cell_index(CellId cell) const;
   [[nodiscard]] CellId cell_id(std::size_t flat_index) const;
@@ -72,6 +79,8 @@ class CubedSphereGrid {
   std::vector<CellGeometry> cells_;
   std::vector<EdgeGeometry> edges_;
   std::vector<std::array<std::size_t, 4>> cell_edges_;
+  std::vector<CachedCellGeometry> cell_cache_;
+  std::vector<CachedEdgeGeometry> edge_cache_;
 };
 
 }  // namespace mps

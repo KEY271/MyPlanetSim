@@ -38,6 +38,17 @@ using EdgeKey = std::pair<std::size_t, std::size_t>;
   return std::abs(solid_angle) * radius_m * radius_m;
 }
 
+[[nodiscard]] Vec3 logarithmic_displacement(const Vec3 from, const Vec3 to,
+                                            const Real radius_m) {
+  const Real cosine = std::clamp(dot(from, to), -1.0, 1.0);
+  const Real angle = std::acos(cosine);
+  const Real sine = std::sin(angle);
+  if (!(sine > 0.0)) {
+    throw std::runtime_error("degenerate cached grid displacement");
+  }
+  return (radius_m * angle / sine) * (to - cosine * from);
+}
+
 }  // namespace
 
 CubedSphereGrid::CubedSphereGrid(const Index cells_per_panel, const Real radius_m)
@@ -171,6 +182,68 @@ CubedSphereGrid::CubedSphereGrid(const Index cells_per_panel, const Real radius_
     if (edge_geometry.left_cell == edge_geometry.right_cell ||
         !(edge_geometry.length_m > 0.0) || !std::isfinite(edge_geometry.length_m)) {
       throw std::runtime_error("cubed-sphere edge is incomplete or invalid");
+    }
+  }
+
+  edge_cache_.resize(edges_.size());
+  for (const auto& edge_geometry : edges_) {
+    const std::size_t left = cell_index(edge_geometry.left_cell);
+    const std::size_t right = cell_index(edge_geometry.right_cell);
+    const Vec3 normal = normalize(
+        project_tangent(edge_geometry.outward_normal_from_left, edge_geometry.center));
+    edge_cache_[edge_geometry.id] = {
+        .left_cell = left,
+        .right_cell = right,
+        .normal = normal,
+        .tangent = normalize(cross(edge_geometry.center, normal)),
+        .circulation_tangent = normalize(
+            project_tangent(vertices_[edge_geometry.second_vertex].position -
+                                vertices_[edge_geometry.first_vertex].position,
+                            edge_geometry.center)),
+        .center_distance_m =
+            radius_m_ * safe_angle(cells_[left].center, cells_[right].center),
+    };
+  }
+
+  cell_cache_.resize(cells_.size());
+  for (std::size_t cell = 0; cell < cells_.size(); ++cell) {
+    const auto& geometry = cells_[cell];
+    const auto coordinates = inverse_map(geometry.center);
+    auto& cache = cell_cache_[cell];
+    cache.basis = tangent_basis(coordinates.panel, coordinates.alpha, coordinates.beta);
+    cache.inverse_area_m2 = 1.0 / geometry.area_m2;
+    cache.pressure_geometry_correction_m = {};
+    for (std::size_t side = 0; side < cache.edges.size(); ++side) {
+      const std::size_t edge_id = cell_edges_[cell][side];
+      const auto& edge_geometry = edges_[edge_id];
+      const auto& cached_edge = edge_cache_[edge_id];
+      const int sign = edge_geometry.left_cell == geometry.id ? 1 : -1;
+      const std::size_t neighbor =
+          sign == 1 ? cached_edge.right_cell : cached_edge.left_cell;
+      const Vec3 neighbor_displacement =
+          logarithmic_displacement(geometry.center, cells_[neighbor].center, radius_m_);
+      const Vec3 face_displacement =
+          logarithmic_displacement(geometry.center, edge_geometry.center, radius_m_);
+      const Vec3 normalized_face_displacement = logarithmic_displacement(
+          geometry.center, normalize(edge_geometry.center), radius_m_);
+      cache.edges[side] = {
+          .edge = edge_id,
+          .neighbor = neighbor,
+          .sign = sign,
+          .outward_normal = normalize(project_tangent(
+              static_cast<Real>(sign) * edge_geometry.outward_normal_from_left,
+              geometry.center)),
+          .neighbor_displacement_m = neighbor_displacement,
+          .face_displacement_m = face_displacement,
+          .normalized_face_displacement_m = normalized_face_displacement,
+          .neighbor_coordinates_m = {dot(neighbor_displacement, cache.basis.alpha),
+                                     dot(neighbor_displacement, cache.basis.beta)},
+          .face_coordinates_m = {dot(face_displacement, cache.basis.alpha),
+                                 dot(face_displacement, cache.basis.beta)},
+      };
+      cache.pressure_geometry_correction_m =
+          cache.pressure_geometry_correction_m +
+          static_cast<Real>(sign) * edge_geometry.length_m * cached_edge.normal;
     }
   }
 }

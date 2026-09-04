@@ -18,15 +18,12 @@ namespace {
          (1.0 - std::cos(angle)) * dot(unit_axis, point) * unit_axis;
 }
 
-[[nodiscard]] Vec3 face_displacement(const Vec3 center, const Vec3 face,
-                                     const Real radius_m) {
-  const Real cosine = std::clamp(dot(center, face), -1.0, 1.0);
-  const Real angle = std::acos(cosine);
-  const Real sine = std::sin(angle);
-  if (!(sine > 0.0)) {
-    return {};
+[[nodiscard]] const CachedCellEdgeGeometry& cached_cell_edge(
+    const CubedSphereGrid& grid, const std::size_t cell, const std::size_t edge) {
+  for (const auto& cached : grid.cell_cache()[cell].edges) {
+    if (cached.edge == edge) return cached;
   }
-  return (radius_m * angle / sine) * (face - cosine * center);
+  throw std::logic_error("cached edge is not incident to cell");
 }
 
 [[nodiscard]] Real streamfunction(const TransportTestCase test_case, const Vec3 point,
@@ -236,12 +233,13 @@ Real stable_transport_time_step(const CubedSphereGrid& grid,
   }
   std::vector<Real> outgoing(grid.cell_count(), 0.0);
   for (const auto& edge : grid.edges()) {
+    const auto& cached = grid.edge_cache()[edge.id];
     const Real flux = oriented_edge_flux[edge.id];
     if (!std::isfinite(flux)) {
       throw std::invalid_argument("edge flux contains a non-finite value");
     }
-    outgoing[grid.cell_index(edge.left_cell)] += std::max(flux, 0.0);
-    outgoing[grid.cell_index(edge.right_cell)] += std::max(-flux, 0.0);
+    outgoing[cached.left_cell] += std::max(flux, 0.0);
+    outgoing[cached.right_cell] += std::max(-flux, 0.0);
   }
   Real time_step = maximum_time_step_s;
   for (std::size_t index = 0; index < outgoing.size(); ++index) {
@@ -275,20 +273,15 @@ namespace {
     gradients = least_squares_gradient(grid, tracer);
     if (parameters.limiter == LimiterKind::kBarthJespersen) {
       for (std::size_t index = 0; index < grid.cell_count(); ++index) {
-        const auto& cell = grid.cells()[index];
         Real minimum = tracer[index];
         Real maximum = tracer[index];
-        for (const auto edge_id : grid.cell_edges(cell.id)) {
-          const Real neighbor =
-              tracer[grid.cell_index(grid.neighbor_across(edge_id, cell.id))];
+        for (const auto& edge : grid.cell_cache()[index].edges) {
+          const Real neighbor = tracer[edge.neighbor];
           minimum = std::min(minimum, neighbor);
           maximum = std::max(maximum, neighbor);
         }
-        for (const auto edge_id : grid.cell_edges(cell.id)) {
-          const Real increment =
-              dot(gradients[index],
-                  face_displacement(cell.center, grid.edge(edge_id).center,
-                                    grid.radius_m()));
+        for (const auto& edge : grid.cell_cache()[index].edges) {
+          const Real increment = dot(gradients[index], edge.face_displacement_m);
           if (increment > 0.0) {
             factors[index] =
                 std::min(factors[index], (maximum - tracer[index]) / increment);
@@ -307,19 +300,17 @@ namespace {
 
   std::vector<Real> tracer_flux(grid.edge_count());
   for (const auto& edge : grid.edges()) {
-    const auto left = grid.cell_index(edge.left_cell);
-    const auto right = grid.cell_index(edge.right_cell);
+    const auto& cached = grid.edge_cache()[edge.id];
+    const auto left = cached.left_cell;
+    const auto right = cached.right_cell;
     Real left_value = tracer[left];
     Real right_value = tracer[right];
     if (parameters.scheme == TransportScheme::kLinear) {
-      left_value +=
-          factors[left] *
-          dot(gradients[left], face_displacement(grid.cells()[left].center, edge.center,
-                                                 grid.radius_m()));
+      const auto& left_edge = cached_cell_edge(grid, left, edge.id);
+      const auto& right_edge = cached_cell_edge(grid, right, edge.id);
+      left_value += factors[left] * dot(gradients[left], left_edge.face_displacement_m);
       right_value +=
-          factors[right] *
-          dot(gradients[right], face_displacement(grid.cells()[right].center,
-                                                  edge.center, grid.radius_m()));
+          factors[right] * dot(gradients[right], right_edge.face_displacement_m);
     }
     tracer_flux[edge.id] = fluxes[edge.id] >= 0.0 ? fluxes[edge.id] * left_value
                                                   : fluxes[edge.id] * right_value;

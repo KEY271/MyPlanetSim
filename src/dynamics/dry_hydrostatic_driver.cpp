@@ -179,9 +179,10 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
       grid_, d, config_.dry_hydrostatic.reconstruction,
       config_.dry_hydrostatic.limiter);
   for (const auto& e : grid_.edges()) {
-    auto l = grid_.cell_index(e.left_cell);
-    auto r = grid_.cell_index(e.right_cell);
-    auto basis = edge_tangent_basis(e);
+    const auto& cached_edge = grid_.edge_cache()[e.id];
+    auto l = cached_edge.left_cell;
+    auto r = cached_edge.right_cell;
+    const EdgeTangentBasis basis{cached_edge.normal, cached_edge.tangent};
     for (std::size_t k = 0; k < K; ++k) {
       const auto& face = reconstructed.at(e.id, k);
       auto f = rusanov_dry_hydrostatic_flux(face.left, face.right, basis,

@@ -119,14 +119,10 @@ Real stable_shallow_water_time_step(const CubedSphereGrid& grid,
   Real time_step = maximum_time_step_s;
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
     Real denominator = 0.0;
-    for (const std::size_t edge_id : grid.cell_edges(grid.cell_id(cell))) {
-      const auto& edge = grid.edge(edge_id);
-      const Vec3 normal = normalize(project_tangent(
-          static_cast<Real>(grid.edge_sign_for_cell(edge_id, grid.cell_id(cell))) *
-              edge.outward_normal_from_left,
-          grid.cells()[cell].center));
-      denominator += edge.length_m * (std::abs(dot(state.velocity(cell), normal)) +
-                                      std::sqrt(gravity_m_s2 * state.depth[cell]));
+    for (const auto& cached_edge : grid.cell_cache()[cell].edges) {
+      denominator += grid.edges()[cached_edge.edge].length_m *
+                     (std::abs(dot(state.velocity(cell), cached_edge.outward_normal)) +
+                      std::sqrt(gravity_m_s2 * state.depth[cell]));
     }
     time_step = std::min(time_step, cfl * grid.cells()[cell].area_m2 / denominator);
   }
@@ -142,14 +138,10 @@ Real shallow_water_cfl_number(const CubedSphereGrid& grid,
   Real maximum_cfl = 0.0;
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
     Real denominator = 0.0;
-    for (const std::size_t edge_id : grid.cell_edges(grid.cell_id(cell))) {
-      const auto& edge = grid.edge(edge_id);
-      const Vec3 normal = normalize(project_tangent(
-          static_cast<Real>(grid.edge_sign_for_cell(edge_id, grid.cell_id(cell))) *
-              edge.outward_normal_from_left,
-          grid.cells()[cell].center));
-      denominator += edge.length_m * (std::abs(dot(state.velocity(cell), normal)) +
-                                      std::sqrt(gravity_m_s2 * state.depth[cell]));
+    for (const auto& cached_edge : grid.cell_cache()[cell].edges) {
+      denominator += grid.edges()[cached_edge.edge].length_m *
+                     (std::abs(dot(state.velocity(cell), cached_edge.outward_normal)) +
+                      std::sqrt(gravity_m_s2 * state.depth[cell]));
     }
     maximum_cfl =
         std::max(maximum_cfl, time_step_s * denominator / grid.cells()[cell].area_m2);

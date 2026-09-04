@@ -34,6 +34,9 @@ struct TangentVectorGradient {
                                               std::size_t cell, Vec3 cell_value,
                                               Vec3 face_position,
                                               const TangentVectorGradient& gradient);
+[[nodiscard]] Vec3 reconstruct_tangent_vector_cached(
+    const CubedSphereGrid& grid, std::size_t cell, Vec3 cell_value, Vec3 face_position,
+    Vec3 face_displacement_m, const TangentVectorGradient& gradient);
 [[nodiscard]] EdgeTangentBasis edge_tangent_basis(const EdgeGeometry& edge);
 [[nodiscard]] std::vector<Real> shallow_water_potential_vorticity(
     const CubedSphereGrid& grid, std::span<const Real> depth,

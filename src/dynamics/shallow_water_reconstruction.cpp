@@ -9,17 +9,6 @@
 namespace mps {
 namespace {
 
-[[nodiscard]] Vec3 logarithmic_displacement(const Vec3 from, const Vec3 to,
-                                            const Real radius_m) {
-  const Real cosine = std::clamp(dot(from, to), -1.0, 1.0);
-  const Real angle = std::acos(cosine);
-  const Real sine = std::sin(angle);
-  if (!(sine > 0.0)) {
-    return {};
-  }
-  return (radius_m * angle / sine) * (to - cosine * from);
-}
-
 [[nodiscard]] Real barth_factor(const Real center, const Real increment,
                                 const Real minimum, const Real maximum) {
   if (increment > 0.0) {
@@ -29,6 +18,14 @@ namespace {
     return std::min(1.0, (minimum - center) / increment);
   }
   return 1.0;
+}
+
+[[nodiscard]] const CachedCellEdgeGeometry& cached_cell_edge(
+    const CubedSphereGrid& grid, const std::size_t cell, const std::size_t edge) {
+  for (const auto& cached : grid.cell_cache()[cell].edges) {
+    if (cached.edge == edge) return cached;
+  }
+  throw std::logic_error("cached edge is not incident to cell");
 }
 
 [[nodiscard]] Real speed_factor(const Vec3 center, const Vec3 increment,
@@ -66,8 +63,9 @@ ShallowWaterReconstruction reconstruct_shallow_water_face_states(
   }
   if (reconstruction == ReconstructionKind::kPiecewiseConstant) {
     for (const auto& edge : grid.edges()) {
-      const std::size_t left = grid.cell_index(edge.left_cell);
-      const std::size_t right = grid.cell_index(edge.right_cell);
+      const auto& cached = grid.edge_cache()[edge.id];
+      const std::size_t left = cached.left_cell;
+      const std::size_t right = cached.right_cell;
       result.edges[edge.id] = {
           .left = {.depth_m = state.depth[left],
                    .velocity_m_s = project_tangent(velocity[left], edge.center)},
@@ -84,24 +82,20 @@ ShallowWaterReconstruction reconstruct_shallow_water_face_states(
   std::vector<Real> velocity_factor(grid.cell_count(), 1.0);
   if (limiter == LimiterKind::kBarthJespersen) {
     for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
-      const auto& geometry = grid.cells()[cell];
       Real minimum_depth = state.depth[cell];
       Real maximum_depth = state.depth[cell];
       Real maximum_speed = norm(velocity[cell]);
-      for (const std::size_t edge_id : grid.cell_edges(geometry.id)) {
-        const std::size_t neighbor =
-            grid.cell_index(grid.neighbor_across(edge_id, geometry.id));
-        minimum_depth = std::min(minimum_depth, state.depth[neighbor]);
-        maximum_depth = std::max(maximum_depth, state.depth[neighbor]);
-        maximum_speed = std::max(maximum_speed, norm(velocity[neighbor]));
+      for (const auto& edge : grid.cell_cache()[cell].edges) {
+        minimum_depth = std::min(minimum_depth, state.depth[edge.neighbor]);
+        maximum_depth = std::max(maximum_depth, state.depth[edge.neighbor]);
+        maximum_speed = std::max(maximum_speed, norm(velocity[edge.neighbor]));
       }
       const Real positive_floor =
           std::nextafter(depth_floor_m, std::numeric_limits<Real>::infinity());
-      for (const std::size_t edge_id : grid.cell_edges(geometry.id)) {
-        const auto& edge = grid.edge(edge_id);
-        const Vec3 displacement =
-            logarithmic_displacement(geometry.center, edge.center, grid.radius_m());
-        const Real depth_increment = dot(depth_gradient[cell], displacement);
+      for (const auto& cached_edge : grid.cell_cache()[cell].edges) {
+        const auto& edge = grid.edges()[cached_edge.edge];
+        const Real depth_increment =
+            dot(depth_gradient[cell], cached_edge.face_displacement_m);
         depth_factor[cell] = std::min(depth_factor[cell],
                                       barth_factor(state.depth[cell], depth_increment,
                                                    minimum_depth, maximum_depth));
@@ -111,20 +105,20 @@ ShallowWaterReconstruction reconstruct_shallow_water_face_states(
                        (state.depth[cell] - positive_floor) / -depth_increment);
         }
 
-        const auto basis = edge_tangent_basis(edge);
+        const auto& edge_cache = grid.edge_cache()[cached_edge.edge];
+        const EdgeTangentBasis basis{edge_cache.normal, edge_cache.tangent};
         const Vec3 center_at_face = project_tangent(velocity[cell], edge.center);
-        const Vec3 unlimited = reconstruct_tangent_vector(
-            grid, cell, velocity[cell], edge.center, velocity_gradient[cell]);
+        const Vec3 unlimited = reconstruct_tangent_vector_cached(
+            grid, cell, velocity[cell], edge.center,
+            cached_edge.normalized_face_displacement_m, velocity_gradient[cell]);
         const Vec3 increment = unlimited - center_at_face;
         Real minimum_normal = dot(center_at_face, basis.normal);
         Real maximum_normal = minimum_normal;
         Real minimum_tangent = dot(center_at_face, basis.tangent);
         Real maximum_tangent = minimum_tangent;
-        for (const std::size_t neighbor_edge : grid.cell_edges(geometry.id)) {
-          const std::size_t neighbor =
-              grid.cell_index(grid.neighbor_across(neighbor_edge, geometry.id));
+        for (const auto& neighbor_edge : grid.cell_cache()[cell].edges) {
           const Vec3 neighbor_at_face =
-              project_tangent(velocity[neighbor], edge.center);
+              project_tangent(velocity[neighbor_edge.neighbor], edge.center);
           const Real normal = dot(neighbor_at_face, basis.normal);
           const Real tangent = dot(neighbor_at_face, basis.tangent);
           minimum_normal = std::min(minimum_normal, normal);
@@ -153,16 +147,18 @@ ShallowWaterReconstruction reconstruct_shallow_water_face_states(
   }
 
   for (const auto& edge : grid.edges()) {
-    const std::size_t left = grid.cell_index(edge.left_cell);
-    const std::size_t right = grid.cell_index(edge.right_cell);
+    const auto& edge_cache = grid.edge_cache()[edge.id];
+    const std::size_t left = edge_cache.left_cell;
+    const std::size_t right = edge_cache.right_cell;
     const auto reconstruct = [&](const std::size_t cell) {
-      const Vec3 displacement = logarithmic_displacement(grid.cells()[cell].center,
-                                                         edge.center, grid.radius_m());
-      const Real depth = state.depth[cell] +
-                         depth_factor[cell] * dot(depth_gradient[cell], displacement);
+      const auto& cell_edge = cached_cell_edge(grid, cell, edge.id);
+      const Real depth =
+          state.depth[cell] +
+          depth_factor[cell] * dot(depth_gradient[cell], cell_edge.face_displacement_m);
       const Vec3 center_velocity = project_tangent(velocity[cell], edge.center);
-      const Vec3 unlimited = reconstruct_tangent_vector(
-          grid, cell, velocity[cell], edge.center, velocity_gradient[cell]);
+      const Vec3 unlimited = reconstruct_tangent_vector_cached(
+          grid, cell, velocity[cell], edge.center,
+          cell_edge.normalized_face_displacement_m, velocity_gradient[cell]);
       return ShallowWaterPrimitive{
           .depth_m = depth,
           .velocity_m_s =

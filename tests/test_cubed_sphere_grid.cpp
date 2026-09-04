@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
+#include "myplanetsim/numerics/spherical_operators.hpp"
 #include "support/test.hpp"
 
 MPS_TEST_CASE("cubed sphere geometry satisfies global invariants") {
@@ -27,6 +28,50 @@ MPS_TEST_CASE("cubed sphere geometry satisfies global invariants") {
       MPS_CHECK(mps::dot(edge.outward_normal_from_left, right.center - left.center) >
                 0.0);
     }
+  }
+}
+
+MPS_TEST_CASE("static grid cache matches the checked geometry APIs") {
+  const mps::CubedSphereGrid grid(7, 6371220.0);
+  MPS_CHECK_EQ(grid.cell_cache().size(), grid.cell_count());
+  MPS_CHECK_EQ(grid.edge_cache().size(), grid.edge_count());
+  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
+    const auto& geometry = grid.cells()[cell];
+    const auto& cached = grid.cell_cache()[cell];
+    const auto coordinates = mps::inverse_map(geometry.center);
+    const auto basis =
+        mps::tangent_basis(coordinates.panel, coordinates.alpha, coordinates.beta);
+    MPS_CHECK_EQ(cached.basis.alpha.x, basis.alpha.x);
+    MPS_CHECK_EQ(cached.basis.alpha.y, basis.alpha.y);
+    MPS_CHECK_EQ(cached.basis.alpha.z, basis.alpha.z);
+    MPS_CHECK_EQ(cached.basis.beta.x, basis.beta.x);
+    MPS_CHECK_EQ(cached.basis.beta.y, basis.beta.y);
+    MPS_CHECK_EQ(cached.basis.beta.z, basis.beta.z);
+    MPS_CHECK_EQ(cached.inverse_area_m2, 1.0 / geometry.area_m2);
+    const auto edges = grid.cell_edges(geometry.id);
+    for (std::size_t side = 0; side < edges.size(); ++side) {
+      const auto& cached_edge = cached.edges[side];
+      MPS_CHECK_EQ(cached_edge.edge, edges[side]);
+      MPS_CHECK_EQ(cached_edge.sign, grid.edge_sign_for_cell(edges[side], geometry.id));
+      MPS_CHECK_EQ(cached_edge.neighbor,
+                   grid.cell_index(grid.neighbor_across(edges[side], geometry.id)));
+      MPS_CHECK_NEAR(mps::dot(cached_edge.neighbor_displacement_m, geometry.center),
+                     0.0, 5.0e-15 * mps::norm(cached_edge.neighbor_displacement_m));
+      MPS_CHECK_NEAR(mps::dot(cached_edge.face_displacement_m, geometry.center), 0.0,
+                     5.0e-15 * mps::norm(cached_edge.face_displacement_m));
+    }
+  }
+  for (const auto& edge : grid.edges()) {
+    const auto& cached = grid.edge_cache()[edge.id];
+    const auto basis = mps::edge_tangent_basis(edge);
+    MPS_CHECK_EQ(cached.left_cell, grid.cell_index(edge.left_cell));
+    MPS_CHECK_EQ(cached.right_cell, grid.cell_index(edge.right_cell));
+    MPS_CHECK_EQ(cached.normal.x, basis.normal.x);
+    MPS_CHECK_EQ(cached.normal.y, basis.normal.y);
+    MPS_CHECK_EQ(cached.normal.z, basis.normal.z);
+    MPS_CHECK_EQ(cached.tangent.x, basis.tangent.x);
+    MPS_CHECK_EQ(cached.tangent.y, basis.tangent.y);
+    MPS_CHECK_EQ(cached.tangent.z, basis.tangent.z);
   }
 }
 

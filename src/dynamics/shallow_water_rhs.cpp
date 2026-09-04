@@ -19,8 +19,9 @@ namespace {
 void scatter_edge(const CubedSphereGrid& grid, const EdgeGeometry& edge,
                   const Real mass_flux, const Vec3 momentum_flux,
                   ShallowWaterTendency& tendency) {
-  const std::size_t left = grid.cell_index(edge.left_cell);
-  const std::size_t right = grid.cell_index(edge.right_cell);
+  const auto& cached = grid.edge_cache()[edge.id];
+  const std::size_t left = cached.left_cell;
+  const std::size_t right = cached.right_cell;
   const Real integrated_mass = edge.length_m * mass_flux;
   const Vec3 integrated_momentum = edge.length_m * momentum_flux;
   tendency.depth[left] -= integrated_mass;
@@ -32,7 +33,7 @@ void scatter_edge(const CubedSphereGrid& grid, const EdgeGeometry& edge,
 void divide_by_area_and_project(const CubedSphereGrid& grid,
                                 ShallowWaterTendency& tendency) {
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
-    const Real inverse_area = 1.0 / grid.cells()[cell].area_m2;
+    const Real inverse_area = grid.cell_cache()[cell].inverse_area_m2;
     tendency.depth[cell] *= inverse_area;
     tendency.momentum[cell] = project_tangent(inverse_area * tendency.momentum[cell],
                                               grid.cells()[cell].center);
@@ -68,7 +69,8 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
       .limiter_activations = reconstructed.limiter_activations,
   };
   for (const auto& edge : grid.edges()) {
-    const auto basis = edge_tangent_basis(edge);
+    const auto& cached = grid.edge_cache()[edge.id];
+    const EdgeTangentBasis basis{cached.normal, cached.tangent};
     const auto& left_state = reconstructed.edges[edge.id].left;
     const auto& right_state = reconstructed.edges[edge.id].right;
     const auto edge_flux =
@@ -95,14 +97,8 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
   if (has_orography)
     orography_gradient = least_squares_gradient(grid, surface_geopotential_m2_s2);
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
-    Vec3 pressure_geometry_correction{};
-    for (const std::size_t edge_id : grid.cell_edges(grid.cell_id(cell))) {
-      const auto& edge = grid.edge(edge_id);
-      pressure_geometry_correction =
-          pressure_geometry_correction +
-          static_cast<Real>(grid.edge_sign_for_cell(edge_id, grid.cell_id(cell))) *
-              edge.length_m * edge_tangent_basis(edge).normal;
-    }
+    const Vec3 pressure_geometry_correction =
+        grid.cell_cache()[cell].pressure_geometry_correction_m;
     const Real cell_pressure =
         0.5 * gravity_m_s2 * state.depth[cell] * state.depth[cell];
     result.pressure.momentum[cell] = project_tangent(

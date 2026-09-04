@@ -120,20 +120,20 @@ ShallowWaterRhsComponents assemble_compatible_shallow_water_rhs(
   }
   std::vector<Real> vorticity_flux(grid.edge_count());
   for (const auto& edge : grid.edges()) {
+    const auto& cached = grid.edge_cache()[edge.id];
     const auto& metric = dual.edges()[edge.id];
-    const std::size_t left = grid.cell_index(edge.left_cell);
-    const std::size_t right = grid.cell_index(edge.right_cell);
+    const std::size_t left = cached.left_cell;
+    const std::size_t right = cached.right_cell;
     const Real integrated_mass = edge.length_m * mass_flux[edge.id];
     result.flux.depth[left] -= integrated_mass;
     result.flux.depth[right] += integrated_mass;
 
-    const auto basis = edge_tangent_basis(edge);
     const Real span = metric.left_center_to_edge_m + metric.right_center_to_edge_m;
     const Vec3 flux_vector = (metric.right_center_to_edge_m * cell_mass_flux[left] +
                               metric.left_center_to_edge_m * cell_mass_flux[right]) /
                              span;
     vorticity_flux[edge.id] =
-        potential_vorticity[edge.id] * dot(flux_vector, basis.tangent);
+        potential_vorticity[edge.id] * dot(flux_vector, cached.tangent);
     result.maximum_wave_speed_m_s = std::max(
         result.maximum_wave_speed_m_s,
         std::abs(normal_velocity[edge.id]) +
