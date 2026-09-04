@@ -11,7 +11,8 @@ MPS_TEST_CASE("uniform boundary adapts existing orography without thresholding")
   const mps::SurfaceParameters surface{.geography = mps::SurfaceGeography::kUniform,
                                        .uniform_land_fraction = 0.25};
   const auto boundary =
-      mps::make_surface_boundary(surface, mps::OrographyParameters{}, grid, 10.0);
+      mps::make_surface_boundary(surface, mps::OrographyParameters{}, grid,
+                                 {2.0, 0.0, 10.0, 287.0, 1004.0, 100000.0});
   MPS_CHECK_EQ(boundary.land_fraction().size(), grid.cell_count());
   MPS_CHECK_EQ(boundary.surface_geopotential_m2_s2().size(), grid.cell_count());
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
@@ -69,8 +70,9 @@ MPS_TEST_CASE("Earth product is fingerprinted and retains mixed fractions") {
       .quadrature_order = 2,
       .smoothing_passes = 0};
   const mps::CubedSphereGrid grid(4, 2.0);
-  const auto boundary = mps::make_surface_boundary(surface, mps::OrographyParameters{},
-                                                   grid, 10.0, directory);
+  const auto boundary =
+      mps::make_surface_boundary(surface, mps::OrographyParameters{}, grid,
+                                 {2.0, 0.0, 10.0, 287.0, 1004.0, 100000.0}, directory);
   bool has_ocean = false;
   bool has_land = false;
   bool has_mixed = false;

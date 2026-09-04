@@ -28,7 +28,7 @@ MPS_TEST_CASE("phase 5 benchmark presets produce shaped finite states") {
   mps::CubedSphereGrid grid(2, 2);
   mps::AtmosphericHybridCoordinate z({c.vertical.a_half_pa, c.vertical.b_half}, 90000,
                                      110000, 100);
-  const auto flat = mps::make_surface_orography(c.orography, grid, 10);
+  const auto flat = mps::make_surface_orography(c.orography, grid, c.planet);
   for (auto kind : {mps::DryHydrostaticTestCase::kIsothermalRest,
                     mps::DryHydrostaticTestCase::kSolidBodyTransport,
                     mps::DryHydrostaticTestCase::kDcmipDeformational,
@@ -42,6 +42,60 @@ MPS_TEST_CASE("phase 5 benchmark presets produce shaped finite states") {
     MPS_CHECK_EQ(s.surface_pressure_pa.size(), grid.cell_count());
     for (auto v : mps::flatten_dry_hydrostatic_state(s, 2)) MPS_CHECK(std::isfinite(v));
   }
+}
+
+MPS_TEST_CASE(
+    "UMJS14 initializes a balanced thermal wind and rotational perturbation") {
+  mps::ExperimentConfig config{
+      .kind = mps::ExperimentKind::kDryHydrostatic,
+      .planet = {6371220, 7.29212e-5, 9.80616, 287, 1004, 100000},
+      .run = {0, 1, 1, 0},
+      .grid = {12},
+      .vertical = {.levels = 4,
+                   .a_half_pa = {1000, 750, 500, 250, 0},
+                   .b_half = {0, .25, .5, .75, 1},
+                   .surface_pressure_pa = 100000,
+                   .minimum_surface_pressure_pa = 90000,
+                   .maximum_surface_pressure_pa = 110000,
+                   .minimum_pressure_thickness_pa = 100,
+                   .initial_temperature_k = 288,
+                   .initial_potential_temperature_k = 300,
+                   .temperature_floor_k = 100,
+                   .transport_scheme = mps::VerticalTransportScheme::kLinear,
+                   .limiter = mps::VerticalLimiterKind::kMinmod,
+                   .cfl = .5},
+      .dry_hydrostatic = {.test_case = mps::DryHydrostaticTestCase::kUmjs14Steady},
+      .diagnostics = {1},
+      .output_directory = "x"};
+  const mps::CubedSphereGrid grid(config.grid.cells_per_panel, config.planet.radius_m);
+  const mps::AtmosphericHybridCoordinate coordinate(
+      {config.vertical.a_half_pa, config.vertical.b_half},
+      config.vertical.minimum_surface_pressure_pa,
+      config.vertical.maximum_surface_pressure_pa,
+      config.vertical.minimum_pressure_thickness_pa);
+  const auto flat = mps::make_surface_orography(config.orography, grid, config.planet);
+  const auto steady =
+      mps::initialize_dry_hydrostatic_benchmark(config, grid, coordinate, flat);
+  config.dry_hydrostatic.test_case = mps::DryHydrostaticTestCase::kUmjs14Baroclinic;
+  const auto perturbed =
+      mps::initialize_dry_hydrostatic_benchmark(config, grid, coordinate, flat);
+
+  MPS_CHECK(steady.surface_pressure_pa == perturbed.surface_pressure_pa);
+  mps::Real maximum_velocity_difference = 0.0;
+  for (std::size_t offset = 0; offset < steady.horizontal_momentum_mass_kg_m_s.size();
+       ++offset) {
+    maximum_velocity_difference =
+        std::max(maximum_velocity_difference,
+                 mps::norm(steady.horizontal_momentum_mass_kg_m_s[offset] -
+                           perturbed.horizontal_momentum_mass_kg_m_s[offset]));
+  }
+  MPS_CHECK(maximum_velocity_difference > 0.0);
+  MPS_CHECK(steady.potential_temperature_mass_k_kg_m2 ==
+            perturbed.potential_temperature_mass_k_kg_m2);
+  const auto [minimum_theta, maximum_theta] =
+      std::minmax_element(steady.potential_temperature_mass_k_kg_m2.begin(),
+                          steady.potential_temperature_mass_k_kg_m2.end());
+  MPS_CHECK(*maximum_theta > *minimum_theta);
 }
 
 MPS_TEST_CASE("Held-Suarez initializer is seeded reproducible and level-mean free") {
@@ -74,8 +128,7 @@ MPS_TEST_CASE("Held-Suarez initializer is seeded reproducible and level-mean fre
       config.vertical.minimum_surface_pressure_pa,
       config.vertical.maximum_surface_pressure_pa,
       config.vertical.minimum_pressure_thickness_pa);
-  const auto flat =
-      mps::make_surface_orography(config.orography, grid, config.planet.gravity_m_s2);
+  const auto flat = mps::make_surface_orography(config.orography, grid, config.planet);
   const auto first =
       mps::initialize_dry_hydrostatic_benchmark(config, grid, coordinate, flat);
   const auto repeated =

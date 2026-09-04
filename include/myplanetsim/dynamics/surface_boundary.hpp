@@ -36,7 +36,7 @@ class SurfaceBoundary {
 
 [[nodiscard]] SurfaceBoundary make_surface_boundary(
     const SurfaceParameters& surface, const OrographyParameters& orography,
-    const CubedSphereGrid& grid, Real gravity_m_s2,
+    const CubedSphereGrid& grid, const PlanetParameters& planet,
     const std::filesystem::path& source_directory = {});
 [[nodiscard]] Real mixed_surface_heat_capacity(Real land_fraction,
                                                Real land_heat_capacity_j_m2_k,

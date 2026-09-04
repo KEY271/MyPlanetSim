@@ -17,6 +17,7 @@
 #include <system_error>
 
 #include "myplanetsim/core/validation.hpp"
+#include "myplanetsim/dynamics/jw06_parameters.hpp"
 
 namespace mps {
 namespace {
@@ -782,6 +783,14 @@ void ExperimentConfig::validate() const {
     if (jw06_case != (orography.kind == OrographyKind::kJw06))
       throw std::invalid_argument(
           "JW06 test cases require jw06 orography and vice versa");
+    if (jw06_case &&
+        (planet.radius_m != kJw06Planet.radius_m ||
+         planet.rotation_rate_rad_s != kJw06Planet.rotation_rate_rad_s ||
+         planet.gravity_m_s2 != kJw06Planet.gravity_m_s2 ||
+         planet.gas_constant_j_kg_k != kJw06Planet.gas_constant_j_kg_k ||
+         planet.heat_capacity_cp_j_kg_k != kJw06Planet.heat_capacity_cp_j_kg_k ||
+         planet.reference_pressure_pa != kJw06Planet.reference_pressure_pa))
+      throw std::invalid_argument("JW06 requires registered Earth constants");
     const bool held_suarez_case =
         dry_hydrostatic.test_case == DryHydrostaticTestCase::kHeldSuarez;
     const bool benchmark_physics = physics.kind == PhysicsKind::kHeldSuarez ||

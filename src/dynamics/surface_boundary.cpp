@@ -172,8 +172,9 @@ SurfaceBoundary::SurfaceBoundary(std::vector<Real> surface_geopotential_m2_s2,
 SurfaceBoundary make_surface_boundary(const SurfaceParameters& surface,
                                       const OrographyParameters& orography,
                                       const CubedSphereGrid& grid,
-                                      const Real gravity_m_s2,
+                                      const PlanetParameters& planet,
                                       const std::filesystem::path& source_directory) {
+  const Real gravity_m_s2 = planet.gravity_m_s2;
   require_finite(surface.uniform_land_fraction, "surface.uniform_land_fraction");
   if (surface.geography == SurfaceGeography::kEarth) {
     if (orography.kind != OrographyKind::kFlat)
@@ -230,7 +231,7 @@ SurfaceBoundary make_surface_boundary(const SurfaceParameters& surface,
     throw std::invalid_argument("surface.uniform_land_fraction must be in [0, 1]");
   }
   const auto terrain =
-      make_surface_orography(orography, grid, gravity_m_s2, source_directory);
+      make_surface_orography(orography, grid, planet, source_directory);
   std::ostringstream identity;
   identity.imbue(std::locale::classic());
   identity << std::setprecision(std::numeric_limits<Real>::max_digits10)

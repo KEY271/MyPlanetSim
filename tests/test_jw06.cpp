@@ -55,4 +55,14 @@ MPS_TEST_CASE("JW06 steady and perturbed initial states form a paired regression
   }
 }
 
+MPS_TEST_CASE("JW06 rejects planet constants outside the registered benchmark") {
+  auto parameters = config(mps::DryHydrostaticTestCase::kJw06Steady);
+  parameters.validate();
+  parameters.planet.radius_m += 1.0;
+  MPS_CHECK_THROWS_AS(parameters.validate(), std::invalid_argument);
+  parameters = config(mps::DryHydrostaticTestCase::kJw06Steady);
+  parameters.planet.rotation_rate_rad_s *= 2.0;
+  MPS_CHECK_THROWS_AS(parameters.validate(), std::invalid_argument);
+}
+
 int main() { return mps::test::run_all(); }

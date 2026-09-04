@@ -10,8 +10,8 @@
 
 MPS_TEST_CASE("flat surface orography owns one immutable cell field") {
   const mps::CubedSphereGrid grid(2, 3);
-  const auto orography =
-      mps::make_surface_orography(mps::OrographyParameters{}, grid, 10);
+  const auto orography = mps::make_surface_orography(mps::OrographyParameters{}, grid,
+                                                     {3, 0, 10, 287, 1004, 100000});
   MPS_CHECK_EQ(orography.surface_geopotential_m2_s2().size(), grid.cell_count());
   for (const auto value : orography.surface_geopotential_m2_s2())
     MPS_CHECK_EQ(value, 0.0);
@@ -27,7 +27,8 @@ MPS_TEST_CASE("DCMIP 2-0-0 terrain follows the published Schar profile") {
   mps::OrographyParameters parameters;
   parameters.kind = mps::OrographyKind::kDcmip200;
   const mps::CubedSphereGrid grid(8, 6371220);
-  const auto orography = mps::make_surface_orography(parameters, grid, 9.80616);
+  const auto orography = mps::make_surface_orography(
+      parameters, grid, {6371220, 0, 9.80616, 287, 1004, 100000});
   for (const auto geopotential : orography.surface_geopotential_m2_s2()) {
     MPS_CHECK(geopotential >= 0.0);
     MPS_CHECK(geopotential <= 2000.0 * 9.80616);
@@ -76,13 +77,15 @@ MPS_TEST_CASE("lat-lon CSV is fingerprinted interpolated and strict") {
       .input_fingerprint_fnv1a64 = mps::fnv1a64_hex(bytes),
       .smoothing_passes = 0};
   const mps::CubedSphereGrid grid(4, 2);
-  const auto terrain = mps::make_surface_orography(parameters, grid, 10, directory);
+  const auto terrain = mps::make_surface_orography(
+      parameters, grid, {2, 0, 10, 287, 1004, 100000}, directory);
   for (const auto value : terrain.surface_geopotential_m2_s2()) {
     MPS_CHECK(value >= 100);
     MPS_CHECK(value <= 1900);
   }
   parameters.input_fingerprint_fnv1a64 = "0000000000000000";
-  MPS_CHECK_THROWS_AS(mps::make_surface_orography(parameters, grid, 10, directory),
+  MPS_CHECK_THROWS_AS(mps::make_surface_orography(
+                          parameters, grid, {2, 0, 10, 287, 1004, 100000}, directory),
                       std::runtime_error);
 
   const auto reject = [&](const std::string& invalid) {
@@ -91,7 +94,8 @@ MPS_TEST_CASE("lat-lon CSV is fingerprinted interpolated and strict") {
       output << invalid;
     }
     parameters.input_fingerprint_fnv1a64 = mps::fnv1a64_hex(invalid);
-    MPS_CHECK_THROWS_AS(mps::make_surface_orography(parameters, grid, 10, directory),
+    MPS_CHECK_THROWS_AS(mps::make_surface_orography(
+                            parameters, grid, {2, 0, 10, 287, 1004, 100000}, directory),
                         std::runtime_error);
   };
   reject(bytes + "270,90,190\n");
