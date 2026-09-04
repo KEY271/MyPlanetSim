@@ -690,7 +690,8 @@ void ExperimentConfig::validate() const {
       throw std::invalid_argument("flat orography does not accept input options");
   } else if (orography.kind == OrographyKind::kLatLonCsv) {
     if (orography.input_file.empty() ||
-        orography.input_file.find_first_of("\r\n") != std::string::npos)
+        orography.input_file.find_first_of("\r\n") != std::string::npos ||
+        std::filesystem::path(orography.input_file).is_absolute())
       throw std::invalid_argument("latlon_csv requires a single-line input file");
     if (orography.input_fingerprint_fnv1a64.size() != 16 ||
         !std::ranges::all_of(orography.input_fingerprint_fnv1a64, [](char value) {
@@ -825,7 +826,9 @@ ExperimentConfig load_experiment_config(const std::filesystem::path& path) {
   if (!input) {
     throw std::runtime_error("unable to open configuration file: " + path.string());
   }
-  return parse_experiment_config(input);
+  auto config = parse_experiment_config(input);
+  config.source_directory = path.parent_path();
+  return config;
 }
 
 void write_experiment_config(std::ostream& output, const ExperimentConfig& config) {

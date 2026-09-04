@@ -166,6 +166,8 @@ struct ExperimentConfig {
   OrographyParameters orography{};
   DiagnosticsParameters diagnostics{};
   std::string output_directory;
+  // Runtime-only origin used to resolve portable config-relative inputs.
+  std::filesystem::path source_directory;
 
   void validate() const;
 };

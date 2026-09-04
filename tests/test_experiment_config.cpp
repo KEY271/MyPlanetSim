@@ -374,6 +374,12 @@ MPS_TEST_CASE("orography configuration is bounded and conditionally canonical") 
       parse(std::string(kValidDryHydrostaticConfig) +
             "orography.kind = latlon_csv\n"),
       std::runtime_error);
+  auto absolute = std::string(kValidDryHydrostaticConfig) +
+                  "orography.kind = latlon_csv\n"
+                  "orography.input_file = /tmp/terrain.csv\n"
+                  "orography.input_fingerprint_fnv1a64 = 0123456789abcdef\n"
+                  "orography.smoothing_passes = 0\n";
+  MPS_CHECK_THROWS_AS(parse(absolute), std::invalid_argument);
 }
 
 int main() { return mps::test::run_all(); }

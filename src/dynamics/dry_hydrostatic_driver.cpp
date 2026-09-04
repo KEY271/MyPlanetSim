@@ -16,7 +16,8 @@ DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
                   config_.vertical.maximum_surface_pressure_pa,
                   config_.vertical.minimum_pressure_thickness_pa),
       orography_(make_surface_orography(config_.orography, grid_,
-                                        config_.planet.gravity_m_s2)) {
+                                        config_.planet.gravity_m_s2,
+                                        config_.source_directory)) {
   if (config_.kind != ExperimentKind::kDryHydrostatic)
     throw std::invalid_argument("dry driver requires dry_hydrostatic config");
 }
