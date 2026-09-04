@@ -39,12 +39,12 @@ MPS_TEST_CASE("JW06 steady and perturbed initial states form a paired regression
   const auto perturbed = perturbed_driver.initial_state();
   MPS_CHECK(steady.surface_pressure_pa == perturbed.surface_pressure_pa);
   double maximum_difference = 0;
-  for (std::size_t offset = 0;
-       offset < steady.horizontal_momentum_mass_kg_m_s.size(); ++offset) {
-    maximum_difference = std::max(
-        maximum_difference,
-        mps::norm(perturbed.horizontal_momentum_mass_kg_m_s[offset] -
-                  steady.horizontal_momentum_mass_kg_m_s[offset]));
+  for (std::size_t offset = 0; offset < steady.horizontal_momentum_mass_kg_m_s.size();
+       ++offset) {
+    maximum_difference =
+        std::max(maximum_difference,
+                 mps::norm(perturbed.horizontal_momentum_mass_kg_m_s[offset] -
+                           steady.horizontal_momentum_mass_kg_m_s[offset]));
   }
   MPS_CHECK(maximum_difference > 0);
   const auto derived = steady_driver.diagnose(steady);

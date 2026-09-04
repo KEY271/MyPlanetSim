@@ -1,7 +1,7 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_benchmarks.hpp"
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include <numbers>
 
 namespace mps {
@@ -22,11 +22,9 @@ Real jw06_temperature(const Real eta, const Real latitude,
   constexpr Real delta_temperature = 4.8e5;
   const Real mean =
       reference_temperature *
-          std::pow(eta, planet.gas_constant_j_kg_k * lapse_rate /
-                            planet.gravity_m_s2) +
-      (eta < tropopause_eta
-           ? delta_temperature * std::pow(tropopause_eta - eta, 5)
-           : 0.0);
+          std::pow(eta, planet.gas_constant_j_kg_k * lapse_rate / planet.gravity_m_s2) +
+      (eta < tropopause_eta ? delta_temperature * std::pow(tropopause_eta - eta, 5)
+                            : 0.0);
   const Real eta_v = (eta - kJw06Eta0) * 0.5 * std::numbers::pi_v<Real>;
   const Real cosine_eta = std::max(0.0, std::cos(eta_v));
   const Real sine = std::sin(latitude);
@@ -36,9 +34,8 @@ Real jw06_temperature(const Real eta, const Real latitude,
   const Real rotation_shape =
       8.0 / 5.0 * std::pow(cosine, 3) * (sine * sine + 2.0 / 3.0) -
       std::numbers::pi_v<Real> / 4.0;
-  const Real bracket =
-      2.0 * kJw06U0 * std::pow(cosine_eta, 1.5) * wind_shape +
-      planet.radius_m * planet.rotation_rate_rad_s * rotation_shape;
+  const Real bracket = 2.0 * kJw06U0 * std::pow(cosine_eta, 1.5) * wind_shape +
+                       planet.radius_m * planet.rotation_rate_rad_s * rotation_shape;
   return mean + 0.75 * eta * std::numbers::pi_v<Real> * kJw06U0 /
                     planet.gas_constant_j_kg_k * std::sin(eta_v) *
                     std::sqrt(cosine_eta) * bracket;
@@ -47,8 +44,7 @@ Real jw06_temperature(const Real eta, const Real latitude,
 
 DryHydrostaticState initialize_dry_hydrostatic_benchmark(
     const ExperimentConfig& config, const CubedSphereGrid& grid,
-    const AtmosphericHybridCoordinate& coordinate,
-    const SurfaceOrography& orography) {
+    const AtmosphericHybridCoordinate& coordinate, const SurfaceOrography& orography) {
   DryHydrostaticState state{.time_s = config.run.start_time_s};
   const auto cells = grid.cell_count();
   const auto levels = coordinate.levels();
@@ -67,12 +63,11 @@ DryHydrostaticState initialize_dry_hydrostatic_benchmark(
       state.surface_pressure_pa[cell] *=
           1.0 + 1.0e-5 * std::cos(longitude) * std::cos(latitude);
     }
-    if (config.dry_hydrostatic.test_case ==
-        DryHydrostaticTestCase::kDcmip200Rest) {
+    if (config.dry_hydrostatic.test_case == DryHydrostaticTestCase::kDcmip200Rest) {
       constexpr Real reference_temperature_k = 300.0;
       constexpr Real lapse_rate_k_m = 0.0065;
-      const Real height_m = orography.surface_geopotential_m2_s2()[cell] /
-                            config.planet.gravity_m_s2;
+      const Real height_m =
+          orography.surface_geopotential_m2_s2()[cell] / config.planet.gravity_m_s2;
       state.surface_pressure_pa[cell] =
           config.planet.reference_pressure_pa *
           std::pow(1.0 - lapse_rate_k_m * height_m / reference_temperature_k,
@@ -99,19 +94,16 @@ DryHydrostaticState initialize_dry_hydrostatic_benchmark(
       switch (config.dry_hydrostatic.test_case) {
         case DryHydrostaticTestCase::kJw06Steady:
         case DryHydrostaticTestCase::kJw06Baroclinic: {
-          const Real eta = geometry.pressure_full_pa[level] /
-                           config.planet.reference_pressure_pa;
+          const Real eta =
+              geometry.pressure_full_pa[level] / config.planet.reference_pressure_pa;
           Real zonal = kJw06U0 * jw06_vertical_factor(eta) *
                        std::pow(std::sin(2.0 * latitude), 2);
           if (config.dry_hydrostatic.test_case ==
               DryHydrostaticTestCase::kJw06Baroclinic) {
             constexpr Real centre_longitude = std::numbers::pi_v<Real> / 9.0;
-            constexpr Real centre_latitude =
-                2.0 * std::numbers::pi_v<Real> / 9.0;
-            const Vec3 centre{std::cos(centre_latitude) *
-                                  std::cos(centre_longitude),
-                              std::cos(centre_latitude) *
-                                  std::sin(centre_longitude),
+            constexpr Real centre_latitude = 2.0 * std::numbers::pi_v<Real> / 9.0;
+            const Vec3 centre{std::cos(centre_latitude) * std::cos(centre_longitude),
+                              std::cos(centre_latitude) * std::sin(centre_longitude),
                               std::sin(centre_latitude)};
             const Real angular_distance = safe_angle(position, centre);
             zonal += std::exp(-100.0 * angular_distance * angular_distance);
@@ -149,20 +141,17 @@ DryHydrostaticState initialize_dry_hydrostatic_benchmark(
       }
       Real temperature = config.vertical.initial_temperature_k;
       if (config.dry_hydrostatic.test_case == DryHydrostaticTestCase::kJw06Steady ||
-          config.dry_hydrostatic.test_case ==
-              DryHydrostaticTestCase::kJw06Baroclinic) {
-        const Real eta = geometry.pressure_full_pa[level] /
-                         config.planet.reference_pressure_pa;
+          config.dry_hydrostatic.test_case == DryHydrostaticTestCase::kJw06Baroclinic) {
+        const Real eta =
+            geometry.pressure_full_pa[level] / config.planet.reference_pressure_pa;
         temperature = jw06_temperature(eta, latitude, config.planet);
       }
-      if (config.dry_hydrostatic.test_case ==
-          DryHydrostaticTestCase::kDcmip200Rest) {
+      if (config.dry_hydrostatic.test_case == DryHydrostaticTestCase::kDcmip200Rest) {
         constexpr Real lapse_rate_k_m = 0.0065;
-        temperature = 300.0 *
-                      std::pow(geometry.pressure_full_pa[level] /
-                                   config.planet.reference_pressure_pa,
-                               config.planet.gas_constant_j_kg_k * lapse_rate_k_m /
-                                   config.planet.gravity_m_s2);
+        temperature = 300.0 * std::pow(geometry.pressure_full_pa[level] /
+                                           config.planet.reference_pressure_pa,
+                                       config.planet.gas_constant_j_kg_k *
+                                           lapse_rate_k_m / config.planet.gravity_m_s2);
       }
       const Real theta = temperature / geometry.exner_full[level];
       state.horizontal_momentum_mass_kg_m_s[offset] =

@@ -1,5 +1,6 @@
 #include "myplanetsim/config/experiment_config.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <charconv>
@@ -429,8 +430,7 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
     else if (value == "dcmip_2_0_0_rest")
       config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kDcmip200Rest;
     else if (value == "linear_mountain_wave")
-      config.dry_hydrostatic.test_case =
-          DryHydrostaticTestCase::kLinearMountainWave;
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kLinearMountainWave;
     else if (value == "jw06_steady")
       config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kJw06Steady;
     else if (value == "jw06_baroclinic")
@@ -670,8 +670,7 @@ void ExperimentConfig::validate() const {
         (orography.kind == OrographyKind::kDcmip200))
       throw std::invalid_argument(
           "dcmip_2_0_0_rest requires dcmip_2_0_0 orography and vice versa");
-    if ((dry_hydrostatic.test_case ==
-         DryHydrostaticTestCase::kLinearMountainWave) !=
+    if ((dry_hydrostatic.test_case == DryHydrostaticTestCase::kLinearMountainWave) !=
         (orography.kind == OrographyKind::kLinearBell))
       throw std::invalid_argument(
           "linear_mountain_wave requires linear_bell orography and vice versa");
@@ -684,8 +683,7 @@ void ExperimentConfig::validate() const {
   }
 
   if (orography.kind == OrographyKind::kFlat) {
-    if (!orography.input_file.empty() ||
-        !orography.input_fingerprint_fnv1a64.empty() ||
+    if (!orography.input_file.empty() || !orography.input_fingerprint_fnv1a64.empty() ||
         orography.smoothing_passes != 0)
       throw std::invalid_argument("flat orography does not accept input options");
   } else if (orography.kind == OrographyKind::kLatLonCsv) {
@@ -801,7 +799,6 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     }
   }
 
-
   const bool has_orography_kind = seen_keys.contains("orography.kind");
   const bool has_input_file = seen_keys.contains("orography.input_file");
   const bool has_input_fingerprint =
@@ -811,7 +808,8 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     throw std::runtime_error("orography options require orography.kind");
   if (config.orography.kind == OrographyKind::kLatLonCsv &&
       !(has_input_file && has_input_fingerprint && has_smoothing))
-    throw std::runtime_error("latlon_csv requires input, fingerprint, and smoothing keys");
+    throw std::runtime_error(
+        "latlon_csv requires input, fingerprint, and smoothing keys");
   if (config.orography.kind != OrographyKind::kLatLonCsv &&
       (has_input_file || has_input_fingerprint || has_smoothing))
     throw std::runtime_error("orography input options are valid only for latlon_csv");
@@ -949,19 +947,19 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
              << "dry_hydrostatic.cfl = " << config.dry_hydrostatic.cfl << '\n'
              << "dry_hydrostatic.diffusion_kind = "
              << diffusion_kind_name(config.dry_hydrostatic.diffusion_kind) << '\n'
-           << "dry_hydrostatic.diffusion_coefficient = "
-           << config.dry_hydrostatic.diffusion_coefficient << '\n';
-  }
-  if (config.orography.kind != OrographyKind::kFlat) {
-    output << "orography.kind = " << orography_kind_name(config.orography.kind)
-           << '\n';
-    if (config.orography.kind == OrographyKind::kLatLonCsv)
-      output << "orography.input_file = " << config.orography.input_file << '\n'
-             << "orography.input_fingerprint_fnv1a64 = "
-             << config.orography.input_fingerprint_fnv1a64 << '\n'
-             << "orography.smoothing_passes = "
-             << config.orography.smoothing_passes << '\n';
-  }
+             << "dry_hydrostatic.diffusion_coefficient = "
+             << config.dry_hydrostatic.diffusion_coefficient << '\n';
+    }
+    if (config.orography.kind != OrographyKind::kFlat) {
+      output << "orography.kind = " << orography_kind_name(config.orography.kind)
+             << '\n';
+      if (config.orography.kind == OrographyKind::kLatLonCsv)
+        output << "orography.input_file = " << config.orography.input_file << '\n'
+               << "orography.input_fingerprint_fnv1a64 = "
+               << config.orography.input_fingerprint_fnv1a64 << '\n'
+               << "orography.smoothing_passes = " << config.orography.smoothing_passes
+               << '\n';
+    }
   }
   output << "output.directory = " << config.output_directory << '\n';
 

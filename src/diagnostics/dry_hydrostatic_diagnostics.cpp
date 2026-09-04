@@ -50,10 +50,8 @@ DryHydrostaticDiagnostics diagnose_dry_hydrostatic_budgets(
 
 TerrainDiagnostics diagnose_terrain_budgets(
     const CubedSphereGrid& grid, const DryHydrostaticState& state,
-    const DryHydrostaticDerived& d,
-    const DryHydrostaticSources& sources,
-    const std::span<const Real> surface_geopotential_m2_s2,
-    const PlanetParameters& p) {
+    const DryHydrostaticDerived& d, const DryHydrostaticSources& sources,
+    const std::span<const Real> surface_geopotential_m2_s2, const PlanetParameters& p) {
   const auto volume = d.cells * d.levels;
   if (d.cells != grid.cell_count() || d.levels == 0 ||
       state.surface_pressure_pa.size() != d.cells ||
@@ -64,7 +62,15 @@ TerrainDiagnostics diagnose_terrain_budgets(
       least_squares_gradient(grid, surface_geopotential_m2_s2);
   TerrainDiagnostics out{std::numeric_limits<Real>::infinity(),
                          -std::numeric_limits<Real>::infinity(),
-                         0, 0, 0, 0, 0, 0, 0, 0, 0};
+                         0,
+                         0,
+                         0,
+                         0,
+                         0,
+                         0,
+                         0,
+                         0,
+                         0};
   Real weighted_l1 = 0;
   Real weighted_l2 = 0;
   for (std::size_t cell = 0; cell < d.cells; ++cell) {
@@ -73,15 +79,13 @@ TerrainDiagnostics diagnose_terrain_budgets(
     const Real height = surface_geopotential_m2_s2[cell] / p.gravity_m_s2;
     out.minimum_surface_height_m = std::min(out.minimum_surface_height_m, height);
     out.maximum_surface_height_m = std::max(out.maximum_surface_height_m, height);
-    out.maximum_surface_slope =
-        std::max(out.maximum_surface_slope,
-                 norm(surface_gradient[cell]) / p.gravity_m_s2);
+    out.maximum_surface_slope = std::max(out.maximum_surface_slope,
+                                         norm(surface_gradient[cell]) / p.gravity_m_s2);
     Vec3 column_force{};
     for (std::size_t level = 0; level < d.levels; ++level) {
       const auto offset = dry_hydrostatic_offset(cell, level, d.levels);
       const Real acceleration =
-          norm(sources.pressure_gradient_kg_m_s2[offset]) /
-          d.air_mass_kg_m2[offset];
+          norm(sources.pressure_gradient_kg_m_s2[offset]) / d.air_mass_kg_m2[offset];
       weighted_l1 += area * acceleration;
       weighted_l2 += area * acceleration * acceleration;
       out.pressure_gradient_linf_m_s2 =
@@ -96,25 +100,23 @@ TerrainDiagnostics diagnose_terrain_budgets(
     out.model_pressure_gradient_axial_torque_n_m +=
         area * cross(position, column_force).z;
     const Vec3 boundary_force =
-        -(state.surface_pressure_pa[cell] / p.gravity_m_s2) *
-        surface_gradient[cell];
-    out.boundary_axial_torque_n_m +=
-        area * cross(position, boundary_force).z;
+        -(state.surface_pressure_pa[cell] / p.gravity_m_s2) * surface_gradient[cell];
+    out.boundary_axial_torque_n_m += area * cross(position, boundary_force).z;
   }
   const Real normalization = grid.total_area_m2() * static_cast<Real>(d.levels);
   out.pressure_gradient_l1_m_s2 = weighted_l1 / normalization;
   out.pressure_gradient_l2_m_s2 = std::sqrt(weighted_l2 / normalization);
   out.axial_torque_residual_n_m =
-      out.model_pressure_gradient_axial_torque_n_m -
-      out.boundary_axial_torque_n_m;
+      out.model_pressure_gradient_axial_torque_n_m - out.boundary_axial_torque_n_m;
   return out;
 }
 
-Real absolute_pressure_velocity_pa_s(
-    const Real b_half, const Real surface_pressure_tendency_pa_s,
-    const Vec3 interface_velocity_m_s,
-    const Vec3 interface_pressure_gradient_pa_m,
-    const Real relative_mass_flux_kg_m2_s, const Real gravity_m_s2) {
+Real absolute_pressure_velocity_pa_s(const Real b_half,
+                                     const Real surface_pressure_tendency_pa_s,
+                                     const Vec3 interface_velocity_m_s,
+                                     const Vec3 interface_pressure_gradient_pa_m,
+                                     const Real relative_mass_flux_kg_m2_s,
+                                     const Real gravity_m_s2) {
   if (!std::isfinite(b_half) || !std::isfinite(surface_pressure_tendency_pa_s) ||
       !is_finite(interface_velocity_m_s) ||
       !is_finite(interface_pressure_gradient_pa_m) ||
@@ -127,28 +129,27 @@ Real absolute_pressure_velocity_pa_s(
 
 void write_terrain_diagnostics(std::ostream& output,
                                const TerrainDiagnostics& diagnostics) {
-  output << std::setprecision(std::numeric_limits<Real>::max_digits10)
-         << "terrain.minimum_surface_height_m = "
-         << diagnostics.minimum_surface_height_m << '\n'
-         << "terrain.maximum_surface_height_m = "
-         << diagnostics.maximum_surface_height_m << '\n'
-         << "terrain.maximum_surface_slope = " << diagnostics.maximum_surface_slope
-         << '\n'
-         << "terrain.pressure_gradient_l1_m_s2 = "
-         << diagnostics.pressure_gradient_l1_m_s2 << '\n'
-         << "terrain.pressure_gradient_l2_m_s2 = "
-         << diagnostics.pressure_gradient_l2_m_s2 << '\n'
-         << "terrain.pressure_gradient_linf_m_s2 = "
-         << diagnostics.pressure_gradient_linf_m_s2 << '\n'
-         << "terrain.maximum_wind_m_s = " << diagnostics.maximum_wind_m_s << '\n'
-         << "terrain.model_pressure_gradient_axial_torque_n_m = "
-         << diagnostics.model_pressure_gradient_axial_torque_n_m << '\n'
-         << "terrain.boundary_axial_torque_n_m = "
-         << diagnostics.boundary_axial_torque_n_m << '\n'
-         << "terrain.axial_torque_residual_n_m = "
-         << diagnostics.axial_torque_residual_n_m << '\n'
-         << "terrain.pressure_work_w = " << diagnostics.terrain_pressure_work_w
-         << '\n';
+  output
+      << std::setprecision(std::numeric_limits<Real>::max_digits10)
+      << "terrain.minimum_surface_height_m = " << diagnostics.minimum_surface_height_m
+      << '\n'
+      << "terrain.maximum_surface_height_m = " << diagnostics.maximum_surface_height_m
+      << '\n'
+      << "terrain.maximum_surface_slope = " << diagnostics.maximum_surface_slope << '\n'
+      << "terrain.pressure_gradient_l1_m_s2 = " << diagnostics.pressure_gradient_l1_m_s2
+      << '\n'
+      << "terrain.pressure_gradient_l2_m_s2 = " << diagnostics.pressure_gradient_l2_m_s2
+      << '\n'
+      << "terrain.pressure_gradient_linf_m_s2 = "
+      << diagnostics.pressure_gradient_linf_m_s2 << '\n'
+      << "terrain.maximum_wind_m_s = " << diagnostics.maximum_wind_m_s << '\n'
+      << "terrain.model_pressure_gradient_axial_torque_n_m = "
+      << diagnostics.model_pressure_gradient_axial_torque_n_m << '\n'
+      << "terrain.boundary_axial_torque_n_m = " << diagnostics.boundary_axial_torque_n_m
+      << '\n'
+      << "terrain.axial_torque_residual_n_m = " << diagnostics.axial_torque_residual_n_m
+      << '\n'
+      << "terrain.pressure_work_w = " << diagnostics.terrain_pressure_work_w << '\n';
   if (!output) throw std::runtime_error("failed while writing terrain diagnostics");
 }
 }  // namespace mps

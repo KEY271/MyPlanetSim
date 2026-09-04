@@ -20,29 +20,27 @@ MPS_TEST_CASE("dry hydrostatic state is cell-major and round trips") {
 }
 
 MPS_TEST_CASE("cellwise lower boundary shifts only diagnosed geopotential") {
-  const mps::AtmosphericHybridCoordinate coordinate(
-      {{1000, 0}, {0, 1}}, 90000, 110000, 100);
+  const mps::AtmosphericHybridCoordinate coordinate({{1000, 0}, {0, 1}}, 90000, 110000,
+                                                    100);
   const mps::PlanetParameters planet{2, 0, 10, 287, 1004, 100000};
   mps::DryHydrostaticState state{
       .surface_pressure_pa = {100000, 100000},
       .horizontal_momentum_mass_kg_m_s = {{1, 2, 0}, {1, 2, 0}},
       .potential_temperature_mass_k_kg_m2 = {3000000, 3000000},
       .tracer_mass_kg_m2 = {100, 100}};
-  const auto flat =
-      mps::diagnose_dry_hydrostatic_state(state, coordinate, planet);
+  const auto flat = mps::diagnose_dry_hydrostatic_state(state, coordinate, planet);
   const std::vector<mps::Real> lower_boundary{123, 456};
-  const auto terrain = mps::diagnose_dry_hydrostatic_state(
-      state, coordinate, planet, lower_boundary);
+  const auto terrain =
+      mps::diagnose_dry_hydrostatic_state(state, coordinate, planet, lower_boundary);
   for (std::size_t cell = 0; cell < 2; ++cell) {
     MPS_CHECK_EQ(terrain.pressure_pa[cell], flat.pressure_pa[cell]);
     MPS_CHECK_EQ(terrain.temperature_k[cell], flat.temperature_k[cell]);
     MPS_CHECK_EQ(terrain.velocity_m_s[cell].x, flat.velocity_m_s[cell].x);
-    MPS_CHECK_NEAR(terrain.geopotential_m2_s2[cell] -
-                       flat.geopotential_m2_s2[cell],
+    MPS_CHECK_NEAR(terrain.geopotential_m2_s2[cell] - flat.geopotential_m2_s2[cell],
                    lower_boundary[cell], 1e-12);
   }
-  MPS_CHECK_THROWS_AS(mps::diagnose_dry_hydrostatic_state(
-                          state, coordinate, planet, std::vector<mps::Real>{1}),
+  MPS_CHECK_THROWS_AS(mps::diagnose_dry_hydrostatic_state(state, coordinate, planet,
+                                                          std::vector<mps::Real>{1}),
                       std::invalid_argument);
 }
 int main() { return mps::test::run_all(); }

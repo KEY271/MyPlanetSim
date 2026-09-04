@@ -1,8 +1,8 @@
-#include <limits>
 #include <cmath>
-#include <numbers>
-#include <fstream>
 #include <filesystem>
+#include <fstream>
+#include <limits>
+#include <numbers>
 #include <numeric>
 
 #include "myplanetsim/dynamics/surface_orography.hpp"
@@ -37,8 +37,7 @@ MPS_TEST_CASE("DCMIP 2-0-0 terrain follows the published Schar profile") {
 MPS_TEST_CASE("Williamson 5 terrain is the published isolated cone") {
   constexpr double pi = std::numbers::pi_v<double>;
   const mps::Vec3 centre{std::cos(pi / 6) * std::cos(-pi / 2),
-                         std::cos(pi / 6) * std::sin(-pi / 2),
-                         std::sin(pi / 6)};
+                         std::cos(pi / 6) * std::sin(-pi / 2), std::sin(pi / 6)};
   MPS_CHECK_NEAR(mps::williamson5_surface_height_m(centre), 2000, 1e-12);
   MPS_CHECK_EQ(mps::williamson5_surface_height_m({1, 0, 0}), 0.0);
 }
@@ -71,14 +70,13 @@ MPS_TEST_CASE("lat-lon CSV is fingerprinted interpolated and strict") {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     output << bytes;
   }
-  mps::OrographyParameters parameters{.kind = mps::OrographyKind::kLatLonCsv,
-                                      .input_file = path.filename().string(),
-                                      .input_fingerprint_fnv1a64 =
-                                          mps::fnv1a64_hex(bytes),
-                                      .smoothing_passes = 0};
+  mps::OrographyParameters parameters{
+      .kind = mps::OrographyKind::kLatLonCsv,
+      .input_file = path.filename().string(),
+      .input_fingerprint_fnv1a64 = mps::fnv1a64_hex(bytes),
+      .smoothing_passes = 0};
   const mps::CubedSphereGrid grid(4, 2);
-  const auto terrain =
-      mps::make_surface_orography(parameters, grid, 10, directory);
+  const auto terrain = mps::make_surface_orography(parameters, grid, 10, directory);
   for (const auto value : terrain.surface_geopotential_m2_s2()) {
     MPS_CHECK(value >= 100);
     MPS_CHECK(value <= 1900);
@@ -93,15 +91,16 @@ MPS_TEST_CASE("lat-lon CSV is fingerprinted interpolated and strict") {
       output << invalid;
     }
     parameters.input_fingerprint_fnv1a64 = mps::fnv1a64_hex(invalid);
-    MPS_CHECK_THROWS_AS(
-        mps::make_surface_orography(parameters, grid, 10, directory),
-        std::runtime_error);
+    MPS_CHECK_THROWS_AS(mps::make_surface_orography(parameters, grid, 10, directory),
+                        std::runtime_error);
   };
   reject(bytes + "270,90,190\n");
-  reject("longitude_deg,latitude_deg,height_m\n"
-         "0,-90,10\n0,90,190\n90,-90,10\n");
-  reject("longitude_deg,latitude_deg,height_m\n"
-         "0,-90,nan\n0,90,190\n90,-90,10\n90,90,190\n");
+  reject(
+      "longitude_deg,latitude_deg,height_m\n"
+      "0,-90,10\n0,90,190\n90,-90,10\n");
+  reject(
+      "longitude_deg,latitude_deg,height_m\n"
+      "0,-90,nan\n0,90,190\n90,-90,10\n90,90,190\n");
   std::filesystem::remove(path);
 }
 

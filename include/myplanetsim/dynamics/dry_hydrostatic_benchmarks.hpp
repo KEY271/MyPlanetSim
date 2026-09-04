@@ -4,6 +4,5 @@
 namespace mps {
 [[nodiscard]] DryHydrostaticState initialize_dry_hydrostatic_benchmark(
     const ExperimentConfig& config, const CubedSphereGrid& grid,
-    const AtmosphericHybridCoordinate& coordinate,
-    const SurfaceOrography& orography);
+    const AtmosphericHybridCoordinate& coordinate, const SurfaceOrography& orography);
 }

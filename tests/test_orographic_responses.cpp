@@ -46,8 +46,7 @@ double terrain_force_for_bell(const double peak_height_m) {
     derived.geopotential_m2_s2[cell] = phi;
     derived.pressure_pa[cell] = 100000 * std::exp(-phi / (rd * temperature));
   }
-  const mps::PlanetParameters planet{grid.radius_m(), 0, gravity, rd, 1004.5,
-                                     100000};
+  const mps::PlanetParameters planet{grid.radius_m(), 0, gravity, rd, 1004.5, 100000};
   const auto source = mps::dry_hydrostatic_sources(grid, derived, planet);
   double maximum = 0;
   for (const auto value : source.geopotential_gradient_kg_m_s2)

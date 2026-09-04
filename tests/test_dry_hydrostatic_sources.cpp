@@ -1,9 +1,10 @@
-#include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
-#include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
-#include "support/test.hpp"
 #include <algorithm>
 #include <cmath>
 #include <sstream>
+
+#include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
+#include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
+#include "support/test.hpp"
 MPS_TEST_CASE("uniform hydrostatic fields have zero pressure source") {
   mps::CubedSphereGrid g(2, 2);
   mps::DryHydrostaticDerived d{.cells = g.cell_count(), .levels = 1};
@@ -46,15 +47,13 @@ double sloping_surface_cancellation_error(const mps::Index resolution,
       derived.geopotential_m2_s2[offset] = -rd * temperature * shape;
     }
   }
-  const mps::PlanetParameters planet{grid.radius_m(), 0, 9.80616, rd, 1004.5,
-                                     100000};
+  const mps::PlanetParameters planet{grid.radius_m(), 0, 9.80616, rd, 1004.5, 100000};
   const auto sources = mps::dry_hydrostatic_sources(grid, derived, planet);
   double maximum = 0;
   for (std::size_t offset = 0; offset < volume; ++offset) {
     const auto reconstructed = sources.geopotential_gradient_kg_m_s2[offset] +
                                sources.pressure_correction_kg_m_s2[offset];
-    MPS_CHECK_NEAR(mps::norm(reconstructed -
-                             sources.pressure_gradient_kg_m_s2[offset]),
+    MPS_CHECK_NEAR(mps::norm(reconstructed - sources.pressure_gradient_kg_m_s2[offset]),
                    0, 1e-12);
     maximum = std::max(maximum, mps::norm(sources.pressure_gradient_kg_m_s2[offset]));
   }
@@ -96,8 +95,7 @@ MPS_TEST_CASE("terrain budgets and absolute pressure velocity are diagnostics") 
   std::ostringstream output;
   mps::write_terrain_diagnostics(output, diagnostics);
   MPS_CHECK(output.str().find("terrain.pressure_work_w") != std::string::npos);
-  MPS_CHECK_NEAR(mps::absolute_pressure_velocity_pa_s(
-                     .5, 2, {3, 0, 0}, {4, 0, 0}, 5, 10),
-                 63, 0);
+  MPS_CHECK_NEAR(
+      mps::absolute_pressure_velocity_pa_s(.5, 2, {3, 0, 0}, {4, 0, 0}, 5, 10), 63, 0);
 }
 int main() { return mps::test::run_all(); }

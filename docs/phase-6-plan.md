@@ -1,6 +1,8 @@
 # Phase 6 実装計画 — 固定地形と下部境界
 
-**状態:** 設計済み・未実装。実装開始前に [Phase 5 検証報告](validation/phase-5.md) の
+**状態:** C++ core 実装済み・production validation 未完了。CI 規模の実装結果と未完了 gate は
+[Phase 6 検証報告](validation/phase-6.md) に記録する。Phase 6 完了判定の前に
+[Phase 5 検証報告](validation/phase-5.md) の
 定量的 convergence と UMJS14 reference-envelope gap を閉じ、実装が
 [ADR 0006](adr/0006-dry-hydrostatic-state-and-coupling.md) の SSP-RK3、再構築、CFL 契約と
 一致することを再確認する。Phase 6 の判断は

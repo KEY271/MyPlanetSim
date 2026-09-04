@@ -93,8 +93,7 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
                           [](const Real value) { return value != 0.0; });
   std::vector<Vec3> orography_gradient;
   if (has_orography)
-    orography_gradient =
-        least_squares_gradient(grid, surface_geopotential_m2_s2);
+    orography_gradient = least_squares_gradient(grid, surface_geopotential_m2_s2);
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
     Vec3 pressure_geometry_correction{};
     for (const std::size_t edge_id : grid.cell_edges(grid.cell_id(cell))) {
@@ -114,16 +113,15 @@ ShallowWaterRhsComponents assemble_shallow_water_rhs(
         -2.0 * project_tangent(cross(rotation_vector_rad_s, state.momentum[cell]),
                                grid.cells()[cell].center);
     if (has_orography)
-      result.orography.momentum[cell] =
-          -state.depth[cell] * orography_gradient[cell];
+      result.orography.momentum[cell] = -state.depth[cell] * orography_gradient[cell];
     result.total.depth[cell] = result.flux.depth[cell];
     result.total.momentum[cell] = project_tangent(
         result.flux.momentum[cell] + result.pressure.momentum[cell] +
             result.coriolis.momentum[cell] + result.diffusion.momentum[cell],
         grid.cells()[cell].center);
-    result.total.momentum[cell] = project_tangent(
-        result.total.momentum[cell] + result.orography.momentum[cell],
-        grid.cells()[cell].center);
+    result.total.momentum[cell] =
+        project_tangent(result.total.momentum[cell] + result.orography.momentum[cell],
+                        grid.cells()[cell].center);
     result.total.depth[cell] += result.diffusion.depth[cell];
   }
   return result;

@@ -34,8 +34,7 @@ struct TerrainDiagnostics {
     const CubedSphereGrid&, const DryHydrostaticState&, const DryHydrostaticDerived&,
     const PlanetParameters&);
 [[nodiscard]] TerrainDiagnostics diagnose_terrain_budgets(
-    const CubedSphereGrid&, const DryHydrostaticState&,
-    const DryHydrostaticDerived&,
+    const CubedSphereGrid&, const DryHydrostaticState&, const DryHydrostaticDerived&,
     const DryHydrostaticSources&, std::span<const Real> surface_geopotential_m2_s2,
     const PlanetParameters&);
 [[nodiscard]] Real absolute_pressure_velocity_pa_s(

@@ -22,13 +22,12 @@ DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
     throw std::invalid_argument("dry driver requires dry_hydrostatic config");
 }
 DryHydrostaticState DryHydrostaticDriver::initial_state() const {
-  return initialize_dry_hydrostatic_benchmark(config_, grid_, coordinate_,
-                                               orography_);
+  return initialize_dry_hydrostatic_benchmark(config_, grid_, coordinate_, orography_);
 }
 DryHydrostaticDerived DryHydrostaticDriver::diagnose(
     const DryHydrostaticState& s) const {
-  return diagnose_dry_hydrostatic_state(
-      s, coordinate_, config_.planet, orography_.surface_geopotential_m2_s2());
+  return diagnose_dry_hydrostatic_state(s, coordinate_, config_.planet,
+                                        orography_.surface_geopotential_m2_s2());
 }
 DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const {
   auto d = diagnose(s);

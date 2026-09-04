@@ -214,7 +214,6 @@ MPS_TEST_CASE("transport configuration has a strict canonical round trip") {
   MPS_CHECK_THROWS_AS(
       parse(std::string(kValidTransportConfig) + "ode.initial_value = 1\n"),
       std::runtime_error);
-
 }
 
 MPS_TEST_CASE("transport configuration rejects invalid numerical choices") {
@@ -289,8 +288,7 @@ MPS_TEST_CASE("Williamson 5 is Rusanov-only and requires its named terrain") {
   auto position = text.find("williamson2");
   text.replace(position, std::string("williamson2").size(), "williamson5");
   const auto valid = parse(text + "orography.kind = williamson5\n");
-  MPS_CHECK(valid.shallow_water.test_case ==
-            mps::ShallowWaterTestCase::kWilliamson5);
+  MPS_CHECK(valid.shallow_water.test_case == mps::ShallowWaterTestCase::kWilliamson5);
   position = text.find("shallow_water.scheme = rusanov");
   text.replace(position, std::string("shallow_water.scheme = rusanov").size(),
                "shallow_water.scheme = compatible");
@@ -332,8 +330,7 @@ MPS_TEST_CASE("dry-hydrostatic configuration reuses vertical schema strictly") {
   const auto test_case = dcmip_text.find("isothermal_rest");
   dcmip_text.replace(test_case, std::string("isothermal_rest").size(),
                      "dcmip_2_0_0_rest");
-  const auto dcmip =
-      parse(dcmip_text + "orography.kind = dcmip_2_0_0\n");
+  const auto dcmip = parse(dcmip_text + "orography.kind = dcmip_2_0_0\n");
   MPS_CHECK(dcmip.dry_hydrostatic.test_case ==
             mps::DryHydrostaticTestCase::kDcmip200Rest);
 }
@@ -345,8 +342,7 @@ MPS_TEST_CASE("orography configuration is bounded and conditionally canonical") 
   MPS_CHECK(flat_output.str().find("orography.") == std::string::npos);
 
   const auto analytic =
-      parse(std::string(kValidDryHydrostaticConfig) +
-            "orography.kind = williamson5\n");
+      parse(std::string(kValidDryHydrostaticConfig) + "orography.kind = williamson5\n");
   MPS_CHECK(analytic.orography.kind == mps::OrographyKind::kWilliamson5);
   std::ostringstream analytic_output;
   mps::write_experiment_config(analytic_output, analytic);
@@ -365,14 +361,12 @@ MPS_TEST_CASE("orography configuration is bounded and conditionally canonical") 
   mps::write_experiment_config(csv_output, csv);
   MPS_CHECK_EQ(parse(csv_output.str()).orography.input_file, "terrain.csv");
 
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidDryHydrostaticConfig) +
+                            "orography.kind = linear_bell\n"
+                            "orography.smoothing_passes = 1\n"),
+                      std::runtime_error);
   MPS_CHECK_THROWS_AS(
-      parse(std::string(kValidDryHydrostaticConfig) +
-            "orography.kind = linear_bell\n"
-            "orography.smoothing_passes = 1\n"),
-      std::runtime_error);
-  MPS_CHECK_THROWS_AS(
-      parse(std::string(kValidDryHydrostaticConfig) +
-            "orography.kind = latlon_csv\n"),
+      parse(std::string(kValidDryHydrostaticConfig) + "orography.kind = latlon_csv\n"),
       std::runtime_error);
   auto absolute = std::string(kValidDryHydrostaticConfig) +
                   "orography.kind = latlon_csv\n"

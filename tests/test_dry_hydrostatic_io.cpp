@@ -64,24 +64,21 @@ MPS_TEST_CASE("dry state checkpoint layout and budgets are deterministic") {
 MPS_TEST_CASE("terrain changes checkpoint identity without changing its layout") {
   const auto flat = uniform_dry_config(2);
   auto terrain = flat;
-  terrain.dry_hydrostatic.test_case =
-      mps::DryHydrostaticTestCase::kLinearMountainWave;
+  terrain.dry_hydrostatic.test_case = mps::DryHydrostaticTestCase::kLinearMountainWave;
   terrain.orography.kind = mps::OrographyKind::kLinearBell;
   const auto flat_fingerprint = mps::config_fingerprint(flat);
   const auto terrain_fingerprint = mps::config_fingerprint(terrain);
   MPS_CHECK(flat_fingerprint != terrain_fingerprint);
   std::stringstream stream;
-  mps::write_checkpoint(stream,
-                        {.time_s = 0,
-                         .step = 0,
-                         .state = {1},
-                         .config_fingerprint = flat_fingerprint,
-                         .layout_id =
-                             std::string(mps::kDryHydrostaticCheckpointLayout)});
-  MPS_CHECK_THROWS_AS(
-      mps::read_checkpoint(stream, terrain_fingerprint,
-                           mps::kDryHydrostaticCheckpointLayout, 1),
-      std::runtime_error);
+  mps::write_checkpoint(
+      stream, {.time_s = 0,
+               .step = 0,
+               .state = {1},
+               .config_fingerprint = flat_fingerprint,
+               .layout_id = std::string(mps::kDryHydrostaticCheckpointLayout)});
+  MPS_CHECK_THROWS_AS(mps::read_checkpoint(stream, terrain_fingerprint,
+                                           mps::kDryHydrostaticCheckpointLayout, 1),
+                      std::runtime_error);
 }
 MPS_TEST_CASE("a control request re-resolves only a uniform sigma preset") {
   const auto preset = uniform_dry_config(8);

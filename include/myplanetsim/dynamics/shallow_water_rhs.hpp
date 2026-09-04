@@ -22,7 +22,6 @@ struct ShallowWaterRhsComponents {
 [[nodiscard]] ShallowWaterRhsComponents assemble_shallow_water_rhs(
     const CubedSphereGrid& grid, const ShallowWaterState& state,
     const ShallowWaterParameters& parameters, Real gravity_m_s2,
-    Vec3 rotation_vector_rad_s,
-    std::span<const Real> surface_geopotential_m2_s2 = {});
+    Vec3 rotation_vector_rad_s, std::span<const Real> surface_geopotential_m2_s2 = {});
 
 }  // namespace mps

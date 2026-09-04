@@ -33,8 +33,7 @@ DryHydrostaticSources dry_hydrostatic_sources(const CubedSphereGrid& grid,
       out.pressure_correction_kg_m_s2[n] =
           -d.air_mass_kg_m2[n] * project_tangent(alpha * gp[c], centre);
       out.pressure_gradient_kg_m_s2[n] =
-          out.geopotential_gradient_kg_m_s2[n] +
-          out.pressure_correction_kg_m_s2[n];
+          out.geopotential_gradient_kg_m_s2[n] + out.pressure_correction_kg_m_s2[n];
       out.coriolis_kg_m_s2[n] =
           -2 * d.air_mass_kg_m2[n] *
           project_tangent(cross(omega, d.velocity_m_s[n]), centre);

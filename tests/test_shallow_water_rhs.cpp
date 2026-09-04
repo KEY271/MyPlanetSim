@@ -112,21 +112,20 @@ MPS_TEST_CASE("shallow-water orography is a separate signed tangent source") {
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell)
     geopotential[cell] = 4.0 * grid.cells()[cell].center.x;
   const auto gradient = mps::least_squares_gradient(grid, geopotential);
-  const auto rhs = mps::assemble_shallow_water_rhs(
-      grid, state, parameters, 3.0, {}, geopotential);
+  const auto rhs =
+      mps::assemble_shallow_water_rhs(grid, state, parameters, 3.0, {}, geopotential);
   for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
     MPS_CHECK_EQ(rhs.orography.depth[cell], 0.0);
-    MPS_CHECK_NEAR(mps::norm(rhs.orography.momentum[cell] +
-                             state.depth[cell] * gradient[cell]),
-                   0.0, 1e-13);
-    MPS_CHECK_NEAR(mps::dot(rhs.orography.momentum[cell],
-                            grid.cells()[cell].center),
+    MPS_CHECK_NEAR(
+        mps::norm(rhs.orography.momentum[cell] + state.depth[cell] * gradient[cell]),
+        0.0, 1e-13);
+    MPS_CHECK_NEAR(mps::dot(rhs.orography.momentum[cell], grid.cells()[cell].center),
                    0.0, 1e-13);
   }
 
   const std::vector<mps::Real> flat(grid.cell_count());
-  const auto flat_rhs = mps::assemble_shallow_water_rhs(
-      grid, state, parameters, 3.0, {}, flat);
+  const auto flat_rhs =
+      mps::assemble_shallow_water_rhs(grid, state, parameters, 3.0, {}, flat);
   for (const auto value : flat_rhs.orography.momentum)
     MPS_CHECK_EQ(mps::norm(value), 0.0);
 }

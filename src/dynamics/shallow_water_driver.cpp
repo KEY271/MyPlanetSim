@@ -168,8 +168,7 @@ ShallowWaterResult run_shallow_water(
   }
   const CubedSphereGrid grid(config.grid.cells_per_panel, config.planet.radius_m);
   const auto orography = make_surface_orography(
-      config.orography, grid, config.planet.gravity_m_s2,
-      config.source_directory);
+      config.orography, grid, config.planet.gravity_m_s2, config.source_directory);
   const Vec3 omega = rotation_vector(config);
   std::optional<CubedSphereDualTopology> dual;
   if (config.shallow_water.scheme == ShallowWaterScheme::kCompatible) {

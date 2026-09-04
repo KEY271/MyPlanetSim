@@ -62,8 +62,7 @@ MPS_TEST_CASE("DCMIP 2-0-0 initializes a lapse-rate atmosphere at rest") {
                    .transport_scheme = mps::VerticalTransportScheme::kDonorCell,
                    .limiter = mps::VerticalLimiterKind::kNone,
                    .cfl = .5},
-      .dry_hydrostatic = {.test_case =
-                              mps::DryHydrostaticTestCase::kDcmip200Rest},
+      .dry_hydrostatic = {.test_case = mps::DryHydrostaticTestCase::kDcmip200Rest},
       .orography = {.kind = mps::OrographyKind::kDcmip200},
       .diagnostics = {1},
       .output_directory = "x"};
@@ -71,9 +70,8 @@ MPS_TEST_CASE("DCMIP 2-0-0 initializes a lapse-rate atmosphere at rest") {
   const mps::DryHydrostaticDriver driver(config);
   const auto state = driver.initial_state();
   const auto derived = driver.diagnose(state);
-  const auto minimum_pressure =
-      *std::min_element(state.surface_pressure_pa.begin(),
-                        state.surface_pressure_pa.end());
+  const auto minimum_pressure = *std::min_element(state.surface_pressure_pa.begin(),
+                                                  state.surface_pressure_pa.end());
   MPS_CHECK(minimum_pressure < 100000);
   for (const auto momentum : state.horizontal_momentum_mass_kg_m_s)
     MPS_CHECK_EQ(mps::norm(momentum), 0.0);
