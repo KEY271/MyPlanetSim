@@ -56,6 +56,7 @@ add_library(
   src/dynamics/shallow_water_state.cpp
   src/dynamics/dry_hydrostatic_state.cpp
   src/dynamics/dry_hydrostatic_flux.cpp
+  src/dynamics/dry_hydrostatic_sources.cpp
   src/dynamics/vertical_column_state.cpp
   src/dynamics/vertical_column_driver.cpp
   src/dynamics/shallow_water_compatible.cpp
