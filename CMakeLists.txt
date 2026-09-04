@@ -52,7 +52,10 @@ add_library(
   src/core/version.cpp
   src/diagnostics/reductions.cpp
   src/diagnostics/shallow_water_diagnostics.cpp
+  src/diagnostics/vertical_column_diagnostics.cpp
   src/dynamics/shallow_water_state.cpp
+  src/dynamics/vertical_column_state.cpp
+  src/dynamics/vertical_column_driver.cpp
   src/dynamics/shallow_water_compatible.cpp
   src/dynamics/shallow_water_diffusion.cpp
   src/dynamics/shallow_water_initial_edits.cpp
@@ -71,6 +74,10 @@ add_library(
   src/numerics/compatible_operators.cpp
   src/numerics/spherical_operators.cpp
   src/transport/spherical_transport.cpp
+  src/thermodynamics/dry_thermodynamics.cpp
+  src/vertical/hybrid_pressure_coordinate.cpp
+  src/vertical/hydrostatic_column.cpp
+  src/vertical/vertical_transport.cpp
 )
 target_compile_features(myplanetsim_core PUBLIC cxx_std_20)
 target_include_directories(
@@ -106,6 +113,10 @@ if(BUILD_TESTING)
     COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase2_rest.cfg
   )
   add_test(
+    NAME smoke.phase4_vertical_column
+    COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase4_isothermal.cfg
+  )
+  add_test(
     NAME smoke.phase1_deformational
     COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase1_deformational.cfg
   )
@@ -123,6 +134,10 @@ if(BUILD_TESTING)
   )
   set_tests_properties(
     smoke.phase2_shallow_water
+    PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
+  )
+  set_tests_properties(
+    smoke.phase4_vertical_column
     PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
   )
   add_test(NAME smoke.invalid_cli COMMAND my_planet_sim --unknown value)

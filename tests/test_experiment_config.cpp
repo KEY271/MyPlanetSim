@@ -79,6 +79,38 @@ diagnostics.interval_steps = 2
 output.directory = output
 )";
 
+constexpr std::string_view kValidVerticalConfig = R"(
+experiment.kind = vertical_column
+planet.radius_m = 2
+planet.rotation_rate_rad_s = 0.1
+planet.gravity_m_s2 = 10
+planet.gas_constant_j_kg_k = 287
+planet.heat_capacity_cp_j_kg_k = 1004
+planet.reference_pressure_pa = 100000
+run.start_time_s = 0
+run.end_time_s = 10
+run.time_step_s = 1
+run.random_seed = 7
+vertical.test_case = dry_adiabatic
+vertical.levels = 2
+vertical.a_half_pa = 1000,500,0
+vertical.b_half = 0,0.5,1
+vertical.surface_pressure_pa = 100000
+vertical.minimum_surface_pressure_pa = 90000
+vertical.maximum_surface_pressure_pa = 110000
+vertical.minimum_pressure_thickness_pa = 100
+vertical.surface_geopotential_m2_s2 = 0
+vertical.initial_temperature_k = 280
+vertical.initial_potential_temperature_k = 300
+vertical.temperature_floor_k = 100
+vertical.transport_scheme = donor_cell
+vertical.limiter = none
+vertical.cfl = 0.5
+vertical.forcing_amplitude = 0
+diagnostics.interval_steps = 2
+output.directory = output
+)";
+
 [[nodiscard]] mps::ExperimentConfig parse(const std::string_view text) {
   std::istringstream input{std::string(text)};
   return mps::parse_experiment_config(input);
@@ -212,6 +244,22 @@ MPS_TEST_CASE("shallow-water configuration rejects invalid numerical choices") {
                                     "diagnostics.interval_steps = 2",
                                     "diagnostics.interval_steps = 0")),
                       std::invalid_argument);
+}
+
+MPS_TEST_CASE("vertical-column configuration has a strict canonical round trip") {
+  const auto first = parse(kValidVerticalConfig);
+  MPS_CHECK(first.kind == mps::ExperimentKind::kVerticalColumn);
+  MPS_CHECK_EQ(first.vertical.a_half_pa.size(), 3U);
+  std::ostringstream output;
+  mps::write_experiment_config(output, first);
+  const auto second = parse(output.str());
+  MPS_CHECK_NEAR(second.vertical.b_half[1], first.vertical.b_half[1], 0.0);
+  MPS_CHECK_THROWS_AS(
+      parse(std::string(kValidVerticalConfig) + "grid.cells_per_panel = 2\n"),
+      std::runtime_error);
+  MPS_CHECK_THROWS_AS(
+      parse(std::string(kValidVerticalConfig) + "vertical.a_half_pa = 1,,0\n"),
+      std::runtime_error);
 }
 
 int main() { return mps::test::run_all(); }

@@ -5,6 +5,7 @@
 #include <iosfwd>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "myplanetsim/core/planet_parameters.hpp"
 #include "myplanetsim/core/types.hpp"
@@ -23,7 +24,7 @@ struct OdeParameters {
   Real decay_rate_s_1;
 };
 
-enum class ExperimentKind { kOde, kSphereTransport, kShallowWater };
+enum class ExperimentKind { kOde, kSphereTransport, kShallowWater, kVerticalColumn };
 enum class TransportScheme { kUpwind, kLinear };
 enum class LimiterKind { kNone, kBarthJespersen };
 enum class TransportTestCase { kSolidBody, kDeformational, kDivergent };
@@ -44,6 +45,14 @@ enum class InitialConditionKind {
   kCosineBell,
   kSlottedCylinder
 };
+enum class VerticalTestCase {
+  kIsothermal,
+  kDryAdiabatic,
+  kMovingSurfacePressure,
+  kManufacturedTransport
+};
+enum class VerticalTransportScheme { kDonorCell, kLinear };
+enum class VerticalLimiterKind { kNone, kMinmod };
 
 struct GridParameters {
   Index cells_per_panel = 0;
@@ -77,6 +86,25 @@ struct ShallowWaterParameters {
   Real maximum_velocity_m_s = 0.0;
 };
 
+struct VerticalColumnParameters {
+  VerticalTestCase test_case = VerticalTestCase::kIsothermal;
+  Index levels = 0;
+  std::vector<Real> a_half_pa;
+  std::vector<Real> b_half;
+  Real surface_pressure_pa = 0.0;
+  Real minimum_surface_pressure_pa = 0.0;
+  Real maximum_surface_pressure_pa = 0.0;
+  Real minimum_pressure_thickness_pa = 0.0;
+  Real surface_geopotential_m2_s2 = 0.0;
+  Real initial_temperature_k = 0.0;
+  Real initial_potential_temperature_k = 0.0;
+  Real temperature_floor_k = 0.0;
+  VerticalTransportScheme transport_scheme = VerticalTransportScheme::kDonorCell;
+  VerticalLimiterKind limiter = VerticalLimiterKind::kNone;
+  Real cfl = 0.5;
+  Real forcing_amplitude = 0.0;
+};
+
 struct DiagnosticsParameters {
   std::uint64_t interval_steps = 1;
 };
@@ -89,6 +117,7 @@ struct ExperimentConfig {
   GridParameters grid{};
   TransportParameters transport{};
   ShallowWaterParameters shallow_water{};
+  VerticalColumnParameters vertical{};
   DiagnosticsParameters diagnostics{};
   std::string output_directory;
 
@@ -109,6 +138,12 @@ struct ExperimentConfig {
 [[nodiscard]] std::string_view shallow_water_test_case_name(
     ShallowWaterTestCase test_case) noexcept;
 [[nodiscard]] std::string_view diffusion_kind_name(DiffusionKind kind) noexcept;
+[[nodiscard]] std::string_view vertical_test_case_name(
+    VerticalTestCase test_case) noexcept;
+[[nodiscard]] std::string_view vertical_transport_scheme_name(
+    VerticalTransportScheme scheme) noexcept;
+[[nodiscard]] std::string_view vertical_limiter_name(
+    VerticalLimiterKind limiter) noexcept;
 
 [[nodiscard]] ExperimentConfig parse_experiment_config(std::istream& input);
 [[nodiscard]] ExperimentConfig load_experiment_config(

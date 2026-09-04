@@ -20,14 +20,17 @@
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/control/control_request.hpp"
 #include "myplanetsim/diagnostics/reductions.hpp"
+#include "myplanetsim/diagnostics/vertical_column_diagnostics.hpp"
 #include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
 #include "myplanetsim/dynamics/shallow_water_driver.hpp"
+#include "myplanetsim/dynamics/vertical_column_driver.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
 #include "myplanetsim/io/checkpoint.hpp"
 #include "myplanetsim/io/frame.hpp"
 #include "myplanetsim/io/run_metadata.hpp"
 #include "myplanetsim/phase0/ode_experiment.hpp"
 #include "myplanetsim/transport/spherical_transport.hpp"
+#include "myplanetsim/vertical/hydrostatic_column.hpp"
 
 namespace {
 
@@ -355,6 +358,72 @@ void write_shallow_water_snapshot(const mps::ExperimentConfig& config,
   }
 }
 
+void write_vertical_column_result(
+    std::ostream& output, const mps::VerticalColumnResult& result,
+    const mps::diagnostics::VerticalColumnDiagnostics& diagnostics) {
+  output << std::setprecision(std::numeric_limits<mps::Real>::max_digits10)
+         << "result.integrator = ssprk3\n"
+         << "result.status = " << (result.reached_end_time ? "complete" : "stopped")
+         << '\n'
+         << "result.time_s = " << result.state.time_s << '\n'
+         << "result.step = " << result.state.step << '\n'
+         << "diagnostics.dry_mass_kg_m2 = " << diagnostics.dry_mass_kg_m2 << '\n'
+         << "diagnostics.mass_residual_kg_m2 = "
+         << diagnostics.dry_mass_kg_m2 - diagnostics.expected_dry_mass_kg_m2 << '\n'
+         << "diagnostics.hydrostatic_linf_residual_m2_s2 = "
+         << diagnostics.hydrostatic_linf_residual_m2_s2 << '\n';
+}
+
+void write_vertical_column_files(const mps::ExperimentConfig& config,
+                                 const mps::AtmosphericHybridCoordinate& coordinate,
+                                 const mps::VerticalColumnResult& result) {
+  const std::filesystem::path directory(config.output_directory);
+  std::filesystem::create_directories(directory);
+  const auto geometry = coordinate.geometry(
+      result.state.surface_pressure_pa, config.planet.gravity_m_s2,
+      config.planet.gas_constant_j_kg_k, config.planet.heat_capacity_cp_j_kg_k,
+      config.planet.reference_pressure_pa);
+  std::vector<mps::Real> theta(coordinate.levels());
+  for (std::size_t k = 0; k < theta.size(); ++k) {
+    theta[k] =
+        result.state.potential_temperature_mass_k_kg_m2[k] / geometry.air_mass_kg_m2[k];
+  }
+  const auto hydrostatic = mps::integrate_hydrostatic_column(
+      geometry, theta, config.planet.heat_capacity_cp_j_kg_k,
+      config.planet.gravity_m_s2, config.vertical.surface_geopotential_m2_s2);
+  std::ofstream profile(directory / "column_profile.csv", std::ios::trunc);
+  if (!profile) throw std::runtime_error("unable to open column profile CSV");
+  profile << "location,index,pressure_pa,geopotential_m2_s2,height_m,air_mass_kg_m2,"
+             "theta_k,temperature_k,tracer\n";
+  profile << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+  for (std::size_t k = 0; k <= coordinate.levels(); ++k) {
+    profile << "interface," << k << ',' << geometry.pressure_half_pa[k] << ','
+            << hydrostatic.geopotential_half_m2_s2[k] << ','
+            << hydrostatic.height_half_m[k] << ",,,,\n";
+  }
+  for (std::size_t k = 0; k < coordinate.levels(); ++k) {
+    const auto tracer = result.state.tracer_mass_kg_m2[k] / geometry.air_mass_kg_m2[k];
+    profile << "full," << k << ',' << geometry.pressure_full_pa[k] << ','
+            << hydrostatic.geopotential_full_m2_s2[k] << ','
+            << hydrostatic.height_full_m[k] << ',' << geometry.air_mass_kg_m2[k] << ','
+            << theta[k] << ',' << theta[k] * geometry.exner_full[k] << ',' << tracer
+            << '\n';
+  }
+  std::ofstream diagnostics(directory / "column_diagnostics.csv", std::ios::trunc);
+  if (!diagnostics) throw std::runtime_error("unable to open column diagnostics CSV");
+  diagnostics << "time_s,step,dry_mass_kg_m2,expected_dry_mass_kg_m2,theta_mass_k_kg_"
+                 "m2,tracer_mass_kg_m2,maximum_cfl\n";
+  for (const auto& sample : result.samples) {
+    const auto values =
+        mps::diagnostics::diagnose_vertical_column(config, coordinate, sample.state);
+    diagnostics << std::setprecision(std::numeric_limits<mps::Real>::max_digits10)
+                << sample.time_s << ',' << sample.step << ',' << values.dry_mass_kg_m2
+                << ',' << values.expected_dry_mass_kg_m2 << ','
+                << values.potential_temperature_mass_k_kg_m2 << ','
+                << values.tracer_mass_kg_m2 << ',' << sample.maximum_cfl << '\n';
+  }
+}
+
 }  // namespace
 
 int main(const int argc, const char* const argv[]) {
@@ -422,6 +491,38 @@ int main(const int argc, const char* const argv[]) {
       write_transport_snapshot(config, result);
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
       write_transport_result(std::cout, result);
+    } else if (config.kind == mps::ExperimentKind::kVerticalColumn) {
+      if (command_line.integrator != mps::IntegratorKind::kSspRk3 ||
+          command_line.control_request_path.has_value() ||
+          command_line.event_stream_ndjson) {
+        throw std::invalid_argument(
+            "vertical column supports only standalone ssprk3 runs");
+      }
+      const auto coordinate = mps::make_vertical_coordinate(config);
+      std::optional<mps::VerticalColumnState> initial_state;
+      if (command_line.restart_path.has_value()) {
+        const auto checkpoint = mps::read_checkpoint_file(
+            *command_line.restart_path, fingerprint,
+            mps::kVerticalColumnCheckpointLayout, 1 + 2 * coordinate.levels());
+        initial_state = mps::unflatten_vertical_column_state(
+            checkpoint.time_s, checkpoint.step, checkpoint.state, coordinate.levels());
+      }
+      const auto result = mps::run_vertical_column(config, std::move(initial_state),
+                                                   command_line.stop_after_step);
+      if (command_line.checkpoint_path.has_value()) {
+        mps::write_checkpoint_file(
+            *command_line.checkpoint_path,
+            {.time_s = result.state.time_s,
+             .step = result.state.step,
+             .state = mps::flatten_vertical_column_state(result.state),
+             .config_fingerprint = fingerprint,
+             .layout_id = std::string(mps::kVerticalColumnCheckpointLayout)});
+      }
+      write_vertical_column_files(config, coordinate, result);
+      const auto diagnostics =
+          mps::diagnostics::diagnose_vertical_column(config, coordinate, result.state);
+      mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
+      write_vertical_column_result(std::cout, result, diagnostics);
     } else {
       if (command_line.integrator != mps::IntegratorKind::kSspRk3) {
         throw std::invalid_argument("shallow water supports only ssprk3");

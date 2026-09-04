@@ -162,7 +162,8 @@ void validate_control_request(const ControlRequestV1& request) {
       throw std::invalid_argument("control.run_id contains an invalid character");
     }
   }
-  if (request.cells_per_panel == 0 || request.cells_per_panel > kControlMaxCellsPerPanel) {
+  if (request.cells_per_panel == 0 ||
+      request.cells_per_panel > kControlMaxCellsPerPanel) {
     throw std::invalid_argument("control.cells_per_panel must be in [1, 96]");
   }
   require_finite(request.end_time_s, "control.end_time_s");
@@ -177,7 +178,8 @@ void validate_control_request(const ControlRequestV1& request) {
     throw std::invalid_argument("control.frame_interval_steps must be in [1, 1000000]");
   }
   // Every published frame is a file on disk and a decoded dataset in the client, so the
-  // request is rejected when even the largest permitted time step would exceed the budget.
+  // request is rejected when even the largest permitted time step would exceed the
+  // budget.
   const Real estimated_frames =
       std::floor(std::ceil(request.end_time_s / request.maximum_time_step_s) /
                  static_cast<Real>(request.frame_interval_steps)) +

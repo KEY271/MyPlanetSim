@@ -38,7 +38,8 @@ cmake --build build/dev --target format-check
 `release` と `asan-ubsan` preset も同じ configure/build/test 手順で使用できます。
 
 実行ファイルは `experiment.kind` に応じて、Phase 0 の製造 ODE、Phase 1 の
-全球 cubed-sphere tracer 輸送、Phase 2 の全球 shallow-water を実行します。
+全球 cubed-sphere tracer 輸送、Phase 2 の全球 shallow-water、Phase 4 の独立した
+hybrid 鉛直 column を実行します。
 輸送ケースは診断を標準出力へ、cell snapshot を `output.directory/tracer.csv`
 へ出力します。shallow-water ケースは診断と保存量 drift、計算コストを標準
 出力へ、cell snapshot を `output.directory/shallow_water.csv`、区間診断を
@@ -46,6 +47,7 @@ cmake --build build/dev --target format-check
 
 ```sh
 ./build/dev/my_planet_sim --config configs/phase2_williamson2.cfg
+./build/dev/my_planet_sim --config configs/phase4_isothermal.cfg
 ```
 
 Phase 0 の科学・ソフトウェア基盤、Phase 1 の cubed-sphere 幾何・球面受動

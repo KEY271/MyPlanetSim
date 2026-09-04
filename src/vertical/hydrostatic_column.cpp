@@ -1,0 +1,54 @@
+#include "myplanetsim/vertical/hydrostatic_column.hpp"
+
+#include <cmath>
+#include <stdexcept>
+
+#include "myplanetsim/core/validation.hpp"
+
+namespace mps {
+
+HydrostaticColumn integrate_hydrostatic_column(
+    const HybridPressureGeometry& geometry,
+    const std::vector<Real>& potential_temperature_k,
+    const Real heat_capacity_cp_j_kg_k, const Real gravity_m_s2,
+    const Real surface_geopotential_m2_s2) {
+  require_positive(heat_capacity_cp_j_kg_k, "heat capacity");
+  require_positive(gravity_m_s2, "gravity");
+  require_finite(surface_geopotential_m2_s2, "surface geopotential");
+  const std::size_t nz = geometry.exner_full.size();
+  if (potential_temperature_k.size() != nz || geometry.exner_half.size() != nz + 1) {
+    throw std::invalid_argument("hydrostatic geometry and theta shapes differ");
+  }
+  HydrostaticColumn result;
+  result.geopotential_half_m2_s2.resize(nz + 1);
+  result.geopotential_full_m2_s2.resize(nz);
+  result.height_half_m.resize(nz + 1);
+  result.height_full_m.resize(nz);
+  result.residual_m2_s2.resize(nz);
+  result.geopotential_half_m2_s2[nz] = surface_geopotential_m2_s2;
+  for (std::size_t reverse = nz; reverse > 0; --reverse) {
+    const std::size_t k = reverse - 1;
+    require_positive(potential_temperature_k[k], "potential temperature");
+    const Real layer_integral = heat_capacity_cp_j_kg_k * potential_temperature_k[k] *
+                                (geometry.exner_half[k + 1] - geometry.exner_half[k]);
+    result.geopotential_half_m2_s2[k] =
+        result.geopotential_half_m2_s2[k + 1] + layer_integral;
+    result.geopotential_full_m2_s2[k] =
+        result.geopotential_half_m2_s2[k + 1] +
+        heat_capacity_cp_j_kg_k * potential_temperature_k[k] *
+            (geometry.exner_half[k + 1] - geometry.exner_full[k]);
+    result.residual_m2_s2[k] =
+        result.geopotential_half_m2_s2[k] - result.geopotential_half_m2_s2[k + 1] +
+        heat_capacity_cp_j_kg_k * potential_temperature_k[k] *
+            (geometry.exner_half[k] - geometry.exner_half[k + 1]);
+  }
+  for (std::size_t k = 0; k <= nz; ++k) {
+    result.height_half_m[k] = result.geopotential_half_m2_s2[k] / gravity_m_s2;
+    if (k < nz) {
+      result.height_full_m[k] = result.geopotential_full_m2_s2[k] / gravity_m_s2;
+    }
+  }
+  return result;
+}
+
+}  // namespace mps

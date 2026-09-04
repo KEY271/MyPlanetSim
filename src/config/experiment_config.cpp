@@ -70,6 +70,27 @@ constexpr std::array<std::string_view, 16> kShallowWaterRequiredKeys{
     "diagnostics.interval_steps",
 };
 
+constexpr std::array<std::string_view, 18> kVerticalRequiredKeys{
+    "experiment.kind",
+    "vertical.test_case",
+    "vertical.levels",
+    "vertical.a_half_pa",
+    "vertical.b_half",
+    "vertical.surface_pressure_pa",
+    "vertical.minimum_surface_pressure_pa",
+    "vertical.maximum_surface_pressure_pa",
+    "vertical.minimum_pressure_thickness_pa",
+    "vertical.surface_geopotential_m2_s2",
+    "vertical.initial_temperature_k",
+    "vertical.initial_potential_temperature_k",
+    "vertical.temperature_floor_k",
+    "vertical.transport_scheme",
+    "vertical.limiter",
+    "vertical.cfl",
+    "vertical.forcing_amplitude",
+    "diagnostics.interval_steps",
+};
+
 [[nodiscard]] std::string_view trim(const std::string_view value) {
   std::size_t first = 0;
   while (first < value.size() &&
@@ -121,6 +142,35 @@ constexpr std::array<std::string_view, 16> kShallowWaterRequiredKeys{
   return value;
 }
 
+[[nodiscard]] std::vector<Real> parse_real_list(const std::string_view text,
+                                                const std::size_t line,
+                                                const std::string_view key) {
+  std::vector<Real> values;
+  std::size_t begin = 0;
+  while (begin < text.size()) {
+    const auto comma = text.find(',', begin);
+    const auto item =
+        trim(text.substr(begin, comma == std::string_view::npos ? std::string_view::npos
+                                                                : comma - begin));
+    if (item.empty()) {
+      throw parse_error(line, "empty list element for " + std::string(key));
+    }
+    const auto value = parse_real(item, line, key);
+    if (!std::isfinite(value)) {
+      throw parse_error(line, "non-finite list element for " + std::string(key));
+    }
+    values.push_back(value);
+    if (comma == std::string_view::npos) {
+      break;
+    }
+    begin = comma + 1;
+    if (begin == text.size()) {
+      throw parse_error(line, "trailing comma for " + std::string(key));
+    }
+  }
+  return values;
+}
+
 void assign_value(ExperimentConfig& config, const std::string_view key,
                   const std::string_view value, const std::size_t line) {
   if (key == "experiment.kind") {
@@ -130,6 +180,8 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.kind = ExperimentKind::kSphereTransport;
     } else if (value == "shallow_water") {
       config.kind = ExperimentKind::kShallowWater;
+    } else if (value == "vertical_column") {
+      config.kind = ExperimentKind::kVerticalColumn;
     } else {
       throw parse_error(line, "unknown experiment.kind " + std::string(value));
     }
@@ -278,6 +330,61 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
     config.shallow_water.maximum_velocity_m_s = parse_real(value, line, key);
   } else if (key == "diagnostics.interval_steps") {
     config.diagnostics.interval_steps = parse_seed(value, line, key);
+  } else if (key == "vertical.test_case") {
+    if (value == "isothermal") {
+      config.vertical.test_case = VerticalTestCase::kIsothermal;
+    } else if (value == "dry_adiabatic") {
+      config.vertical.test_case = VerticalTestCase::kDryAdiabatic;
+    } else if (value == "moving_surface_pressure") {
+      config.vertical.test_case = VerticalTestCase::kMovingSurfacePressure;
+    } else if (value == "manufactured_transport") {
+      config.vertical.test_case = VerticalTestCase::kManufacturedTransport;
+    } else {
+      throw parse_error(line, "unknown vertical.test_case " + std::string(value));
+    }
+  } else if (key == "vertical.levels") {
+    config.vertical.levels = parse_index(value, line, key);
+  } else if (key == "vertical.a_half_pa") {
+    config.vertical.a_half_pa = parse_real_list(value, line, key);
+  } else if (key == "vertical.b_half") {
+    config.vertical.b_half = parse_real_list(value, line, key);
+  } else if (key == "vertical.surface_pressure_pa") {
+    config.vertical.surface_pressure_pa = parse_real(value, line, key);
+  } else if (key == "vertical.minimum_surface_pressure_pa") {
+    config.vertical.minimum_surface_pressure_pa = parse_real(value, line, key);
+  } else if (key == "vertical.maximum_surface_pressure_pa") {
+    config.vertical.maximum_surface_pressure_pa = parse_real(value, line, key);
+  } else if (key == "vertical.minimum_pressure_thickness_pa") {
+    config.vertical.minimum_pressure_thickness_pa = parse_real(value, line, key);
+  } else if (key == "vertical.surface_geopotential_m2_s2") {
+    config.vertical.surface_geopotential_m2_s2 = parse_real(value, line, key);
+  } else if (key == "vertical.initial_temperature_k") {
+    config.vertical.initial_temperature_k = parse_real(value, line, key);
+  } else if (key == "vertical.initial_potential_temperature_k") {
+    config.vertical.initial_potential_temperature_k = parse_real(value, line, key);
+  } else if (key == "vertical.temperature_floor_k") {
+    config.vertical.temperature_floor_k = parse_real(value, line, key);
+  } else if (key == "vertical.transport_scheme") {
+    if (value == "donor_cell") {
+      config.vertical.transport_scheme = VerticalTransportScheme::kDonorCell;
+    } else if (value == "linear") {
+      config.vertical.transport_scheme = VerticalTransportScheme::kLinear;
+    } else {
+      throw parse_error(line,
+                        "unknown vertical.transport_scheme " + std::string(value));
+    }
+  } else if (key == "vertical.limiter") {
+    if (value == "none") {
+      config.vertical.limiter = VerticalLimiterKind::kNone;
+    } else if (value == "minmod") {
+      config.vertical.limiter = VerticalLimiterKind::kMinmod;
+    } else {
+      throw parse_error(line, "unknown vertical.limiter " + std::string(value));
+    }
+  } else if (key == "vertical.cfl") {
+    config.vertical.cfl = parse_real(value, line, key);
+  } else if (key == "vertical.forcing_amplitude") {
+    config.vertical.forcing_amplitude = parse_real(value, line, key);
   } else if (key == "output.directory") {
     config.output_directory = value;
   } else {
@@ -325,7 +432,7 @@ void ExperimentConfig::validate() const {
     if (!(axis_norm_squared > 0.0) || !std::isfinite(axis_norm_squared)) {
       throw std::invalid_argument("transport rotation axis must be nonzero");
     }
-  } else {
+  } else if (kind == ExperimentKind::kShallowWater) {
     if (grid.cells_per_panel <= 0) {
       throw std::invalid_argument("grid.cells_per_panel must be positive");
     }
@@ -358,6 +465,74 @@ void ExperimentConfig::validate() const {
     }
     require_non_negative(shallow_water.maximum_velocity_m_s,
                          "shallow_water.maximum_velocity_m_s");
+    if (diagnostics.interval_steps == 0) {
+      throw std::invalid_argument("diagnostics.interval_steps must be positive");
+    }
+  } else {
+    if (vertical.levels <= 0) {
+      throw std::invalid_argument("vertical.levels must be positive");
+    }
+    const auto expected_size = static_cast<std::size_t>(vertical.levels + 1);
+    if (vertical.a_half_pa.size() != expected_size ||
+        vertical.b_half.size() != expected_size) {
+      throw std::invalid_argument("vertical A/B lists must contain levels + 1 values");
+    }
+    for (const auto value : vertical.a_half_pa) {
+      require_finite(value, "vertical.a_half_pa");
+    }
+    for (const auto value : vertical.b_half) {
+      require_finite(value, "vertical.b_half");
+      if (value < 0.0 || value > 1.0) {
+        throw std::invalid_argument("vertical.b_half must be in [0, 1]");
+      }
+    }
+    require_positive(vertical.surface_pressure_pa, "vertical.surface_pressure_pa");
+    require_positive(vertical.minimum_surface_pressure_pa,
+                     "vertical.minimum_surface_pressure_pa");
+    require_positive(vertical.maximum_surface_pressure_pa,
+                     "vertical.maximum_surface_pressure_pa");
+    if (vertical.minimum_surface_pressure_pa > vertical.surface_pressure_pa ||
+        vertical.surface_pressure_pa > vertical.maximum_surface_pressure_pa) {
+      throw std::invalid_argument("vertical.surface_pressure_pa is outside its range");
+    }
+    require_positive(vertical.minimum_pressure_thickness_pa,
+                     "vertical.minimum_pressure_thickness_pa");
+    require_finite(vertical.surface_geopotential_m2_s2,
+                   "vertical.surface_geopotential_m2_s2");
+    require_positive(vertical.initial_temperature_k, "vertical.initial_temperature_k");
+    require_positive(vertical.initial_potential_temperature_k,
+                     "vertical.initial_potential_temperature_k");
+    require_positive(vertical.temperature_floor_k, "vertical.temperature_floor_k");
+    require_finite(vertical.cfl, "vertical.cfl");
+    if (!(vertical.cfl > 0.0 && vertical.cfl <= 1.0)) {
+      throw std::invalid_argument("vertical.cfl must be in (0, 1]");
+    }
+    require_finite(vertical.forcing_amplitude, "vertical.forcing_amplitude");
+    if (vertical.a_half_pa.front() <= 0.0 ||
+        vertical.minimum_surface_pressure_pa <= vertical.a_half_pa.front()) {
+      throw std::invalid_argument(
+          "vertical model top must be positive and below ps range");
+    }
+    if (vertical.b_half.front() != 0.0 || vertical.a_half_pa.back() != 0.0 ||
+        vertical.b_half.back() != 1.0) {
+      throw std::invalid_argument(
+          "vertical hybrid endpoints violate atmospheric convention");
+    }
+    for (std::size_t index = 1; index < expected_size; ++index) {
+      if (vertical.b_half[index] < vertical.b_half[index - 1]) {
+        throw std::invalid_argument("vertical.b_half must be nondecreasing");
+      }
+      for (const auto surface_pressure : {vertical.minimum_surface_pressure_pa,
+                                          vertical.maximum_surface_pressure_pa}) {
+        const auto thickness =
+            (vertical.a_half_pa[index] + vertical.b_half[index] * surface_pressure) -
+            (vertical.a_half_pa[index - 1] +
+             vertical.b_half[index - 1] * surface_pressure);
+        if (!(thickness >= vertical.minimum_pressure_thickness_pa)) {
+          throw std::invalid_argument("vertical layer is nonmonotone or too thin");
+        }
+      }
+    }
     if (diagnostics.interval_steps == 0) {
       throw std::invalid_argument("diagnostics.interval_steps must be positive");
     }
@@ -426,12 +601,21 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
                                  " is not valid for sphere_transport experiment");
       }
     }
-  } else {
+  } else if (config.kind == ExperimentKind::kShallowWater) {
     require_keys(seen_keys, kShallowWaterRequiredKeys);
     for (const auto& key : seen_keys) {
       if (key.starts_with("ode.") || key.starts_with("transport.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for shallow_water experiment");
+      }
+    }
+  } else {
+    require_keys(seen_keys, kVerticalRequiredKeys);
+    for (const auto& key : seen_keys) {
+      if (key.starts_with("ode.") || key.starts_with("grid.") ||
+          key.starts_with("transport.") || key.starts_with("shallow_water.")) {
+        throw std::runtime_error("key " + key +
+                                 " is not valid for vertical_column experiment");
       }
     }
   }
@@ -484,7 +668,7 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
            << "transport.rotation_axis_z = " << config.transport.rotation_axis_z << '\n'
            << "transport.angular_speed_rad_s = " << config.transport.angular_speed_rad_s
            << '\n';
-  } else {
+  } else if (config.kind == ExperimentKind::kShallowWater) {
     output << "grid.cells_per_panel = " << config.grid.cells_per_panel << '\n'
            << "shallow_water.test_case = "
            << shallow_water_test_case_name(config.shallow_water.test_case) << '\n'
@@ -510,6 +694,48 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
            << config.shallow_water.maximum_velocity_m_s << '\n'
            << "diagnostics.interval_steps = " << config.diagnostics.interval_steps
            << '\n';
+  } else {
+    const auto write_list = [&output](const std::string_view key,
+                                      const std::vector<Real>& values) {
+      output << key << " = ";
+      for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index != 0) {
+          output << ',';
+        }
+        output << values[index];
+      }
+      output << '\n';
+    };
+    output << "vertical.test_case = "
+           << vertical_test_case_name(config.vertical.test_case) << '\n'
+           << "vertical.levels = " << config.vertical.levels << '\n';
+    write_list("vertical.a_half_pa", config.vertical.a_half_pa);
+    write_list("vertical.b_half", config.vertical.b_half);
+    output << "vertical.surface_pressure_pa = " << config.vertical.surface_pressure_pa
+           << '\n'
+           << "vertical.minimum_surface_pressure_pa = "
+           << config.vertical.minimum_surface_pressure_pa << '\n'
+           << "vertical.maximum_surface_pressure_pa = "
+           << config.vertical.maximum_surface_pressure_pa << '\n'
+           << "vertical.minimum_pressure_thickness_pa = "
+           << config.vertical.minimum_pressure_thickness_pa << '\n'
+           << "vertical.surface_geopotential_m2_s2 = "
+           << config.vertical.surface_geopotential_m2_s2 << '\n'
+           << "vertical.initial_temperature_k = "
+           << config.vertical.initial_temperature_k << '\n'
+           << "vertical.initial_potential_temperature_k = "
+           << config.vertical.initial_potential_temperature_k << '\n'
+           << "vertical.temperature_floor_k = " << config.vertical.temperature_floor_k
+           << '\n'
+           << "vertical.transport_scheme = "
+           << vertical_transport_scheme_name(config.vertical.transport_scheme) << '\n'
+           << "vertical.limiter = " << vertical_limiter_name(config.vertical.limiter)
+           << '\n'
+           << "vertical.cfl = " << config.vertical.cfl << '\n'
+           << "vertical.forcing_amplitude = " << config.vertical.forcing_amplitude
+           << '\n'
+           << "diagnostics.interval_steps = " << config.diagnostics.interval_steps
+           << '\n';
   }
   output << "output.directory = " << config.output_directory << '\n';
 
@@ -526,8 +752,33 @@ std::string_view experiment_kind_name(const ExperimentKind kind) noexcept {
       return "sphere_transport";
     case ExperimentKind::kShallowWater:
       return "shallow_water";
+    case ExperimentKind::kVerticalColumn:
+      return "vertical_column";
   }
   return "unknown";
+}
+
+std::string_view vertical_test_case_name(const VerticalTestCase test_case) noexcept {
+  switch (test_case) {
+    case VerticalTestCase::kIsothermal:
+      return "isothermal";
+    case VerticalTestCase::kDryAdiabatic:
+      return "dry_adiabatic";
+    case VerticalTestCase::kMovingSurfacePressure:
+      return "moving_surface_pressure";
+    case VerticalTestCase::kManufacturedTransport:
+      return "manufactured_transport";
+  }
+  return "unknown";
+}
+
+std::string_view vertical_transport_scheme_name(
+    const VerticalTransportScheme scheme) noexcept {
+  return scheme == VerticalTransportScheme::kDonorCell ? "donor_cell" : "linear";
+}
+
+std::string_view vertical_limiter_name(const VerticalLimiterKind limiter) noexcept {
+  return limiter == VerticalLimiterKind::kNone ? "none" : "minmod";
 }
 
 std::string_view shallow_water_scheme_name(const ShallowWaterScheme scheme) noexcept {
