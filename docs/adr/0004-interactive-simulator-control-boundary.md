@@ -28,6 +28,12 @@ browser UI -- RunRequestV1 / EventV1 / FrameV1 -- localhost gateway
 ```
 
 - The browser depends only on the Web protocol package and `VisualDatasetV1`.
+- The browser may override the cubed-sphere `cellsPerPanel` value within the
+  validated range 1–96; the gateway and native control parser enforce the same bound.
+- A run may publish at most 512 frames. The browser, the gateway, and the native
+  control parser reject a request whose estimated frame count exceeds that budget,
+  and the gateway stops a run that exceeds it because the solver shortened its
+  time step. Every frame is a file on disk and a decoded dataset in browser memory.
 - The gateway binds to loopback, owns the configured binary/preset/run-root
   paths, and starts the binary with an argument array and `shell: false`.
 - The C++ application parses and validates `ControlRequestV1` independently;

@@ -76,12 +76,27 @@ function vertexKey(value: UnitVector): string {
   return value.map((component) => Math.round(component * 1e12)).join(":");
 }
 
-export function cubedSphereCells(cellsPerPanel: number): readonly CellGeometryV1[] {
-  return panelNames.flatMap((panel) => Array.from({ length: cellsPerPanel * cellsPerPanel }, (_, index) =>
-    cellGeometry(panel, index % cellsPerPanel, Math.floor(index / cellsPerPanel), cellsPerPanel)));
+// Panel geometry depends only on cellsPerPanel, so the two derived structures are cached.
+// Rebuilding them per animation frame or per map pan dominates rendering cost at N=48/96.
+function memoizeByCellsPerPanel<T>(build: (cellsPerPanel: number) => T): (cellsPerPanel: number) => T {
+  const cache = new Map<number, T>();
+  return (cellsPerPanel: number) => {
+    const cached = cache.get(cellsPerPanel);
+    if (cached !== undefined) return cached;
+    const value = build(cellsPerPanel);
+    if (cache.size >= 2) cache.delete(cache.keys().next().value as number);
+    cache.set(cellsPerPanel, value);
+    return value;
+  };
 }
 
-export function gridEdges(cellsPerPanel: number): readonly EdgeGeometryV1[] {
+export const cubedSphereCells = memoizeByCellsPerPanel((cellsPerPanel: number): readonly CellGeometryV1[] =>
+  panelNames.flatMap((panel) => Array.from({ length: cellsPerPanel * cellsPerPanel }, (_, index) =>
+    cellGeometry(panel, index % cellsPerPanel, Math.floor(index / cellsPerPanel), cellsPerPanel))));
+
+export const gridEdges = memoizeByCellsPerPanel(buildGridEdges);
+
+function buildGridEdges(cellsPerPanel: number): readonly EdgeGeometryV1[] {
   const cells = cubedSphereCells(cellsPerPanel);
   const edges = new Map<string, { first: UnitVector; second: UnitVector; panels: Set<PanelName> }>();
   for (const cell of cells) for (let side = 0; side < 4; side += 1) {

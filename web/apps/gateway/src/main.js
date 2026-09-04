@@ -6,6 +6,13 @@ import { join, resolve } from "node:path";
 
 const protocolVersion = 1;
 const maxBodyBytes = 64 * 1024;
+// Mirrors @myplanetsim/protocol maxPublishedFrames. The native solver may shrink its time step
+// below the requested maximum, so the budget is enforced again while the run streams events.
+export const maxPublishedFrames = 512;
+
+export function estimatedFrameCount(run) {
+  return Math.floor(Math.ceil(run.endTimeSeconds / run.maximumTimeStepSeconds) / run.frameIntervalSteps) + 2;
+}
 
 function protocolError(message) { const error = new Error(message); error.code = "invalid_request"; return error; }
 
@@ -14,11 +21,13 @@ function finite(value) { return typeof value === "number" && Number.isFinite(val
 export function validateRunRequest(value, presets) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw protocolError("request must be an object");
   if (value.protocolVersion !== protocolVersion || typeof value.presetId !== "string" || !presets.has(value.presetId)) throw protocolError("unsupported protocol or preset");
-  const run = value.run; const initialCondition = value.initialCondition;
-  if (!run || !initialCondition || !finite(run.endTimeSeconds) || run.endTimeSeconds <= 0 || run.endTimeSeconds > 31536000 ||
+  const grid = value.grid; const run = value.run; const initialCondition = value.initialCondition;
+  if (!grid || !Number.isInteger(grid.cellsPerPanel) || grid.cellsPerPanel < 1 || grid.cellsPerPanel > 96 ||
+      !run || !initialCondition || !finite(run.endTimeSeconds) || run.endTimeSeconds <= 0 || run.endTimeSeconds > 31536000 ||
       !finite(run.maximumTimeStepSeconds) || run.maximumTimeStepSeconds <= 0 || run.maximumTimeStepSeconds > 86400 ||
       !Number.isInteger(run.frameIntervalSteps) || run.frameIntervalSteps < 1 || run.frameIntervalSteps > 1000000 ||
       !Array.isArray(initialCondition.edits) || initialCondition.edits.length > 64) throw protocolError("run parameters are outside the supported range");
+  if (estimatedFrameCount(run) > maxPublishedFrames) throw protocolError(`the run would publish more than ${maxPublishedFrames} frames`);
   for (const edit of initialCondition.edits) {
     if (!edit || edit.kind !== "gaussian_depth" || typeof edit.id !== "string" || !Array.isArray(edit.centerUnit) || edit.centerUnit.length !== 3 ||
         !edit.centerUnit.every(finite) || Math.abs(Math.hypot(...edit.centerUnit) - 1) > 1e-12 || !finite(edit.amplitudeMeters) ||
@@ -32,6 +41,7 @@ export function controlRequestText(request, runId) {
   const lines = [
     "control.format_version = 1",
     `control.run_id = ${runId}`,
+    `control.cells_per_panel = ${request.grid.cellsPerPanel}`,
     `control.end_time_s = ${request.run.endTimeSeconds}`,
     `control.maximum_time_step_s = ${request.run.maximumTimeStepSeconds}`,
     `control.frame_interval_steps = ${request.run.frameIntervalSteps}`,
@@ -119,6 +129,15 @@ export function createGatewayServer(options) {
         const publish = (event) => {
           if (!event || event.protocolVersion !== protocolVersion || event.runId !== runId || !Number.isInteger(event.sequence) || event.sequence <= run.lastSequence) throw protocolError("event sequence is invalid");
           run.lastSequence = event.sequence; run.events.push(event);
+          if (event.type === "frame.ready") {
+            run.frameCount = (run.frameCount ?? 0) + 1;
+            if (run.frameCount > (options.maxPublishedFrames ?? maxPublishedFrames) && !run.terminal && !run.cancellationRequested) {
+              run.cancellationRequested = true; run.status = "cancelling"; run.frameBudgetExceeded = true;
+              run.stderr = `${run.stderr}gateway stopped the run after the published frame budget was exceeded\n`.slice(-64 * 1024);
+              run.child.kill?.("SIGTERM");
+              run.forceTimer = setTimeout(() => { if (!run.terminal) run.child.kill?.("SIGKILL"); }, options.graceMilliseconds ?? 2000);
+            }
+          }
           if (event.type === "run.completed" || event.type === "run.cancelled" || event.type === "run.failed") { run.status = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed"; run.terminal = true; }
           for (const waiter of run.waiters) waiter(event);
         };

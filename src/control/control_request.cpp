@@ -65,6 +65,8 @@ void assign_value(ControlRequestV1& request, const std::string_view key,
     request.format_version = parse_uint(value, line, key);
   } else if (key == "control.run_id") {
     request.run_id = std::string(value);
+  } else if (key == "control.cells_per_panel") {
+    request.cells_per_panel = parse_uint(value, line, key);
   } else if (key == "control.end_time_s") {
     request.end_time_s = parse_real(value, line, key);
   } else if (key == "control.maximum_time_step_s") {
@@ -160,6 +162,9 @@ void validate_control_request(const ControlRequestV1& request) {
       throw std::invalid_argument("control.run_id contains an invalid character");
     }
   }
+  if (request.cells_per_panel == 0 || request.cells_per_panel > kControlMaxCellsPerPanel) {
+    throw std::invalid_argument("control.cells_per_panel must be in [1, 96]");
+  }
   require_finite(request.end_time_s, "control.end_time_s");
   if (!(request.end_time_s > 0.0 && request.end_time_s <= 31536000.0)) {
     throw std::invalid_argument("control.end_time_s must be in (0, 31536000]");
@@ -170,6 +175,16 @@ void validate_control_request(const ControlRequestV1& request) {
   }
   if (request.frame_interval_steps == 0 || request.frame_interval_steps > 1000000) {
     throw std::invalid_argument("control.frame_interval_steps must be in [1, 1000000]");
+  }
+  // Every published frame is a file on disk and a decoded dataset in the client, so the
+  // request is rejected when even the largest permitted time step would exceed the budget.
+  const Real estimated_frames =
+      std::floor(std::ceil(request.end_time_s / request.maximum_time_step_s) /
+                 static_cast<Real>(request.frame_interval_steps)) +
+      2.0;
+  if (estimated_frames > static_cast<Real>(kControlMaxPublishedFrames)) {
+    throw std::invalid_argument(
+        "control request would publish more than the supported number of frames");
   }
   if (has_path_escape(request.frame_directory)) {
     throw std::invalid_argument("control.frame_directory must be a safe relative path");
@@ -208,11 +223,11 @@ ControlRequestV1 parse_control_request(std::istream& input) {
   if (input.bad()) {
     throw std::runtime_error("failed while reading control request stream");
   }
-  static constexpr std::array<std::string_view, 7> required_keys{
-      "control.format_version",       "control.run_id",
-      "control.end_time_s",           "control.maximum_time_step_s",
-      "control.frame_interval_steps", "control.frame_directory",
-      "initial_edits.count"};
+  static constexpr std::array<std::string_view, 8> required_keys{
+      "control.format_version",      "control.run_id",
+      "control.cells_per_panel",     "control.end_time_s",
+      "control.maximum_time_step_s", "control.frame_interval_steps",
+      "control.frame_directory",     "initial_edits.count"};
   for (const auto key : required_keys) {
     if (!seen_keys.contains(key)) {
       throw std::runtime_error("control request is missing required key " +
@@ -267,6 +282,7 @@ void write_control_request(std::ostream& output, const ControlRequestV1& request
   output << std::setprecision(std::numeric_limits<Real>::max_digits10)
          << "control.format_version = " << request.format_version << '\n'
          << "control.run_id = " << request.run_id << '\n'
+         << "control.cells_per_panel = " << request.cells_per_panel << '\n'
          << "control.end_time_s = " << request.end_time_s << '\n'
          << "control.maximum_time_step_s = " << request.maximum_time_step_s << '\n'
          << "control.frame_interval_steps = " << request.frame_interval_steps << '\n'
@@ -294,6 +310,7 @@ ExperimentConfig apply_control_request(const ExperimentConfig& config,
                                        const ControlRequestV1& request) {
   validate_control_request(request);
   ExperimentConfig resolved = config;
+  resolved.grid.cells_per_panel = static_cast<Index>(request.cells_per_panel);
   resolved.run.end_time_s = request.end_time_s;
   resolved.run.time_step_s = request.maximum_time_step_s;
   resolved.diagnostics.interval_steps = request.frame_interval_steps;

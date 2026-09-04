@@ -2,6 +2,7 @@ import { GaussianDepthEditV1, RunRequestV1, validateRunRequest, UnitVector } fro
 
 export interface DraftRun {
   readonly presetId: string;
+  readonly cellsPerPanel: number;
   readonly endTimeSeconds: number;
   readonly maximumTimeStepSeconds: number;
   readonly frameIntervalSteps: number;
@@ -21,6 +22,7 @@ export function clearEdits(draft: DraftRun): DraftRun { return { ...draft, edits
 
 export function toRunRequest(draft: DraftRun): RunRequestV1 {
   const request: RunRequestV1 = { protocolVersion: 1, presetId: draft.presetId,
+    grid: { cellsPerPanel: draft.cellsPerPanel },
     run: { endTimeSeconds: draft.endTimeSeconds, maximumTimeStepSeconds: draft.maximumTimeStepSeconds, frameIntervalSteps: draft.frameIntervalSteps },
     initialCondition: { edits: draft.edits.map((edit) => ({ ...edit, centerUnit: [...edit.centerUnit] as [number, number, number] })) } };
   return validateRunRequest(request);

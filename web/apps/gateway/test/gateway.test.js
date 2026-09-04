@@ -8,13 +8,41 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { controlRequestText, createGatewayServer, validateRunRequest } from "../src/main.js";
 
-const request = { protocolVersion: 1, presetId: "rest", run: { endTimeSeconds: 10, maximumTimeStepSeconds: 1, frameIntervalSteps: 2 }, initialCondition: { edits: [] } };
+const request = { protocolVersion: 1, presetId: "rest", grid: { cellsPerPanel: 4 }, run: { endTimeSeconds: 10, maximumTimeStepSeconds: 1, frameIntervalSteps: 2 }, initialCondition: { edits: [] } };
 
 test("control translation is strict and path-free", () => {
   const text = controlRequestText(request, "run-1");
   assert.match(text, /control\.frame_directory = frames/);
+  assert.match(text, /control\.cells_per_panel = 4/);
   assert.doesNotMatch(text, /config|output|shell/);
   assert.throws(() => validateRunRequest({ ...request, presetId: "../../escape" }, new Map([["rest", "preset.cfg"]])));
+  assert.throws(() => validateRunRequest({ ...request, grid: { cellsPerPanel: 97 } }, new Map([["rest", "preset.cfg"]])));
+  assert.throws(() => validateRunRequest({ ...request, run: { endTimeSeconds: 31536000, maximumTimeStepSeconds: 60, frameIntervalSteps: 1 } }, new Map([["rest", "preset.cfg"]])),
+    /more than 512 frames/);
+});
+
+test("gateway stops a run that outruns its published frame budget", async () => {
+  const root = await mkdtemp(join(tmpdir(), "myplanetsim-gateway-"));
+  const preset = join(root, "preset.cfg"); await writeFile(preset, "fixture");
+  const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+  let signal = null; child.kill = (value) => { signal = value; return true; };
+  const gateway = createGatewayServer({ binary: "/configured/simulator", presets: { rest: preset }, runRoot: root, sessionToken: "token", spawn: () => child, maxPublishedFrames: 2 });
+  await new Promise((resolve) => gateway.server.listen(0, "127.0.0.1", resolve));
+  const port = gateway.server.address().port;
+  const headers = { authorization: "Bearer token", "content-type": "application/json" };
+  const response = await fetch(`http://127.0.0.1:${port}/api/v1/runs`, { method: "POST", headers, body: JSON.stringify(request) });
+  const { runId } = await response.json();
+  for (let sequence = 0; sequence < 4; sequence += 1) {
+    child.stdout.write(`${JSON.stringify({ protocolVersion: 1, runId, sequence, type: "frame.ready", frameSequence: sequence, timeSeconds: sequence, step: sequence, relativePath: `frame_${sequence}.bin`, byteLength: 1 })}\n`);
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  const run = gateway.runs.get(runId);
+  assert.equal(signal, "SIGTERM");
+  assert.equal(run.status, "cancelling");
+  assert.match(run.stderr, /frame budget/);
+  child.emit("close", 0, "SIGTERM");
+  assert.equal(run.status, "cancelled");
+  await gateway.shutdown();
 });
 
 test("gateway uses loopback auth and shell-free argv", async () => {

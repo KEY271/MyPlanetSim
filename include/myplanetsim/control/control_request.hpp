@@ -13,6 +13,8 @@ namespace mps {
 
 inline constexpr std::uint64_t kControlProtocolVersion = 1;
 inline constexpr std::uint64_t kControlMaxEditCount = 64;
+inline constexpr std::uint64_t kControlMaxCellsPerPanel = 96;
+inline constexpr std::uint64_t kControlMaxPublishedFrames = 512;
 
 enum class InitialConditionEditKind { kGaussianDepth };
 enum class MassPolicy { kPreserveGlobal, kAllowChange };
@@ -28,6 +30,7 @@ struct InitialConditionEditV1 {
 struct ControlRequestV1 {
   std::uint64_t format_version = kControlProtocolVersion;
   std::string run_id;
+  std::uint64_t cells_per_panel = 0;
   Real end_time_s = 0.0;
   Real maximum_time_step_s = 0.0;
   std::uint64_t frame_interval_steps = 0;

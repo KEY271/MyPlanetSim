@@ -141,6 +141,8 @@ versioned control requestへ変換してからcoreへ渡す。
 RunRequestV1
   protocolVersion = 1
   presetId
+  grid
+    cellsPerPanel
   run
     endTimeSeconds
     maximumTimeStepSeconds
@@ -166,6 +168,7 @@ C++側へ新しいJSON dependencyを入れず、既存configと同系統のstric
 ```text
 control.format_version = 1
 control.run_id = <gatewayが発行したopaque ID>
+control.cells_per_panel = 24
 control.end_time_s = 86400
 control.maximum_time_step_s = 600
 control.frame_interval_steps = 10
@@ -385,6 +388,9 @@ D3で投影・antimeridian clipしてoverlay canvasへ描く。高解像度を�
 - `child_process.spawn(binary, args, {shell: false})` 相当で起動し、command stringを組み立てない。
 - Phase 3は同時run数1をdefaultとし、超過requestは明示的に拒否またはqueueする。
 - timeout、最大N、最大end time、最大frame数、最大output bytesを設定する。
+- 最大frame数は512とし、`ceil(end_time/max_dt)/frame_interval + 2` がこれを超える requestは
+  browser/gateway/C++の三層で拒否する。solverがCFLでdtを縮めて超過した場合はgatewayが
+  graceful terminationを要求し、理由をstderr summaryへ記録する。
 - cancelはprocessへgraceful terminationを要求する。C++はstep境界のcancellation predicateで停止し、
   final eventを出す。期限内に終了しない場合だけgatewayが強制終了し、status遷移を記録する。
 - gateway終了時にorphan processを残さない。
@@ -468,6 +474,8 @@ requestから同じrunをCLIで再実行できるcommand/documentationを残す�
 - field payloadはJSON/base64へ変換しない。
 - latest frame優先時も受信済みframe順序とdrop policyを明示する。
 - camera/map操作中にcellごとのDOM/object、frameごとのgeometry再生成をしない。
+  cubed-sphere cell/edgeはNごとにcacheし、frame切り替えは3D colour attributeの上書きだけで行う。
+  2D mapの再描画はanimation frameへcoalesceし、pointer操作中はraster解像度を落とす。
 - `All cells` gridもedgeごとのscene objectを作らずbatch描画する。
 - CIは構造指標/timeoutをhard gate、load/frame timeはreference machineのmedian/p95をreportする。
 

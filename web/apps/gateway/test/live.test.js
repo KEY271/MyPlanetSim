@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { startGateway } from "../src/main.js";
 
-test("native N=4 run produces authoritative frame zero", { skip: process.env.MPS_ENABLE_LIVE !== "1" }, async () => {
+test("native run applies the requested N and produces authoritative frames", { skip: process.env.MPS_ENABLE_LIVE !== "1" }, async () => {
   const root = resolve(process.cwd(), "../../..");
   const binary = resolve(root, "build/dev/my_planet_sim");
   const preset = resolve(root, "configs/phase3_rest_n4.cfg");
@@ -16,7 +16,7 @@ test("native N=4 run produces authoritative frame zero", { skip: process.env.MPS
   try {
     const port = gateway.server.address().port;
     const headers = { authorization: "Bearer live-token", origin: `http://127.0.0.1:${port}`, "content-type": "application/json" };
-    const submit = (run) => fetch(`http://127.0.0.1:${port}/api/v1/runs`, { method: "POST", headers, body: JSON.stringify({ protocolVersion: 1, presetId: "rest", run, initialCondition: { edits: [{ id: "wave", kind: "gaussian_depth", centerUnit: [0, 0, 1], amplitudeMeters: 10, sigmaRadians: 0.2, massPolicy: "preserve_global" }] } }) });
+    const submit = (run) => fetch(`http://127.0.0.1:${port}/api/v1/runs`, { method: "POST", headers, body: JSON.stringify({ protocolVersion: 1, presetId: "rest", grid: { cellsPerPanel: 6 }, run, initialCondition: { edits: [{ id: "wave", kind: "gaussian_depth", centerUnit: [0, 0, 1], amplitudeMeters: 10, sigmaRadians: 0.2, massPolicy: "preserve_global" }] } }) });
     const waitForTerminal = async (runId) => {
       let status = "running";
       for (let attempt = 0; attempt < 100 && (status === "running" || status === "cancelling"); attempt += 1) {
@@ -37,6 +37,7 @@ test("native N=4 run produces authoritative frame zero", { skip: process.env.MPS
     const frameResponse = await fetch(`http://127.0.0.1:${port}/api/v1/runs/${runId}/frames/0`, { headers });
     assert.equal(frameResponse.status, 200); const bytes = new Uint8Array(await frameResponse.arrayBuffer());
     assert.deepEqual([...bytes.slice(0, 8)], [...Buffer.from("MPSFRAM1")]);
+    assert.equal(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigUint64(16, true), 6n);
     const laterFrame = events.find((event) => event.type === "frame.ready" && event.frameSequence === 1); assert.ok(laterFrame);
     const laterFrameResponse = await fetch(`http://127.0.0.1:${port}/api/v1/runs/${runId}/frames/1`, { headers });
     assert.equal(laterFrameResponse.status, 200); const laterBytes = new Uint8Array(await laterFrameResponse.arrayBuffer());

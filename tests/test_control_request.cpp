@@ -10,6 +10,7 @@ namespace {
 constexpr std::string_view kRequest = R"(
 control.format_version = 1
 control.run_id = run_01
+control.cells_per_panel = 8
 control.end_time_s = 120
 control.maximum_time_step_s = 2.5
 control.frame_interval_steps = 4
@@ -20,6 +21,7 @@ initial_edits.count = 0
 constexpr std::string_view kEditedRequest = R"(
 control.format_version = 1
 control.run_id = run_02
+control.cells_per_panel = 8
 control.end_time_s = 120
 control.maximum_time_step_s = 2.5
 control.frame_interval_steps = 4
@@ -48,6 +50,7 @@ MPS_TEST_CASE("control request has a canonical round trip") {
   const auto second = parse(output.str());
   MPS_CHECK_EQ(second.format_version, first.format_version);
   MPS_CHECK_EQ(second.run_id, first.run_id);
+  MPS_CHECK_EQ(second.cells_per_panel, first.cells_per_panel);
   MPS_CHECK_EQ(second.end_time_s, first.end_time_s);
   MPS_CHECK_EQ(second.maximum_time_step_s, first.maximum_time_step_s);
   MPS_CHECK_EQ(second.frame_interval_steps, first.frame_interval_steps);
@@ -93,6 +96,16 @@ MPS_TEST_CASE("control request rejects unsafe or out of range values") {
 
   invalid = replace(std::string(kRequest), "control.maximum_time_step_s = 2.5",
                     "control.maximum_time_step_s = nan");
+  MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
+
+  invalid = replace(std::string(kRequest), "control.cells_per_panel = 8",
+                    "control.cells_per_panel = 97");
+  MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
+
+  invalid = replace(std::string(kRequest), "control.end_time_s = 120",
+                    "control.end_time_s = 31536000");
+  invalid = replace(invalid, "control.frame_interval_steps = 4",
+                    "control.frame_interval_steps = 1");
   MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
 }
 

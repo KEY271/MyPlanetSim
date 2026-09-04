@@ -39,7 +39,11 @@ export class SimulationController {
         if (event.type === "frame.ready") {
           const decoded = decodeFrameV1(await this.client.frame(runId, event.frameSequence));
           const frame = addShallowWaterDerivedFields(decoded, this.snapshot.frames[0] ?? decoded);
-          this.update({ frames: [...this.snapshot.frames, frame], currentFrame: this.snapshot.frames.length });
+          // Follow the newest frame only while the viewer is already at the end, so scrubbing
+          // back through a streaming run is not overridden by every arriving frame.
+          const following = this.snapshot.currentFrame >= this.snapshot.frames.length - 1;
+          this.update({ frames: [...this.snapshot.frames, frame],
+            currentFrame: following ? this.snapshot.frames.length : this.snapshot.currentFrame });
         }
         if (event.type === "run.failed") throw new ProtocolError(event.code, event.message);
       }

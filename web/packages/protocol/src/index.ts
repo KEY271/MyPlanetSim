@@ -14,6 +14,7 @@ export interface GaussianDepthEditV1 {
 export interface RunRequestV1 {
   protocolVersion: typeof protocolVersion;
   presetId: string;
+  grid: { cellsPerPanel: number };
   run: {
     endTimeSeconds: number;
     maximumTimeStepSeconds: number;
@@ -85,12 +86,24 @@ function require(condition: boolean, message: string): asserts condition {
   if (!condition) throw new ProtocolError("invalid_contract", message);
 }
 
+// Every published frame is retained by the gateway on disk and decoded into browser memory,
+// so the run budget is bounded before the native process is started.
+export const maxPublishedFrames = 512;
+
+export function estimatedFrameCount(run: RunRequestV1["run"]): number {
+  const steps = Math.ceil(run.endTimeSeconds / run.maximumTimeStepSeconds);
+  return Math.floor(steps / run.frameIntervalSteps) + 2;
+}
+
 export function validateRunRequest(value: unknown): RunRequestV1 {
   require(record(value), "request must be an object");
   const object = value as Record<string, unknown>;
   require(object.protocolVersion === protocolVersion, "unsupported protocol version");
   require(typeof object.presetId === "string" && object.presetId.length > 0, "presetId is required");
-  require(record(object.run) && record(object.initialCondition), "request sections are required");
+  require(record(object.grid) && record(object.run) && record(object.initialCondition), "request sections are required");
+  const grid = object.grid as Record<string, unknown>;
+  require(Number.isInteger(grid.cellsPerPanel) && (grid.cellsPerPanel as number) >= 1 &&
+    (grid.cellsPerPanel as number) <= 96, "cellsPerPanel is outside the supported range");
   const run = object.run as Record<string, unknown>;
   require(finite(run.endTimeSeconds) && run.endTimeSeconds > 0 && run.endTimeSeconds <= 31536000,
     "endTimeSeconds is outside the supported range");
@@ -98,6 +111,8 @@ export function validateRunRequest(value: unknown): RunRequestV1 {
     run.maximumTimeStepSeconds <= 86400, "maximumTimeStepSeconds is outside the supported range");
   require(Number.isInteger(run.frameIntervalSteps) && (run.frameIntervalSteps as number) >= 1 &&
     (run.frameIntervalSteps as number) <= 1000000, "frameIntervalSteps is outside the supported range");
+  require(estimatedFrameCount(run as RunRequestV1["run"]) <= maxPublishedFrames,
+    `the request would publish more than ${maxPublishedFrames} frames; raise the frame interval or shorten the run`);
   const initialCondition = object.initialCondition as Record<string, unknown>;
   const edits = initialCondition.edits;
   require(Array.isArray(edits) && edits.length <= 64, "initialCondition.edits is invalid");
