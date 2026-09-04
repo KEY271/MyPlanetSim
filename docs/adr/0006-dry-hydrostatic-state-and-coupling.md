@@ -1,6 +1,6 @@
 # ADR 0006: dry hydrostatic state and horizontal-vertical coupling
 
-**Status:** proposed for Phase 5
+**Status:** accepted for Phase 5
 
 ## Context
 
