@@ -46,6 +46,7 @@ enum class ShallowWaterTestCase {
   kGalewsky
 };
 enum class DiffusionKind { kNone, kLaplacian, kBiharmonic };
+enum class PhysicsKind { kNone, kHeldSuarez };
 enum class OrographyKind {
   kFlat,
   kDcmip200,
@@ -79,7 +80,8 @@ enum class DryHydrostaticTestCase {
   kJw06Steady,
   kJw06Baroclinic,
   kUmjs14Steady,
-  kUmjs14Baroclinic
+  kUmjs14Baroclinic,
+  kHeldSuarez
 };
 
 struct GridParameters {
@@ -153,6 +155,10 @@ struct DiagnosticsParameters {
   std::uint64_t interval_steps = 1;
 };
 
+struct PhysicsParameters {
+  PhysicsKind kind = PhysicsKind::kNone;
+};
+
 struct ExperimentConfig {
   ExperimentKind kind = ExperimentKind::kOde;
   PlanetParameters planet;
@@ -164,6 +170,7 @@ struct ExperimentConfig {
   VerticalColumnParameters vertical{};
   DryHydrostaticParameters dry_hydrostatic{};
   OrographyParameters orography{};
+  PhysicsParameters physics{};
   DiagnosticsParameters diagnostics{};
   std::string output_directory;
   // Runtime-only origin used to resolve portable config-relative inputs.
@@ -195,6 +202,7 @@ struct ExperimentConfig {
 [[nodiscard]] std::string_view dry_hydrostatic_test_case_name(
     DryHydrostaticTestCase test_case) noexcept;
 [[nodiscard]] std::string_view orography_kind_name(OrographyKind kind) noexcept;
+[[nodiscard]] std::string_view physics_kind_name(PhysicsKind kind) noexcept;
 
 [[nodiscard]] ExperimentConfig parse_experiment_config(std::istream& input);
 [[nodiscard]] ExperimentConfig load_experiment_config(

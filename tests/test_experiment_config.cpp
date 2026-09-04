@@ -335,6 +335,45 @@ MPS_TEST_CASE("dry-hydrostatic configuration reuses vertical schema strictly") {
             mps::DryHydrostaticTestCase::kDcmip200Rest);
 }
 
+MPS_TEST_CASE("Held-Suarez selection is additive and strictly paired") {
+  const auto none = parse(kValidDryHydrostaticConfig);
+  MPS_CHECK(none.physics.kind == mps::PhysicsKind::kNone);
+  std::ostringstream none_output;
+  mps::write_experiment_config(none_output, none);
+  MPS_CHECK(none_output.str().find("physics.") == std::string::npos);
+
+  auto held_suarez = std::string(kValidDryHydrostaticConfig);
+  auto position = held_suarez.find("planet.rotation_rate_rad_s = 7.292115e-5");
+  held_suarez.replace(position,
+                      std::string("planet.rotation_rate_rad_s = 7.292115e-5").size(),
+                      "planet.rotation_rate_rad_s = 7.29212e-5");
+  position = held_suarez.find("dry_hydrostatic.test_case = isothermal_rest");
+  held_suarez.replace(position,
+                      std::string("dry_hydrostatic.test_case = isothermal_rest").size(),
+                      "dry_hydrostatic.test_case = held_suarez");
+  held_suarez += "physics.kind = held_suarez\n";
+  const auto selected = parse(held_suarez);
+  MPS_CHECK(selected.physics.kind == mps::PhysicsKind::kHeldSuarez);
+  MPS_CHECK(selected.dry_hydrostatic.test_case ==
+            mps::DryHydrostaticTestCase::kHeldSuarez);
+  std::ostringstream selected_output;
+  mps::write_experiment_config(selected_output, selected);
+  MPS_CHECK(selected_output.str().find("physics.kind = held_suarez\n") !=
+            std::string::npos);
+  MPS_CHECK(parse(selected_output.str()).physics.kind == mps::PhysicsKind::kHeldSuarez);
+
+  MPS_CHECK_THROWS_AS(
+      parse(std::string(kValidDryHydrostaticConfig) + "physics.kind = held_suarez\n"),
+      std::invalid_argument);
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidConfig) + "physics.kind = none\n"),
+                      std::runtime_error);
+
+  position = held_suarez.find("planet.radius_m = 6371220");
+  held_suarez.replace(position, std::string("planet.radius_m = 6371220").size(),
+                      "planet.radius_m = 6371221");
+  MPS_CHECK_THROWS_AS(parse(held_suarez), std::invalid_argument);
+}
+
 MPS_TEST_CASE("orography configuration is bounded and conditionally canonical") {
   const auto flat = parse(kValidDryHydrostaticConfig);
   std::ostringstream flat_output;

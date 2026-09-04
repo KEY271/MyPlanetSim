@@ -439,6 +439,8 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kUmjs14Steady;
     else if (value == "umjs14_baroclinic")
       config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kUmjs14Baroclinic;
+    else if (value == "held_suarez")
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kHeldSuarez;
     else
       throw parse_error(line,
                         "unknown dry_hydrostatic.test_case " + std::string(value));
@@ -484,6 +486,13 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.orography.kind = OrographyKind::kLatLonCsv;
     else
       throw parse_error(line, "unknown orography.kind " + std::string(value));
+  } else if (key == "physics.kind") {
+    if (value == "none")
+      config.physics.kind = PhysicsKind::kNone;
+    else if (value == "held_suarez")
+      config.physics.kind = PhysicsKind::kHeldSuarez;
+    else
+      throw parse_error(line, "unknown physics.kind " + std::string(value));
   } else if (key == "orography.input_file") {
     config.orography.input_file = value;
   } else if (key == "orography.input_fingerprint_fnv1a64") {
@@ -680,6 +689,26 @@ void ExperimentConfig::validate() const {
     if (jw06_case != (orography.kind == OrographyKind::kJw06))
       throw std::invalid_argument(
           "JW06 test cases require jw06 orography and vice versa");
+    const bool held_suarez_case =
+        dry_hydrostatic.test_case == DryHydrostaticTestCase::kHeldSuarez;
+    if (held_suarez_case != (physics.kind == PhysicsKind::kHeldSuarez))
+      throw std::invalid_argument(
+          "held_suarez test case requires held_suarez physics and vice versa");
+    if (held_suarez_case) {
+      if (orography.kind != OrographyKind::kFlat)
+        throw std::invalid_argument("held_suarez requires flat orography");
+      constexpr PlanetParameters earth{6371220.0, 7.29212e-5, 9.80616,
+                                       287.0,     1004.0,     100000.0};
+      if (planet.radius_m != earth.radius_m ||
+          planet.rotation_rate_rad_s != earth.rotation_rate_rad_s ||
+          planet.gravity_m_s2 != earth.gravity_m_s2 ||
+          planet.gas_constant_j_kg_k != earth.gas_constant_j_kg_k ||
+          planet.heat_capacity_cp_j_kg_k != earth.heat_capacity_cp_j_kg_k ||
+          planet.reference_pressure_pa != earth.reference_pressure_pa)
+        throw std::invalid_argument("held_suarez requires registered Earth constants");
+    }
+  } else if (physics.kind != PhysicsKind::kNone) {
+    throw std::invalid_argument("physics is supported only for dry_hydrostatic");
   }
 
   if (orography.kind == OrographyKind::kFlat) {
@@ -756,7 +785,7 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     for (const auto& key : seen_keys) {
       if (key.starts_with("grid.") || key.starts_with("transport.") ||
           key.starts_with("shallow_water.") || key.starts_with("diagnostics.") ||
-          key.starts_with("orography.")) {
+          key.starts_with("orography.") || key.starts_with("physics.")) {
         throw std::runtime_error("key " + key + " is not valid for ode experiment");
       }
     }
@@ -764,7 +793,8 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     require_keys(seen_keys, kTransportRequiredKeys);
     for (const auto& key : seen_keys) {
       if (key.starts_with("ode.") || key.starts_with("shallow_water.") ||
-          key.starts_with("diagnostics.") || key.starts_with("orography.")) {
+          key.starts_with("diagnostics.") || key.starts_with("orography.") ||
+          key.starts_with("physics.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for sphere_transport experiment");
       }
@@ -772,7 +802,8 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
   } else if (config.kind == ExperimentKind::kShallowWater) {
     require_keys(seen_keys, kShallowWaterRequiredKeys);
     for (const auto& key : seen_keys) {
-      if (key.starts_with("ode.") || key.starts_with("transport.")) {
+      if (key.starts_with("ode.") || key.starts_with("transport.") ||
+          key.starts_with("physics.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for shallow_water experiment");
       }
@@ -782,7 +813,7 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     for (const auto& key : seen_keys) {
       if (key.starts_with("ode.") || key.starts_with("grid.") ||
           key.starts_with("transport.") || key.starts_with("shallow_water.") ||
-          key.starts_with("orography.")) {
+          key.starts_with("orography.") || key.starts_with("physics.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for vertical_column experiment");
       }
@@ -949,6 +980,8 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
              << diffusion_kind_name(config.dry_hydrostatic.diffusion_kind) << '\n'
              << "dry_hydrostatic.diffusion_coefficient = "
              << config.dry_hydrostatic.diffusion_coefficient << '\n';
+      if (config.physics.kind != PhysicsKind::kNone)
+        output << "physics.kind = " << physics_kind_name(config.physics.kind) << '\n';
     }
     if (config.orography.kind != OrographyKind::kFlat) {
       output << "orography.kind = " << orography_kind_name(config.orography.kind)
@@ -1009,6 +1042,8 @@ std::string_view dry_hydrostatic_test_case_name(
       return "umjs14_steady";
     case DryHydrostaticTestCase::kUmjs14Baroclinic:
       return "umjs14_baroclinic";
+    case DryHydrostaticTestCase::kHeldSuarez:
+      return "held_suarez";
   }
   return "unknown";
 }
@@ -1027,6 +1062,16 @@ std::string_view orography_kind_name(const OrographyKind kind) noexcept {
       return "jw06";
     case OrographyKind::kLatLonCsv:
       return "latlon_csv";
+  }
+  return "unknown";
+}
+
+std::string_view physics_kind_name(const PhysicsKind kind) noexcept {
+  switch (kind) {
+    case PhysicsKind::kNone:
+      return "none";
+    case PhysicsKind::kHeldSuarez:
+      return "held_suarez";
   }
   return "unknown";
 }

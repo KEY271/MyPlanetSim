@@ -35,12 +35,80 @@ MPS_TEST_CASE("phase 5 benchmark presets produce shaped finite states") {
                     mps::DryHydrostaticTestCase::kDcmipHadley,
                     mps::DryHydrostaticTestCase::kLinearWave,
                     mps::DryHydrostaticTestCase::kUmjs14Steady,
-                    mps::DryHydrostaticTestCase::kUmjs14Baroclinic}) {
+                    mps::DryHydrostaticTestCase::kUmjs14Baroclinic,
+                    mps::DryHydrostaticTestCase::kHeldSuarez}) {
     c.dry_hydrostatic.test_case = kind;
     auto s = mps::initialize_dry_hydrostatic_benchmark(c, grid, z, flat);
     MPS_CHECK_EQ(s.surface_pressure_pa.size(), grid.cell_count());
     for (auto v : mps::flatten_dry_hydrostatic_state(s, 2)) MPS_CHECK(std::isfinite(v));
   }
+}
+
+MPS_TEST_CASE("Held-Suarez initializer is seeded reproducible and level-mean free") {
+  mps::ExperimentConfig config{
+      .kind = mps::ExperimentKind::kDryHydrostatic,
+      .planet = {6371220, 7.29212e-5, 9.80616, 287, 1004, 100000},
+      .run = {0, 1, 1, 42},
+      .grid = {4},
+      .vertical = {.levels = 3,
+                   .a_half_pa = {1000, 750, 250, 0},
+                   .b_half = {0, .25, .75, 1},
+                   .surface_pressure_pa = 100000,
+                   .minimum_surface_pressure_pa = 90000,
+                   .maximum_surface_pressure_pa = 110000,
+                   .minimum_pressure_thickness_pa = 100,
+                   .initial_temperature_k = 999,
+                   .initial_potential_temperature_k = 300,
+                   .temperature_floor_k = 100,
+                   .transport_scheme = mps::VerticalTransportScheme::kLinear,
+                   .limiter = mps::VerticalLimiterKind::kMinmod,
+                   .cfl = .5},
+      .dry_hydrostatic = {.test_case = mps::DryHydrostaticTestCase::kHeldSuarez},
+      .physics = {.kind = mps::PhysicsKind::kHeldSuarez},
+      .diagnostics = {1},
+      .output_directory = "x"};
+  config.validate();
+  const mps::CubedSphereGrid grid(config.grid.cells_per_panel, config.planet.radius_m);
+  const mps::AtmosphericHybridCoordinate coordinate(
+      {config.vertical.a_half_pa, config.vertical.b_half},
+      config.vertical.minimum_surface_pressure_pa,
+      config.vertical.maximum_surface_pressure_pa,
+      config.vertical.minimum_pressure_thickness_pa);
+  const auto flat =
+      mps::make_surface_orography(config.orography, grid, config.planet.gravity_m_s2);
+  const auto first =
+      mps::initialize_dry_hydrostatic_benchmark(config, grid, coordinate, flat);
+  const auto repeated =
+      mps::initialize_dry_hydrostatic_benchmark(config, grid, coordinate, flat);
+  MPS_CHECK(first.potential_temperature_mass_k_kg_m2 ==
+            repeated.potential_temperature_mass_k_kg_m2);
+  for (const auto momentum : first.horizontal_momentum_mass_kg_m_s)
+    MPS_CHECK_EQ(mps::norm(momentum), 0.0);
+
+  const auto geometry = coordinate.geometry(
+      config.vertical.surface_pressure_pa, config.planet.gravity_m_s2,
+      config.planet.gas_constant_j_kg_k, config.planet.heat_capacity_cp_j_kg_k,
+      config.planet.reference_pressure_pa);
+  for (std::size_t level = 0; level < coordinate.levels(); ++level) {
+    mps::Real weighted_temperature_anomaly = 0.0;
+    for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
+      const auto offset = mps::dry_hydrostatic_offset(cell, level, coordinate.levels());
+      const auto temperature = first.potential_temperature_mass_k_kg_m2[offset] /
+                               geometry.air_mass_kg_m2[level] *
+                               geometry.exner_full[level];
+      MPS_CHECK(temperature > 263.9);
+      MPS_CHECK(temperature < 264.1);
+      weighted_temperature_anomaly +=
+          grid.cells()[cell].area_m2 * (temperature - 264.0);
+    }
+    MPS_CHECK_NEAR(weighted_temperature_anomaly / grid.total_area_m2(), 0.0, 1e-12);
+  }
+
+  config.run.random_seed = 43;
+  const auto different =
+      mps::initialize_dry_hydrostatic_benchmark(config, grid, coordinate, flat);
+  MPS_CHECK(first.potential_temperature_mass_k_kg_m2 !=
+            different.potential_temperature_mass_k_kg_m2);
 }
 
 MPS_TEST_CASE("DCMIP 2-0-0 initializes a lapse-rate atmosphere at rest") {

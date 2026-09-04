@@ -2,12 +2,30 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
+#include <vector>
 
 namespace mps {
 namespace {
 constexpr Real kJw06U0 = 35.0;
 constexpr Real kJw06Eta0 = 0.252;
+
+[[nodiscard]] std::uint64_t splitmix64(std::uint64_t value) noexcept {
+  value += 0x9e3779b97f4a7c15ULL;
+  value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
+  value = (value ^ (value >> 27U)) * 0x94d049bb133111ebULL;
+  return value ^ (value >> 31U);
+}
+
+[[nodiscard]] Real held_suarez_perturbation(const Seed seed, const std::size_t cell,
+                                            const std::size_t level) noexcept {
+  const auto key = static_cast<std::uint64_t>(seed) ^
+                   (static_cast<std::uint64_t>(cell) * 0xd2b74407b1ce6e93ULL) ^
+                   (static_cast<std::uint64_t>(level) * 0xca5a826395121157ULL);
+  const Real uniform = static_cast<Real>(splitmix64(key) >> 11U) * 0x1.0p-53;
+  return 0.1 * (uniform - 0.5);
+}
 
 Real jw06_vertical_factor(const Real eta) {
   const Real eta_v = (eta - kJw06Eta0) * 0.5 * std::numbers::pi_v<Real>;
@@ -54,6 +72,27 @@ DryHydrostaticState initialize_dry_hydrostatic_benchmark(
   state.horizontal_momentum_mass_kg_m_s.resize(cells * levels);
   state.potential_temperature_mass_k_kg_m2.resize(cells * levels);
   state.tracer_mass_kg_m2.resize(cells * levels);
+
+  std::vector<Real> held_suarez_temperature_perturbation(cells * levels, 0.0);
+  if (config.dry_hydrostatic.test_case == DryHydrostaticTestCase::kHeldSuarez) {
+    for (std::size_t level = 0; level < levels; ++level) {
+      Real weighted_sum = 0.0;
+      Real total_area = 0.0;
+      for (std::size_t cell = 0; cell < cells; ++cell) {
+        const auto offset = dry_hydrostatic_offset(cell, level, levels);
+        held_suarez_temperature_perturbation[offset] =
+            held_suarez_perturbation(config.run.random_seed, cell, level);
+        weighted_sum +=
+            grid.cells()[cell].area_m2 * held_suarez_temperature_perturbation[offset];
+        total_area += grid.cells()[cell].area_m2;
+      }
+      const Real mean = weighted_sum / total_area;
+      for (std::size_t cell = 0; cell < cells; ++cell) {
+        held_suarez_temperature_perturbation[dry_hydrostatic_offset(cell, level,
+                                                                    levels)] -= mean;
+      }
+    }
+  }
 
   for (std::size_t cell = 0; cell < cells; ++cell) {
     const auto position = grid.cells()[cell].center;
@@ -152,6 +191,9 @@ DryHydrostaticState initialize_dry_hydrostatic_benchmark(
                                            config.planet.reference_pressure_pa,
                                        config.planet.gas_constant_j_kg_k *
                                            lapse_rate_k_m / config.planet.gravity_m_s2);
+      }
+      if (config.dry_hydrostatic.test_case == DryHydrostaticTestCase::kHeldSuarez) {
+        temperature = 264.0 + held_suarez_temperature_perturbation[offset];
       }
       const Real theta = temperature / geometry.exner_full[level];
       state.horizontal_momentum_mass_kg_m_s[offset] =
