@@ -4,6 +4,10 @@ root := justfile_directory()
 web_dir := root + "/web"
 simulator := root + "/build/dev/my_planet_sim"
 
+# The viewer's dry presets come from configs/interactive_dry_presets.txt so the shipped list
+# and the gated list cannot drift apart.
+dry_presets := shell("grep -v '^#' " + root + "/configs/interactive_dry_presets.txt | grep . | sed 's|^|" + root + "/configs/|' | paste -sd, -")
+
 # 利用可能なタスクを表示する
 default:
 	@just --list
@@ -32,7 +36,7 @@ gateway gateway_port="8787":
 	cd "{{web_dir}}"
 	MPS_SIMULATOR_BINARY="{{simulator}}" \
 	MPS_REST_PRESET="{{root}}/configs/phase3_rest_n4.cfg" \
-	MPS_DRY_PRESET="{{root}}/configs/phase5_visualizer_rest_n4.cfg" \
+	MPS_DRY_PRESETS="{{dry_presets}}" \
 	MPS_RUN_ROOT="{{root}}/.runs" \
 	MPS_GATEWAY_PORT="{{gateway_port}}" \
 	npm run start --workspace @myplanetsim/gateway
@@ -53,7 +57,7 @@ dev gateway_port="8787" ui_port="5173":
 	token="$(node --input-type=module -e 'import { randomBytes } from "node:crypto"; process.stdout.write(randomBytes(32).toString("hex"))')"
 	export MPS_SIMULATOR_BINARY="{{simulator}}"
 	export MPS_REST_PRESET="{{root}}/configs/phase3_rest_n4.cfg"
-	export MPS_DRY_PRESET="{{root}}/configs/phase5_visualizer_rest_n4.cfg"
+	export MPS_DRY_PRESETS="{{dry_presets}}"
 	export MPS_RUN_ROOT="{{root}}/.runs"
 	export MPS_GATEWAY_PORT="{{gateway_port}}"
 	export MPS_SESSION_TOKEN="$token"
@@ -81,16 +85,12 @@ dev gateway_port="8787" ui_port="5173":
 	  echo "gateway did not become ready" >&2
 	  exit 1
 	fi
-	ui_path="/#token=$token&gateway=http%3A%2F%2F127.0.0.1%3A{{gateway_port}}"
 	echo
-	echo "Live UI: http://127.0.0.1:{{ui_port}}$ui_path"
-	echo
-	echo "NOTE: the plain http://127.0.0.1:{{ui_port}}/ that Vite prints below has no session"
-	echo "      token and falls back to the offline demo, which serves only the shallow-water"
-	echo "      preset. Use the Live UI link above; --open below opens it for you."
+	echo "Live UI: http://127.0.0.1:{{ui_port}}/"
+	echo "The dev server below receives this session, so the URL it prints is the live one."
 	echo "Press Ctrl-C to stop the UI and gateway."
 	echo
-	npm run dev --workspace @myplanetsim/ui -- --host 127.0.0.1 --port "{{ui_port}}" --open "$ui_path"
+	npm run dev --workspace @myplanetsim/ui -- --host 127.0.0.1 --port "{{ui_port}}"
 
 # C++・Web・native live の主要ゲートを実行する
 check:

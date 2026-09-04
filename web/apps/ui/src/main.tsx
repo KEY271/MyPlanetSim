@@ -27,10 +27,16 @@ function cellLabel(cell: number, cellsPerPanel: number) {
   return `${panel} i=${remainder % cellsPerPanel} j=${Math.floor(remainder / cellsPerPanel)}`;
 }
 
+// Injected by vite.config.ts when `just dev` exported a gateway session, so the URL the dev
+// server prints reaches the native engine without a token fragment. Null in a production
+// build and whenever the dev server was started on its own.
+declare const __MPS_DEV_SESSION__: { readonly token: string; readonly gateway: string } | null;
+
 const startupParameters = new URLSearchParams(window.location.hash.slice(1));
-const startupToken = startupParameters.get("token");
-const startupGateway = startupParameters.get("gateway");
-if (startupToken) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+const fragmentToken = startupParameters.get("token");
+const startupToken = fragmentToken ?? __MPS_DEV_SESSION__?.token ?? null;
+const startupGateway = startupParameters.get("gateway") ?? __MPS_DEV_SESSION__?.gateway ?? null;
+if (fragmentToken) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
 
 function App() {
   const [draft, setDraft] = useState<DraftRun>({ presetId: "rest", cellsPerPanel: 4, endTimeSeconds: 3600, maximumTimeStepSeconds: 60, frameIntervalSteps: 10, edits: [] });

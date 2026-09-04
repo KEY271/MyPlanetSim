@@ -88,13 +88,16 @@ API request に使います。
 ```sh
 MPS_SIMULATOR_BINARY="$PWD/../build/dev/my_planet_sim" \
 MPS_REST_PRESET="$PWD/../configs/phase3_rest_n4.cfg" \
-MPS_DRY_PRESET="$PWD/../configs/phase5_visualizer_rest_n4.cfg" \
+MPS_DRY_PRESETS="$PWD/../configs/phase5_umjs14_baroclinic.cfg" \
 MPS_RUN_ROOT="$PWD/../.runs" \
 npm run start --workspace @myplanetsim/gateway
 ```
 
-`MPS_DRY_PRESET` は任意です。指定すると capabilities が Phase 5 の
-dry hydrostatic preset を additive に返し、UI の preset selector に現れます。gateway は
+`MPS_DRY_PRESETS` は任意で、comma 区切りの config path を取ります。指定すると capabilities が
+Phase 5 の dry hydrostatic preset を additive に返し、UI の preset selector に現れます。
+`just` 経由の場合は `configs/interactive_dry_presets.txt` の一覧が使われます。この一覧の
+preset は live gate で「600 s で実際に変化すること」を検査します（静止解である
+`phase5_visualizer_rest_n4` だけは逆に「一切変化しないこと」を検査する smoke case です）。gateway は
 起動時に `--describe-control` と preset descriptor の compatibility を検査し、preset ごとの
 N 上限、edit 可否、累積 published byte 予算 (既定 256 MiB) を強制します。shallow-water
 preset は Phase 3 の FrameV1 と Gaussian edit を維持し、dry hydrostatic preset は FrameV2 を
@@ -118,11 +121,13 @@ npx playwright install chromium
 npm run test:browser --workspace @myplanetsim/ui
 ```
 
-ブラウザ UI を live gateway へ接続するには、別terminalでUIを起動し、gateway起動時に
-表示された `port` と `token` をURL fragmentへ指定します。fragmentはclient生成後にURLから
-除去され、tokenはgateway以外へ送信されません。**Vite が最後に表示する token なしの
-`http://127.0.0.1:5173/` を開くと offline demo にフォールバックし、shallow-water preset
-しか出ません**（UI 上部に警告が出ます）。`just dev` は token 付き URL を自動で開きます。
+`just dev` は gateway の session を dev server にも渡すため、**Vite が表示する
+`http://127.0.0.1:5173/` をそのまま開けば live gateway に接続します**。URL fragment は不要です。
+
+`just ui` や、session なしで dev server だけを起動した場合は offline/mock にフォールバックし、
+UI 上部にその旨のバナーが出ます。gateway を別途起動した場合は、表示された `port` と `token` を
+URL fragment へ指定して接続できます。fragment はclient生成後にURLから除去され、token は
+gateway 以外へ送信されません。
 
 ```text
 http://localhost:5173/#token=<token>&gateway=http%3A%2F%2F127.0.0.1%3A<port>

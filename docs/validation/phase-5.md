@@ -121,22 +121,37 @@ binding is removed.
 
 Separately, opening the plain dev-server URL instead of the tokenised one printed by
 `just dev` silently selected the offline demo, which serves only the shallow-water preset.
-That is indistinguishable from the dry hydrostatic model being absent. `just dev` now opens
-the tokenised URL itself and warns about the Vite banner, and the viewer states the offline
-fallback in a banner.
+That is indistinguishable from the dry hydrostatic model being absent, and `--open` cannot
+repair it because reusing an already-open tab is a same-document navigation, so the session
+is never re-read. `just dev` now hands the session to the dev server, which injects it into
+the client, so the URL Vite prints is the live one and no fragment is involved. A dev server
+started without a session still falls back to the demo and now says so in a banner.
+
+The third defect was that the only dry preset on offer was `isothermal_rest`, which is
+exactly steady by construction: every published frame was identical, so the viewer rendered
+a still image. `configs/interactive_dry_presets.txt` is now the single list of presets the
+viewer offers, read by both the Justfile and the live gate.
 
 ```sh
 npx playwright install chromium
 npm run test:browser --workspace @myplanetsim/ui
 ```
 
-`web/apps/ui/test/browser.test.js` starts the native gateway and the dev server, then opens
-the real page in Chromium. It checks that the tokenless URL announces the offline demo and
-offers only the shallow-water preset; that the tokenised URL reports the native engine and
-offers the dry preset; that selecting the dry preset announces its level count and shows the
-level and `K` controls before any run; and that a `K = 12` run then yields a level slider
-spanning `0..11`, a column profile, and an inspector whose level and pressure follow the
-slider. It skips when the binary, the preset, or the Chromium download is absent.
+`web/apps/ui/test/browser.test.js` starts the native gateway and two dev servers, one with
+an injected session and one without, then opens the real pages in Chromium. It checks that
+the session-less server announces the offline demo and offers only the shallow-water preset;
+that the plain URL of the session-carrying server reports the native engine and offers a
+moving dry preset; that selecting it announces the level count and shows the level and `K`
+controls before any run; and that a `K = 12` baroclinic run then yields a level slider
+spanning `0..11`, a column profile, an inspected value that differs between the first and
+last frame, and an inspector that follows the level slider. It skips when the binary, the
+preset, or the Chromium download is absent.
+
+`live.test.js` additionally runs every preset in `configs/interactive_dry_presets.txt` and
+requires its surface pressure to change over 600 s, except `phase5_visualizer_rest_n4`,
+which must not change at all. That pairing is the point: the steady case proves the coupled
+core leaves a resting atmosphere alone, and every other offered preset has to produce
+something to look at.
 
 ### Known gaps
 

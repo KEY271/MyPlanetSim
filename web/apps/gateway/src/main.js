@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { spawn as defaultSpawn } from "node:child_process";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 const protocolVersion = 1;
 const maxBodyBytes = 64 * 1024;
@@ -295,17 +296,33 @@ export async function startGateway(options) {
   return gateway;
 }
 
+// The descriptor's level count must equal the preset's own vertical.levels or the byte
+// budget is computed against a column the solver will not produce, so it is read from the
+// configuration rather than repeated in an environment variable.
+export function readPresetLevels(path) {
+  const match = /^\s*vertical\.levels\s*=\s*(\d+)\s*$/m.exec(readFileSync(path, "utf8"));
+  if (!match) throw new Error(`${path} does not declare vertical.levels`);
+  return Number(match[1]);
+}
+
+export function dryPresetsFromEnvironment(environment) {
+  const paths = (environment.MPS_DRY_PRESETS ?? environment.MPS_DRY_PRESET ?? "")
+    .split(",").map((value) => value.trim()).filter(Boolean);
+  const presets = {};
+  for (const path of paths) {
+    const id = basename(path).replace(/\.cfg$/, "");
+    presets[id] = { path, modelKind: "dry_hydrostatic", frameSchemaVersion: 2,
+      levels: readPresetLevels(path), supportedEdits: [],
+      maximumCellsPerPanel: Number(environment.MPS_DRY_PRESET_MAX_N ?? 24) };
+  }
+  return presets;
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   const binary = process.env.MPS_SIMULATOR_BINARY; const preset = process.env.MPS_REST_PRESET;
   if (!binary || !preset) throw new Error("MPS_SIMULATOR_BINARY and MPS_REST_PRESET are required");
-  const presets = { rest: preset };
-  // The dry hydrostatic preset is optional so an existing shallow-water session keeps
-  // working; its level count must match the configured vertical.levels of the preset file.
-  if (process.env.MPS_DRY_PRESET) {
-    presets.dry_hydrostatic_rest = { path: process.env.MPS_DRY_PRESET, modelKind: "dry_hydrostatic",
-      frameSchemaVersion: 2, levels: Number(process.env.MPS_DRY_PRESET_LEVELS ?? 8),
-      supportedEdits: [], maximumCellsPerPanel: Number(process.env.MPS_DRY_PRESET_MAX_N ?? 24) };
-  }
+  // Dry presets are optional so an existing shallow-water session keeps working.
+  const presets = { rest: preset, ...dryPresetsFromEnvironment(process.env) };
   const gateway = await startGateway({ binary, presets, runRoot: process.env.MPS_RUN_ROOT ?? ".runs", sessionToken: process.env.MPS_SESSION_TOKEN, port: Number(process.env.MPS_GATEWAY_PORT ?? 0) });
   const address = gateway.server.address();
   console.log(JSON.stringify({ host: "127.0.0.1", port: typeof address === "object" ? address.port : address, token: gateway.token }));

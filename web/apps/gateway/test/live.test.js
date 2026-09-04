@@ -1,10 +1,10 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { startGateway } from "../src/main.js";
+import { dryPresetsFromEnvironment, startGateway } from "../src/main.js";
 
 test("native run applies the requested N and produces authoritative frames", { skip: process.env.MPS_ENABLE_LIVE !== "1" }, async () => {
   const root = resolve(process.cwd(), "../../..");
@@ -48,6 +48,68 @@ test("native run applies the requested N and produces authoritative frames", { s
     const cancel = await fetch(`http://127.0.0.1:${port}/api/v1/runs/${cancelledRunId}/cancel`, { method: "POST", headers });
     assert.equal(cancel.status, 202);
     assert.equal(await waitForTerminal(cancelledRunId), "cancelled");
+  } finally {
+    await gateway.shutdown();
+  }
+});
+
+test("every dry preset the viewer offers actually evolves", { skip: process.env.MPS_ENABLE_LIVE !== "1" }, async () => {
+  const root = resolve(process.cwd(), "../../..");
+  const binary = resolve(root, "build/dev/my_planet_sim");
+  const manifest = resolve(root, "configs/interactive_dry_presets.txt");
+  if (!existsSync(binary) || !existsSync(manifest)) return;
+  const offered = readFileSync(manifest, "utf8").split("\n")
+    .map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
+  assert.ok(offered.length > 1, "the viewer must offer more than one dry preset");
+
+  const runRoot = await mkdtemp(join(tmpdir(), "myplanetsim-motion-"));
+  const gateway = await startGateway({
+    binary, runRoot, sessionToken: "motion-token", port: 0,
+    presets: { rest: resolve(root, "configs/phase3_rest_n4.cfg"),
+      ...dryPresetsFromEnvironment({ MPS_DRY_PRESETS: offered.map((name) => resolve(root, "configs", name)).join(",") }) },
+  });
+  try {
+    const port = gateway.server.address().port;
+    const headers = { authorization: "Bearer motion-token", "content-type": "application/json" };
+    const waitForTerminal = async (runId) => {
+      let status = "running";
+      for (let attempt = 0; attempt < 200 && (status === "running" || status === "cancelling"); attempt += 1) {
+        await new Promise((resolveSleep) => setTimeout(resolveSleep, 100));
+        status = (await (await fetch(`http://127.0.0.1:${port}/api/v1/runs/${runId}`, { headers })).json()).status;
+      }
+      return status;
+    };
+    const surfacePressure = async (runId, frameSequence) => {
+      const bytes = new Uint8Array(await (await fetch(`http://127.0.0.1:${port}/api/v1/runs/${runId}/frames/${frameSequence}`, { headers })).arrayBuffer());
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const cells = Number(view.getBigUint64(48, true));
+      const payload = 60 + view.getUint32(56, true);
+      return Array.from({ length: cells }, (_unused, cell) => view.getFloat64(payload + 8 * cell, true));
+    };
+
+    for (const name of offered) {
+      const presetId = name.replace(/\.cfg$/, "");
+      const response = await fetch(`http://127.0.0.1:${port}/api/v1/runs`, { method: "POST", headers,
+        body: JSON.stringify({ protocolVersion: 1, presetId, grid: { cellsPerPanel: 6 },
+          run: { endTimeSeconds: 600, maximumTimeStepSeconds: 30, frameIntervalSteps: 5 },
+          initialCondition: { edits: [] } }) });
+      assert.equal(response.status, 202, `${presetId} was rejected`);
+      const { runId } = await response.json();
+      assert.equal(await waitForTerminal(runId), "completed", `${presetId} did not complete`);
+      const events = (await (await fetch(`http://127.0.0.1:${port}/api/v1/runs/${runId}/bundle`, { headers })).json()).events;
+      const frames = events.filter((event) => event.type === "frame.ready");
+      assert.ok(frames.length >= 2, `${presetId} published ${frames.length} frames`);
+      const first = await surfacePressure(runId, 0);
+      const last = await surfacePressure(runId, frames.length - 1);
+      const change = Math.max(...first.map((value, cell) => Math.abs(last[cell] - value)));
+      if (presetId === "phase5_visualizer_rest_n4") {
+        // The documented smoke case: a resting atmosphere must be left exactly alone.
+        assert.equal(change, 0, `${presetId} is the steady smoke case but moved by ${change} Pa`);
+      } else {
+        // Anything else on offer has to produce something to look at.
+        assert.ok(change > 1e-3, `${presetId} renders a still image: surface pressure moved ${change} Pa`);
+      }
+    }
   } finally {
     await gateway.shutdown();
   }
