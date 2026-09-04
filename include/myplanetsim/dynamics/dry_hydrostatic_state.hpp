@@ -38,19 +38,23 @@ struct DryHydrostaticDerived {
 
 [[nodiscard]] constexpr std::size_t dry_hydrostatic_offset(
     const std::size_t cell, const std::size_t level,
-    const std::size_t levels) noexcept { return cell * levels + level; }
+    const std::size_t levels) noexcept {
+  return cell * levels + level;
+}
 [[nodiscard]] std::vector<Real> flatten_dry_hydrostatic_state(
     const DryHydrostaticState& state, std::size_t levels);
 [[nodiscard]] DryHydrostaticState unflatten_dry_hydrostatic_state(
-    Real time_s, std::uint64_t step, std::span<const Real> values,
-    std::size_t cells, std::size_t levels);
+    Real time_s, std::uint64_t step, std::span<const Real> values, std::size_t cells,
+    std::size_t levels);
 [[nodiscard]] DryHydrostaticDerived diagnose_dry_hydrostatic_state(
     const DryHydrostaticState& state, const AtmosphericHybridCoordinate& coordinate,
     const PlanetParameters& planet);
-void validate_dry_hydrostatic_state(
-    const DryHydrostaticState& state, const DryHydrostaticDerived& derived,
-    std::span<const Vec3> cell_centres, Real minimum_surface_pressure_pa,
-    Real maximum_surface_pressure_pa, Real temperature_floor_k,
-    bool require_nonnegative_tracer = true);
+void validate_dry_hydrostatic_state(const DryHydrostaticState& state,
+                                    const DryHydrostaticDerived& derived,
+                                    std::span<const Vec3> cell_centres,
+                                    Real minimum_surface_pressure_pa,
+                                    Real maximum_surface_pressure_pa,
+                                    Real temperature_floor_k,
+                                    bool require_nonnegative_tracer = true);
 
 }  // namespace mps

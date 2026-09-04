@@ -92,16 +92,30 @@ constexpr std::array<std::string_view, 18> kVerticalRequiredKeys{
 };
 
 constexpr std::array<std::string_view, 24> kDryHydrostaticRequiredKeys{
-    "experiment.kind", "grid.cells_per_panel", "vertical.levels",
-    "vertical.a_half_pa", "vertical.b_half", "vertical.surface_pressure_pa",
-    "vertical.minimum_surface_pressure_pa", "vertical.maximum_surface_pressure_pa",
-    "vertical.minimum_pressure_thickness_pa", "vertical.surface_geopotential_m2_s2",
-    "vertical.initial_temperature_k", "vertical.initial_potential_temperature_k",
-    "vertical.temperature_floor_k", "vertical.transport_scheme", "vertical.limiter",
-    "vertical.cfl", "dry_hydrostatic.test_case", "dry_hydrostatic.reconstruction",
-    "dry_hydrostatic.limiter", "dry_hydrostatic.cfl",
-    "dry_hydrostatic.diffusion_kind", "dry_hydrostatic.diffusion_coefficient",
-    "diagnostics.interval_steps", "output.directory"};
+    "experiment.kind",
+    "grid.cells_per_panel",
+    "vertical.levels",
+    "vertical.a_half_pa",
+    "vertical.b_half",
+    "vertical.surface_pressure_pa",
+    "vertical.minimum_surface_pressure_pa",
+    "vertical.maximum_surface_pressure_pa",
+    "vertical.minimum_pressure_thickness_pa",
+    "vertical.surface_geopotential_m2_s2",
+    "vertical.initial_temperature_k",
+    "vertical.initial_potential_temperature_k",
+    "vertical.temperature_floor_k",
+    "vertical.transport_scheme",
+    "vertical.limiter",
+    "vertical.cfl",
+    "dry_hydrostatic.test_case",
+    "dry_hydrostatic.reconstruction",
+    "dry_hydrostatic.limiter",
+    "dry_hydrostatic.cfl",
+    "dry_hydrostatic.diffusion_kind",
+    "dry_hydrostatic.diffusion_coefficient",
+    "diagnostics.interval_steps",
+    "output.directory"};
 
 [[nodiscard]] std::string_view trim(const std::string_view value) {
   std::size_t first = 0;
@@ -400,29 +414,50 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
   } else if (key == "vertical.forcing_amplitude") {
     config.vertical.forcing_amplitude = parse_real(value, line, key);
   } else if (key == "dry_hydrostatic.test_case") {
-    if (value == "isothermal_rest") config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kIsothermalRest;
-    else if (value == "solid_body_transport") config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kSolidBodyTransport;
-    else if (value == "dcmip_deformational") config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kDcmipDeformational;
-    else if (value == "dcmip_hadley") config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kDcmipHadley;
-    else if (value == "linear_wave") config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kLinearWave;
-    else if (value == "umjs14_steady") config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kUmjs14Steady;
-    else if (value == "umjs14_baroclinic") config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kUmjs14Baroclinic;
-    else throw parse_error(line, "unknown dry_hydrostatic.test_case " + std::string(value));
+    if (value == "isothermal_rest")
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kIsothermalRest;
+    else if (value == "solid_body_transport")
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kSolidBodyTransport;
+    else if (value == "dcmip_deformational")
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kDcmipDeformational;
+    else if (value == "dcmip_hadley")
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kDcmipHadley;
+    else if (value == "linear_wave")
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kLinearWave;
+    else if (value == "umjs14_steady")
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kUmjs14Steady;
+    else if (value == "umjs14_baroclinic")
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kUmjs14Baroclinic;
+    else
+      throw parse_error(line,
+                        "unknown dry_hydrostatic.test_case " + std::string(value));
   } else if (key == "dry_hydrostatic.reconstruction") {
-    if (value == "linear") config.dry_hydrostatic.reconstruction = ReconstructionKind::kLinear;
-    else if (value == "piecewise_constant") config.dry_hydrostatic.reconstruction = ReconstructionKind::kPiecewiseConstant;
-    else throw parse_error(line, "unknown dry_hydrostatic.reconstruction " + std::string(value));
+    if (value == "linear")
+      config.dry_hydrostatic.reconstruction = ReconstructionKind::kLinear;
+    else if (value == "piecewise_constant")
+      config.dry_hydrostatic.reconstruction = ReconstructionKind::kPiecewiseConstant;
+    else
+      throw parse_error(line,
+                        "unknown dry_hydrostatic.reconstruction " + std::string(value));
   } else if (key == "dry_hydrostatic.limiter") {
-    if (value == "barth_jespersen") config.dry_hydrostatic.limiter = LimiterKind::kBarthJespersen;
-    else if (value == "none") config.dry_hydrostatic.limiter = LimiterKind::kNone;
-    else throw parse_error(line, "unknown dry_hydrostatic.limiter " + std::string(value));
+    if (value == "barth_jespersen")
+      config.dry_hydrostatic.limiter = LimiterKind::kBarthJespersen;
+    else if (value == "none")
+      config.dry_hydrostatic.limiter = LimiterKind::kNone;
+    else
+      throw parse_error(line, "unknown dry_hydrostatic.limiter " + std::string(value));
   } else if (key == "dry_hydrostatic.cfl") {
     config.dry_hydrostatic.cfl = parse_real(value, line, key);
   } else if (key == "dry_hydrostatic.diffusion_kind") {
-    if (value == "none") config.dry_hydrostatic.diffusion_kind = DiffusionKind::kNone;
-    else if (value == "laplacian") config.dry_hydrostatic.diffusion_kind = DiffusionKind::kLaplacian;
-    else if (value == "biharmonic") config.dry_hydrostatic.diffusion_kind = DiffusionKind::kBiharmonic;
-    else throw parse_error(line, "unknown dry_hydrostatic.diffusion_kind " + std::string(value));
+    if (value == "none")
+      config.dry_hydrostatic.diffusion_kind = DiffusionKind::kNone;
+    else if (value == "laplacian")
+      config.dry_hydrostatic.diffusion_kind = DiffusionKind::kLaplacian;
+    else if (value == "biharmonic")
+      config.dry_hydrostatic.diffusion_kind = DiffusionKind::kBiharmonic;
+    else
+      throw parse_error(line,
+                        "unknown dry_hydrostatic.diffusion_kind " + std::string(value));
   } else if (key == "dry_hydrostatic.diffusion_coefficient") {
     config.dry_hydrostatic.diffusion_coefficient = parse_real(value, line, key);
   } else if (key == "output.directory") {
@@ -579,12 +614,20 @@ void ExperimentConfig::validate() const {
   }
 
   if (kind == ExperimentKind::kDryHydrostatic) {
-    if (grid.cells_per_panel <= 0) throw std::invalid_argument("grid.cells_per_panel must be positive");
-    if (vertical.surface_geopotential_m2_s2 != 0.0) throw std::invalid_argument("dry_hydrostatic requires flat surface geopotential");
+    if (grid.cells_per_panel <= 0)
+      throw std::invalid_argument("grid.cells_per_panel must be positive");
+    if (vertical.surface_geopotential_m2_s2 != 0.0)
+      throw std::invalid_argument("dry_hydrostatic requires flat surface geopotential");
     require_finite(dry_hydrostatic.cfl, "dry_hydrostatic.cfl");
-    if (!(dry_hydrostatic.cfl > 0.0 && dry_hydrostatic.cfl <= 1.0)) throw std::invalid_argument("dry_hydrostatic.cfl must be in (0, 1]");
-    require_non_negative(dry_hydrostatic.diffusion_coefficient, "dry_hydrostatic.diffusion_coefficient");
-    if ((dry_hydrostatic.diffusion_kind == DiffusionKind::kNone) != (dry_hydrostatic.diffusion_coefficient == 0.0)) throw std::invalid_argument("dry_hydrostatic diffusion coefficient must be zero exactly when kind is none");
+    if (!(dry_hydrostatic.cfl > 0.0 && dry_hydrostatic.cfl <= 1.0))
+      throw std::invalid_argument("dry_hydrostatic.cfl must be in (0, 1]");
+    require_non_negative(dry_hydrostatic.diffusion_coefficient,
+                         "dry_hydrostatic.diffusion_coefficient");
+    if ((dry_hydrostatic.diffusion_kind == DiffusionKind::kNone) !=
+        (dry_hydrostatic.diffusion_coefficient == 0.0))
+      throw std::invalid_argument(
+          "dry_hydrostatic diffusion coefficient must be zero exactly when kind is "
+          "none");
   }
 
   if (run.end_time_s <= run.start_time_s) {
@@ -673,7 +716,8 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
       if (key.starts_with("ode.") || key.starts_with("transport.") ||
           key.starts_with("shallow_water.") || key == "vertical.test_case" ||
           key == "vertical.forcing_amplitude") {
-        throw std::runtime_error("key " + key + " is not valid for dry_hydrostatic experiment");
+        throw std::runtime_error("key " + key +
+                                 " is not valid for dry_hydrostatic experiment");
       }
     }
   }
@@ -800,12 +844,17 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
     }
     if (config.kind == ExperimentKind::kDryHydrostatic) {
       output << "grid.cells_per_panel = " << config.grid.cells_per_panel << '\n'
-             << "dry_hydrostatic.test_case = " << dry_hydrostatic_test_case_name(config.dry_hydrostatic.test_case) << '\n'
-             << "dry_hydrostatic.reconstruction = " << reconstruction_name(config.dry_hydrostatic.reconstruction) << '\n'
-             << "dry_hydrostatic.limiter = " << limiter_name(config.dry_hydrostatic.limiter) << '\n'
+             << "dry_hydrostatic.test_case = "
+             << dry_hydrostatic_test_case_name(config.dry_hydrostatic.test_case) << '\n'
+             << "dry_hydrostatic.reconstruction = "
+             << reconstruction_name(config.dry_hydrostatic.reconstruction) << '\n'
+             << "dry_hydrostatic.limiter = "
+             << limiter_name(config.dry_hydrostatic.limiter) << '\n'
              << "dry_hydrostatic.cfl = " << config.dry_hydrostatic.cfl << '\n'
-             << "dry_hydrostatic.diffusion_kind = " << diffusion_kind_name(config.dry_hydrostatic.diffusion_kind) << '\n'
-             << "dry_hydrostatic.diffusion_coefficient = " << config.dry_hydrostatic.diffusion_coefficient << '\n';
+             << "dry_hydrostatic.diffusion_kind = "
+             << diffusion_kind_name(config.dry_hydrostatic.diffusion_kind) << '\n'
+             << "dry_hydrostatic.diffusion_coefficient = "
+             << config.dry_hydrostatic.diffusion_coefficient << '\n';
     }
   }
   output << "output.directory = " << config.output_directory << '\n';
@@ -831,15 +880,23 @@ std::string_view experiment_kind_name(const ExperimentKind kind) noexcept {
   return "unknown";
 }
 
-std::string_view dry_hydrostatic_test_case_name(const DryHydrostaticTestCase value) noexcept {
+std::string_view dry_hydrostatic_test_case_name(
+    const DryHydrostaticTestCase value) noexcept {
   switch (value) {
-    case DryHydrostaticTestCase::kIsothermalRest: return "isothermal_rest";
-    case DryHydrostaticTestCase::kSolidBodyTransport: return "solid_body_transport";
-    case DryHydrostaticTestCase::kDcmipDeformational: return "dcmip_deformational";
-    case DryHydrostaticTestCase::kDcmipHadley: return "dcmip_hadley";
-    case DryHydrostaticTestCase::kLinearWave: return "linear_wave";
-    case DryHydrostaticTestCase::kUmjs14Steady: return "umjs14_steady";
-    case DryHydrostaticTestCase::kUmjs14Baroclinic: return "umjs14_baroclinic";
+    case DryHydrostaticTestCase::kIsothermalRest:
+      return "isothermal_rest";
+    case DryHydrostaticTestCase::kSolidBodyTransport:
+      return "solid_body_transport";
+    case DryHydrostaticTestCase::kDcmipDeformational:
+      return "dcmip_deformational";
+    case DryHydrostaticTestCase::kDcmipHadley:
+      return "dcmip_hadley";
+    case DryHydrostaticTestCase::kLinearWave:
+      return "linear_wave";
+    case DryHydrostaticTestCase::kUmjs14Steady:
+      return "umjs14_steady";
+    case DryHydrostaticTestCase::kUmjs14Baroclinic:
+      return "umjs14_baroclinic";
   }
   return "unknown";
 }

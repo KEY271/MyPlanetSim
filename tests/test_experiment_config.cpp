@@ -310,10 +310,9 @@ MPS_TEST_CASE("dry-hydrostatic configuration reuses vertical schema strictly") {
   const auto second = parse(output.str());
   MPS_CHECK_EQ(second.vertical.levels, 2);
   MPS_CHECK_NEAR(second.dry_hydrostatic.cfl, 0.45, 0.0);
-  MPS_CHECK_THROWS_AS(
-      parse(std::string(kValidDryHydrostaticConfig) +
-            "vertical.forcing_amplitude = 0\n"),
-      std::runtime_error);
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidDryHydrostaticConfig) +
+                            "vertical.forcing_amplitude = 0\n"),
+                      std::runtime_error);
 }
 
 int main() { return mps::test::run_all(); }

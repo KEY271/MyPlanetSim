@@ -1,5 +1,37 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
 #include "support/test.hpp"
-namespace { mps::ExperimentConfig config(){return {.kind=mps::ExperimentKind::kDryHydrostatic,.planet={2,0,10,287,1004,100000},.run={0,1,.1,0},.grid={2},.vertical={.levels=2,.a_half_pa={1000,500,0},.b_half={0,.5,1},.surface_pressure_pa=100000,.minimum_surface_pressure_pa=90000,.maximum_surface_pressure_pa=110000,.minimum_pressure_thickness_pa=100,.initial_temperature_k=280,.initial_potential_temperature_k=300,.temperature_floor_k=100,.transport_scheme=mps::VerticalTransportScheme::kLinear,.limiter=mps::VerticalLimiterKind::kMinmod,.cfl=.5},.dry_hydrostatic={},.diagnostics={1},.output_directory="x"};}}
-MPS_TEST_CASE("coupled transport preserves a constant tracer") {mps::DryHydrostaticDriver d(config());auto s=d.initial_state();auto derived=d.diagnose(s);for(std::size_t i=0;i<s.tracer_mass_kg_m2.size();++i)s.tracer_mass_kg_m2[i]=.4*derived.air_mass_kg_m2[i];d.advance(s,.2);derived=d.diagnose(s);for(auto q:derived.tracer_mixing_ratio)MPS_CHECK_NEAR(q,.4,1e-12);}
-int main(){return mps::test::run_all();}
+namespace {
+mps::ExperimentConfig config() {
+  return {.kind = mps::ExperimentKind::kDryHydrostatic,
+          .planet = {2, 0, 10, 287, 1004, 100000},
+          .run = {0, 1, .1, 0},
+          .grid = {2},
+          .vertical = {.levels = 2,
+                       .a_half_pa = {1000, 500, 0},
+                       .b_half = {0, .5, 1},
+                       .surface_pressure_pa = 100000,
+                       .minimum_surface_pressure_pa = 90000,
+                       .maximum_surface_pressure_pa = 110000,
+                       .minimum_pressure_thickness_pa = 100,
+                       .initial_temperature_k = 280,
+                       .initial_potential_temperature_k = 300,
+                       .temperature_floor_k = 100,
+                       .transport_scheme = mps::VerticalTransportScheme::kLinear,
+                       .limiter = mps::VerticalLimiterKind::kMinmod,
+                       .cfl = .5},
+          .dry_hydrostatic = {},
+          .diagnostics = {1},
+          .output_directory = "x"};
+}
+}  // namespace
+MPS_TEST_CASE("coupled transport preserves a constant tracer") {
+  mps::DryHydrostaticDriver d(config());
+  auto s = d.initial_state();
+  auto derived = d.diagnose(s);
+  for (std::size_t i = 0; i < s.tracer_mass_kg_m2.size(); ++i)
+    s.tracer_mass_kg_m2[i] = .4 * derived.air_mass_kg_m2[i];
+  d.advance(s, .2);
+  derived = d.diagnose(s);
+  for (auto q : derived.tracer_mixing_ratio) MPS_CHECK_NEAR(q, .4, 1e-12);
+}
+int main() { return mps::test::run_all(); }

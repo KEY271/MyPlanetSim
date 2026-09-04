@@ -198,8 +198,105 @@ FrameV1 read_frame_file(const std::filesystem::path& path,
           .byte_length = static_cast<std::uint64_t>(bytes.size())};
 }
 
-void write_frame_v2_file(const std::filesystem::path& path,const FrameV2Metadata& m,const std::span<const Real> ps,const DryHydrostaticDerived& d){const auto n=static_cast<std::uint64_t>(m.cells_per_panel),cells=6*n*n,levels=static_cast<std::uint64_t>(m.levels),volume=cells*levels;if(m.schema_version!=2||n==0||n>24||levels==0||levels>30||ps.size()!=cells||d.cells!=cells||d.levels!=levels||d.pressure_pa.size()!=volume||d.potential_temperature_k.size()!=volume||d.temperature_k.size()!=volume||d.velocity_m_s.size()!=volume||d.tracer_mixing_ratio.size()!=volume||m.config_fingerprint.empty()||m.config_fingerprint.size()>128)throw std::invalid_argument("invalid FrameV2 shape or metadata");std::vector<unsigned char>b;b.insert(b.end(),kMagicV2.begin(),kMagicV2.end());append_u32(b,2);append_u32(b,0);append_u64(b,n);append_u64(b,levels);append_real(b,m.time_s);append_u64(b,m.step);append_u64(b,cells);append_u32(b,static_cast<std::uint32_t>(m.config_fingerprint.size()));b.insert(b.end(),m.config_fingerprint.begin(),m.config_fingerprint.end());auto add=[&](Real v){require_finite(v,"FrameV2 value");append_real(b,v);};for(auto v:ps)add(v);for(auto v:d.pressure_pa)add(v);for(auto v:d.potential_temperature_k)add(v);for(auto v:d.temperature_k)add(v);for(auto v:d.velocity_m_s)add(v.x);for(auto v:d.velocity_m_s)add(v.y);for(auto v:d.velocity_m_s)add(v.z);for(auto v:d.tracer_mixing_ratio)add(v);if(b.size()>256ULL*1024ULL*1024ULL)throw std::runtime_error("FrameV2 exceeds byte budget");if(!path.parent_path().empty())std::filesystem::create_directories(path.parent_path());auto tmp=path;tmp+=".tmp";std::ofstream out(tmp,std::ios::binary|std::ios::trunc);out.write(reinterpret_cast<const char*>(b.data()),static_cast<std::streamsize>(b.size()));out.close();if(!out)throw std::runtime_error("failed while writing FrameV2");std::filesystem::rename(tmp,path);}
+void write_frame_v2_file(const std::filesystem::path& path, const FrameV2Metadata& m,
+                         const std::span<const Real> ps,
+                         const DryHydrostaticDerived& d) {
+  const auto n = static_cast<std::uint64_t>(m.cells_per_panel), cells = 6 * n * n,
+             levels = static_cast<std::uint64_t>(m.levels), volume = cells * levels;
+  if (m.schema_version != 2 || n == 0 || n > 24 || levels == 0 || levels > 30 ||
+      ps.size() != cells || d.cells != cells || d.levels != levels ||
+      d.pressure_pa.size() != volume || d.potential_temperature_k.size() != volume ||
+      d.temperature_k.size() != volume || d.velocity_m_s.size() != volume ||
+      d.tracer_mixing_ratio.size() != volume || m.config_fingerprint.empty() ||
+      m.config_fingerprint.size() > 128)
+    throw std::invalid_argument("invalid FrameV2 shape or metadata");
+  std::vector<unsigned char> b;
+  b.insert(b.end(), kMagicV2.begin(), kMagicV2.end());
+  append_u32(b, 2);
+  append_u32(b, 0);
+  append_u64(b, n);
+  append_u64(b, levels);
+  append_real(b, m.time_s);
+  append_u64(b, m.step);
+  append_u64(b, cells);
+  append_u32(b, static_cast<std::uint32_t>(m.config_fingerprint.size()));
+  b.insert(b.end(), m.config_fingerprint.begin(), m.config_fingerprint.end());
+  auto add = [&](Real v) {
+    require_finite(v, "FrameV2 value");
+    append_real(b, v);
+  };
+  for (auto v : ps) add(v);
+  for (auto v : d.pressure_pa) add(v);
+  for (auto v : d.potential_temperature_k) add(v);
+  for (auto v : d.temperature_k) add(v);
+  for (auto v : d.velocity_m_s) add(v.x);
+  for (auto v : d.velocity_m_s) add(v.y);
+  for (auto v : d.velocity_m_s) add(v.z);
+  for (auto v : d.tracer_mixing_ratio) add(v);
+  if (b.size() > 256ULL * 1024ULL * 1024ULL)
+    throw std::runtime_error("FrameV2 exceeds byte budget");
+  if (!path.parent_path().empty())
+    std::filesystem::create_directories(path.parent_path());
+  auto tmp = path;
+  tmp += ".tmp";
+  std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(b.data()),
+            static_cast<std::streamsize>(b.size()));
+  out.close();
+  if (!out) throw std::runtime_error("failed while writing FrameV2");
+  std::filesystem::rename(tmp, path);
+}
 
-FrameV2 read_frame_v2_file(const std::filesystem::path& path,const std::string_view expected){auto b=read_bytes(path);std::size_t o=0;if(b.size()<kMagicV2.size()||!std::equal(kMagicV2.begin(),kMagicV2.end(),b.begin()))throw std::runtime_error("invalid FrameV2 magic");o=8;if(read_u32(b,o)!=2||read_u32(b,o)!=0)throw std::runtime_error("invalid FrameV2 header");auto n=read_u64(b,o),K=read_u64(b,o);auto time=read_real(b,o);auto step=read_u64(b,o),C=read_u64(b,o);auto fs=read_u32(b,o);if(n==0||n>24||K==0||K>30||C!=6*n*n||fs==0||fs>128||o+fs>b.size())throw std::runtime_error("invalid FrameV2 shape");std::string fingerprint(reinterpret_cast<const char*>(b.data()+o),fs);o+=fs;if(!expected.empty()&&fingerprint!=expected)throw std::runtime_error("frame configuration fingerprint mismatch");auto volume=C*K,value_count=C+7*volume;if(o+value_count*sizeof(Real)!=b.size())throw std::runtime_error("FrameV2 payload has wrong size");auto read_field=[&](std::size_t count){std::vector<Real> values;values.reserve(count);for(std::size_t i=0;i<count;++i){auto v=read_real(b,o);require_finite(v,"FrameV2 value");values.push_back(v);}return values;};FrameV2 f;f.metadata={2,static_cast<Index>(n),static_cast<Index>(K),time,step,fingerprint};f.surface_pressure_pa=read_field(C);f.derived.cells=C;f.derived.levels=K;f.derived.pressure_pa=read_field(volume);f.derived.potential_temperature_k=read_field(volume);f.derived.temperature_k=read_field(volume);auto x=read_field(volume),y=read_field(volume),z=read_field(volume);f.derived.velocity_m_s.resize(volume);for(std::size_t i=0;i<volume;++i)f.derived.velocity_m_s[i]={x[i],y[i],z[i]};f.derived.tracer_mixing_ratio=read_field(volume);f.byte_length=b.size();return f;}
+FrameV2 read_frame_v2_file(const std::filesystem::path& path,
+                           const std::string_view expected) {
+  auto b = read_bytes(path);
+  std::size_t o = 0;
+  if (b.size() < kMagicV2.size() ||
+      !std::equal(kMagicV2.begin(), kMagicV2.end(), b.begin()))
+    throw std::runtime_error("invalid FrameV2 magic");
+  o = 8;
+  if (read_u32(b, o) != 2 || read_u32(b, o) != 0)
+    throw std::runtime_error("invalid FrameV2 header");
+  auto n = read_u64(b, o), K = read_u64(b, o);
+  auto time = read_real(b, o);
+  auto step = read_u64(b, o), C = read_u64(b, o);
+  auto fs = read_u32(b, o);
+  if (n == 0 || n > 24 || K == 0 || K > 30 || C != 6 * n * n || fs == 0 || fs > 128 ||
+      o + fs > b.size())
+    throw std::runtime_error("invalid FrameV2 shape");
+  std::string fingerprint(reinterpret_cast<const char*>(b.data() + o), fs);
+  o += fs;
+  if (!expected.empty() && fingerprint != expected)
+    throw std::runtime_error("frame configuration fingerprint mismatch");
+  auto volume = C * K, value_count = C + 7 * volume;
+  if (o + value_count * sizeof(Real) != b.size())
+    throw std::runtime_error("FrameV2 payload has wrong size");
+  auto read_field = [&](std::size_t count) {
+    std::vector<Real> values;
+    values.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+      auto v = read_real(b, o);
+      require_finite(v, "FrameV2 value");
+      values.push_back(v);
+    }
+    return values;
+  };
+  FrameV2 f;
+  f.metadata = {2,          static_cast<Index>(n), static_cast<Index>(K), time, step,
+                fingerprint};
+  f.surface_pressure_pa = read_field(C);
+  f.derived.cells = C;
+  f.derived.levels = K;
+  f.derived.pressure_pa = read_field(volume);
+  f.derived.potential_temperature_k = read_field(volume);
+  f.derived.temperature_k = read_field(volume);
+  auto x = read_field(volume), y = read_field(volume), z = read_field(volume);
+  f.derived.velocity_m_s.resize(volume);
+  for (std::size_t i = 0; i < volume; ++i)
+    f.derived.velocity_m_s[i] = {x[i], y[i], z[i]};
+  f.derived.tracer_mixing_ratio = read_field(volume);
+  f.byte_length = b.size();
+  return f;
+}
 
 }  // namespace mps
