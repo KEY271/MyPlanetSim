@@ -9,6 +9,7 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_flux.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_reconstruction.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
+#include "myplanetsim/physics/held_suarez.hpp"
 namespace mps {
 namespace {
 
@@ -196,16 +197,42 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
     coupled.tendency.momentum[n] = coupled.tendency.momentum[n] +
                                    sources.pressure_gradient_kg_m_s2[n] +
                                    sources.coriolis_kg_m_s2[n];
+  HeldSuarezDiagnostics physics_diagnostics{};
+  if (config_.physics.kind == PhysicsKind::kHeldSuarez) {
+    auto physics =
+        held_suarez_tendency(grid_, d, s.surface_pressure_pa, config_.planet);
+    for (std::size_t n = 0; n < C * K; ++n) {
+      coupled.tendency.momentum[n] =
+          coupled.tendency.momentum[n] + physics.horizontal_momentum_mass_kg_m_s2[n];
+      coupled.tendency.potential_temperature_mass[n] +=
+          physics.potential_temperature_mass_k_kg_m2_s[n];
+    }
+    physics_diagnostics = physics.diagnostics;
+  }
   return {.surface_pressure_pa_s = std::move(coupled.surface_pressure_pa_s),
           .tendency = std::move(coupled.tendency),
           .horizontal_stable_time_step_s = dt,
           .vertical_stable_time_step_s = vertical_dt,
-          .maximum_continuity_residual_pa_s = coupled.maximum_continuity_residual_pa_s};
+          .maximum_continuity_residual_pa_s = coupled.maximum_continuity_residual_pa_s,
+          .physics_diagnostics = physics_diagnostics};
 }
 void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                                    const DryHydrostaticObserver& obs,
                                    const DryHydrostaticCancel& cancel) const {
-  if (obs) obs(s, diagnose(s));
+  const auto observe = [&](const DryHydrostaticState& state,
+                           const DryHydrostaticStepDiagnostics& step) {
+    if (!obs) return;
+    const auto derived = diagnose(state);
+    auto sampled = step;
+    if (config_.physics.kind == PhysicsKind::kHeldSuarez) {
+      sampled.physics_rates =
+          held_suarez_tendency(grid_, derived, state.surface_pressure_pa,
+                               config_.planet)
+              .diagnostics;
+    }
+    obs(state, derived, sampled);
+  };
+  observe(s, {});
   std::vector<Vec3> centres;
   centres.reserve(grid_.cell_count());
   for (const auto& cell : grid_.cells()) centres.push_back(cell.center);
@@ -267,9 +294,17 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       }
       project_and_validate(next);
       s = std::move(next);
+      observe(s,
+              {.thermal_energy_contribution_j =
+                   dt * (rhs1.physics_diagnostics.thermal_energy_rate_w / 6.0 +
+                         rhs2.physics_diagnostics.thermal_energy_rate_w / 6.0 +
+                         2.0 * rhs3.physics_diagnostics.thermal_energy_rate_w / 3.0),
+               .rayleigh_drag_energy_contribution_j =
+                   dt * (rhs1.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
+                         rhs2.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
+                         2.0 * rhs3.physics_diagnostics.rayleigh_drag_work_w / 3.0)});
       break;
     }
-    if (obs) obs(s, diagnose(s));
   }
 }
 }  // namespace mps

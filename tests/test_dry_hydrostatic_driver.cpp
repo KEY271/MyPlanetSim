@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
 #include "support/test.hpp"
@@ -27,6 +28,15 @@ mps::ExperimentConfig config() {
           .dry_hydrostatic = {},
           .diagnostics = {1},
           .output_directory = "x"};
+}
+
+mps::ExperimentConfig held_suarez_config() {
+  auto result = config();
+  result.planet = {6371220, 7.29212e-5, 9.80616, 287, 1004, 100000};
+  result.run = {0, 20, 10, 0};
+  result.dry_hydrostatic.test_case = mps::DryHydrostaticTestCase::kHeldSuarez;
+  result.physics.kind = mps::PhysicsKind::kHeldSuarez;
+  return result;
 }
 
 mps::DryHydrostaticState update(const mps::DryHydrostaticState& base,
@@ -150,5 +160,89 @@ MPS_TEST_CASE("advance reevaluates the complete RHS at all SSP-RK3 stages") {
     const double tolerance = 2.0e-13 * std::max(1.0, std::abs(expected_values[n]));
     MPS_CHECK_NEAR(actual_values[n], expected_values[n], tolerance);
   }
+}
+
+MPS_TEST_CASE("Held-Suarez forcing is part of every accepted SSP-RK3 step") {
+  const auto parameters = held_suarez_config();
+  mps::DryHydrostaticDriver driver(parameters);
+  auto state = driver.initial_state();
+  const auto initial_mass = driver.diagnose(state).air_mass_kg_m2;
+  const auto initial_tracer = state.tracer_mass_kg_m2;
+  std::vector<mps::DryHydrostaticStepDiagnostics> samples;
+  driver.advance(
+      state, 10.0,
+      [&samples](const mps::DryHydrostaticState&, const mps::DryHydrostaticDerived&,
+                 const mps::DryHydrostaticStepDiagnostics& diagnostics) {
+        samples.push_back(diagnostics);
+      });
+  MPS_CHECK(samples.size() >= 2);
+  MPS_CHECK(samples.front().physics_rates.thermal_energy_rate_w != 0.0);
+  MPS_CHECK(samples.back().thermal_energy_contribution_j != 0.0);
+  MPS_CHECK(samples.back().rayleigh_drag_energy_contribution_j <= 0.0);
+  MPS_CHECK(state.tracer_mass_kg_m2 == initial_tracer);
+  const auto final_mass = driver.diagnose(state).air_mass_kg_m2;
+  MPS_CHECK_EQ(final_mass.size(), initial_mass.size());
+  mps::Real initial_total = 0.0;
+  mps::Real final_total = 0.0;
+  for (std::size_t index = 0; index < initial_mass.size(); ++index) {
+    const auto cell = index / static_cast<std::size_t>(parameters.vertical.levels);
+    initial_total += driver.grid().cells()[cell].area_m2 * initial_mass[index];
+    final_total += driver.grid().cells()[cell].area_m2 * final_mass[index];
+  }
+  MPS_CHECK_NEAR(final_total, initial_total, 2e-15 * initial_total);
+}
+
+MPS_TEST_CASE("none physics leaves the dry RHS exactly unchanged") {
+  auto unforced_parameters = held_suarez_config();
+  unforced_parameters.physics.kind = mps::PhysicsKind::kNone;
+  mps::DryHydrostaticDriver unforced(unforced_parameters);
+  const auto state = unforced.initial_state();
+  const auto before = unforced.rhs(state);
+
+  auto explicit_none = unforced_parameters;
+  explicit_none.physics = {.kind = mps::PhysicsKind::kNone};
+  mps::DryHydrostaticDriver repeated(explicit_none);
+  const auto after = repeated.rhs(state);
+  MPS_CHECK(before.surface_pressure_pa_s == after.surface_pressure_pa_s);
+  MPS_CHECK(before.tendency.air_mass == after.tendency.air_mass);
+  MPS_CHECK(before.tendency.potential_temperature_mass ==
+            after.tendency.potential_temperature_mass);
+  MPS_CHECK(before.tendency.tracer_mass == after.tendency.tracer_mass);
+  MPS_CHECK_EQ(before.physics_diagnostics.thermal_energy_rate_w, 0.0);
+  MPS_CHECK_EQ(after.physics_diagnostics.rayleigh_drag_work_w, 0.0);
+  for (std::size_t index = 0; index < before.tendency.momentum.size(); ++index) {
+    MPS_CHECK_EQ(before.tendency.momentum[index].x, after.tendency.momentum[index].x);
+    MPS_CHECK_EQ(before.tendency.momentum[index].y, after.tendency.momentum[index].y);
+    MPS_CHECK_EQ(before.tendency.momentum[index].z, after.tendency.momentum[index].z);
+  }
+}
+
+MPS_TEST_CASE("source-only SSP-RK3 relaxation has third-order time convergence") {
+  const auto rate =
+      mps::held_suarez_rates(0.0, 100000.0, 100000.0, held_suarez_config().planet)
+          .temperature_relaxation_rate_s_1;
+  constexpr mps::Real equilibrium = 315.0;
+  constexpr mps::Real initial = 264.0;
+  constexpr mps::Real end_time = 86400.0;
+  const auto integrate = [&](const int steps) {
+    const mps::Real dt = end_time / static_cast<mps::Real>(steps);
+    mps::Real value = initial;
+    const auto rhs = [&](const mps::Real temperature) {
+      return -rate * (temperature - equilibrium);
+    };
+    for (int step = 0; step < steps; ++step) {
+      const mps::Real stage1 = value + dt * rhs(value);
+      const mps::Real stage2 = 0.75 * value + 0.25 * (stage1 + dt * rhs(stage1));
+      value = value / 3.0 + 2.0 / 3.0 * (stage2 + dt * rhs(stage2));
+    }
+    return value;
+  };
+  const mps::Real exact =
+      equilibrium + (initial - equilibrium) * std::exp(-rate * end_time);
+  const mps::Real coarse_error = std::abs(integrate(2) - exact);
+  const mps::Real medium_error = std::abs(integrate(4) - exact);
+  const mps::Real fine_error = std::abs(integrate(8) - exact);
+  MPS_CHECK(coarse_error / medium_error > 7.0);
+  MPS_CHECK(medium_error / fine_error > 7.0);
 }
 int main() { return mps::test::run_all(); }

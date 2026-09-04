@@ -1,6 +1,7 @@
 #include <atomic>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstdint>
 #include <exception>
@@ -514,6 +515,116 @@ void write_vertical_column_files(const mps::ExperimentConfig& config,
   }
 }
 
+struct PhysicsDiagnosticsRow {
+  mps::Real time_s;
+  std::uint64_t step;
+  mps::HeldSuarezDiagnostics rates;
+  mps::Real cumulative_thermal_energy_j;
+  mps::Real cumulative_drag_energy_j;
+  mps::Real measured_energy_change_j;
+  mps::Real energy_residual_j;
+  mps::DryHydrostaticDiagnostics health;
+  mps::Real maximum_wind_m_s;
+  std::uint64_t non_finite_count;
+};
+
+class PhysicsDiagnosticsAccumulator {
+ public:
+  PhysicsDiagnosticsAccumulator(const mps::ExperimentConfig& config,
+                                const mps::CubedSphereGrid& grid)
+      : config_(config), grid_(grid) {}
+
+  void observe(const mps::DryHydrostaticState& state,
+               const mps::DryHydrostaticDerived& derived,
+               const mps::DryHydrostaticStepDiagnostics& step) {
+    constexpr mps::Real spin_up_end_s = 200.0 * 86400.0;
+    const auto health =
+        mps::diagnose_dry_hydrostatic_budgets(grid_, state, derived, config_.planet);
+    if (state.time_s >= spin_up_end_s && !window_energy_j_.has_value()) {
+      window_energy_j_ = health.total_energy_j;
+    }
+    if (previous_time_s_.has_value() && *previous_time_s_ >= spin_up_end_s) {
+      cumulative_thermal_energy_j_ += step.thermal_energy_contribution_j;
+      cumulative_drag_energy_j_ += step.rayleigh_drag_energy_contribution_j;
+    }
+    previous_time_s_ = state.time_s;
+
+    mps::Real maximum_wind = 0.0;
+    std::uint64_t non_finite_count = 0;
+    for (const auto value : derived.temperature_k)
+      non_finite_count += !std::isfinite(value);
+    for (const auto value : derived.velocity_m_s) {
+      non_finite_count += !mps::is_finite(value);
+      if (mps::is_finite(value))
+        maximum_wind = std::max(maximum_wind, mps::norm(value));
+    }
+    for (const auto value : state.surface_pressure_pa)
+      non_finite_count += !std::isfinite(value);
+    const mps::Real measured_energy_change =
+        window_energy_j_.has_value() ? health.total_energy_j - *window_energy_j_ : 0.0;
+    const mps::Real physics_energy =
+        cumulative_thermal_energy_j_ + cumulative_drag_energy_j_;
+    last_ = {.time_s = state.time_s,
+             .step = state.step,
+             .rates = step.physics_rates,
+             .cumulative_thermal_energy_j = cumulative_thermal_energy_j_,
+             .cumulative_drag_energy_j = cumulative_drag_energy_j_,
+             .measured_energy_change_j = measured_energy_change,
+             .energy_residual_j = measured_energy_change - physics_energy,
+             .health = health,
+             .maximum_wind_m_s = maximum_wind,
+             .non_finite_count = non_finite_count};
+    if (state.step % config_.diagnostics.interval_steps == 0) rows_.push_back(*last_);
+  }
+
+  void write() {
+    if (last_.has_value() && (rows_.empty() || rows_.back().step != last_->step)) {
+      rows_.push_back(*last_);
+    }
+    const std::filesystem::path directory(config_.output_directory);
+    std::filesystem::create_directories(directory);
+    std::ofstream output(directory / "physics_diagnostics.csv", std::ios::trunc);
+    if (!output) throw std::runtime_error("unable to open physics diagnostics CSV");
+    output << "time_s,step,potential_temperature_mass_rate_k_kg_s,"
+              "eastward_momentum_rate_n,northward_momentum_rate_n,"
+              "thermal_energy_rate_w,rayleigh_drag_work_w,total_physics_energy_rate_w,"
+              "cumulative_thermal_energy_j,cumulative_drag_energy_j,"
+              "cumulative_physics_energy_j,measured_energy_change_j,energy_residual_j,"
+              "dry_mass_kg,tracer_mass_kg,minimum_temperature_k,maximum_wind_m_s,"
+              "non_finite_count\n";
+    output << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+    for (const auto& row : rows_) {
+      const auto physics_rate =
+          row.rates.thermal_energy_rate_w + row.rates.rayleigh_drag_work_w;
+      const auto physics_energy =
+          row.cumulative_thermal_energy_j + row.cumulative_drag_energy_j;
+      output << row.time_s << ',' << row.step << ','
+             << row.rates.potential_temperature_mass_rate_k_kg_s << ','
+             << row.rates.eastward_momentum_rate_n << ','
+             << row.rates.northward_momentum_rate_n << ','
+             << row.rates.thermal_energy_rate_w << ',' << row.rates.rayleigh_drag_work_w
+             << ',' << physics_rate << ',' << row.cumulative_thermal_energy_j << ','
+             << row.cumulative_drag_energy_j << ',' << physics_energy << ','
+             << row.measured_energy_change_j << ',' << row.energy_residual_j << ','
+             << row.health.dry_mass_kg << ',' << row.health.tracer_mass_kg << ','
+             << row.health.minimum_temperature_k << ',' << row.maximum_wind_m_s << ','
+             << row.non_finite_count << '\n';
+    }
+    if (!output)
+      throw std::runtime_error("failed while writing physics diagnostics CSV");
+  }
+
+ private:
+  const mps::ExperimentConfig& config_;
+  const mps::CubedSphereGrid& grid_;
+  std::optional<mps::Real> previous_time_s_;
+  std::optional<mps::Real> window_energy_j_;
+  mps::Real cumulative_thermal_energy_j_ = 0.0;
+  mps::Real cumulative_drag_energy_j_ = 0.0;
+  std::optional<PhysicsDiagnosticsRow> last_;
+  std::vector<PhysicsDiagnosticsRow> rows_;
+};
+
 }  // namespace
 
 int main(const int argc, const char* const argv[]) {
@@ -649,7 +760,8 @@ int main(const int argc, const char* const argv[]) {
         driver.advance(
             state, run_config.run.end_time_s,
             [&frame_context](const mps::DryHydrostaticState& sampled,
-                             const mps::DryHydrostaticDerived& derived) {
+                             const mps::DryHydrostaticDerived& derived,
+                             const mps::DryHydrostaticStepDiagnostics&) {
               if (sampled.step % frame_context.frame_interval_steps == 0) {
                 write_machine_frame_v2(frame_context, sampled, derived);
               }
@@ -699,7 +811,20 @@ int main(const int argc, const char* const argv[]) {
         state = mps::unflatten_dry_hydrostatic_state(checkpoint.time_s, checkpoint.step,
                                                      checkpoint.state, cells, levels);
       }
-      driver.advance(state, config.run.end_time_s);
+      std::optional<PhysicsDiagnosticsAccumulator> physics_diagnostics;
+      if (config.physics.kind == mps::PhysicsKind::kHeldSuarez) {
+        physics_diagnostics.emplace(config, driver.grid());
+      }
+      driver.advance(
+          state, config.run.end_time_s,
+          [&physics_diagnostics](const mps::DryHydrostaticState& sampled,
+                                 const mps::DryHydrostaticDerived& derived,
+                                 const mps::DryHydrostaticStepDiagnostics& step) {
+            if (physics_diagnostics.has_value()) {
+              physics_diagnostics->observe(sampled, derived, step);
+            }
+          });
+      if (physics_diagnostics.has_value()) physics_diagnostics->write();
       if (command_line.checkpoint_path.has_value()) {
         mps::write_checkpoint_file(
             *command_line.checkpoint_path,

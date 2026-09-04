@@ -5,6 +5,7 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_coupling.hpp"
 #include "myplanetsim/dynamics/surface_orography.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
+#include "myplanetsim/physics/held_suarez.hpp"
 namespace mps {
 struct DryHydrostaticRhs {
   std::vector<Real> surface_pressure_pa_s;
@@ -12,9 +13,17 @@ struct DryHydrostaticRhs {
   Real horizontal_stable_time_step_s;
   Real vertical_stable_time_step_s;
   Real maximum_continuity_residual_pa_s;
+  HeldSuarezDiagnostics physics_diagnostics{};
+};
+
+struct DryHydrostaticStepDiagnostics {
+  HeldSuarezDiagnostics physics_rates{};
+  Real thermal_energy_contribution_j = 0.0;
+  Real rayleigh_drag_energy_contribution_j = 0.0;
 };
 using DryHydrostaticObserver =
-    std::function<void(const DryHydrostaticState&, const DryHydrostaticDerived&)>;
+    std::function<void(const DryHydrostaticState&, const DryHydrostaticDerived&,
+                       const DryHydrostaticStepDiagnostics&)>;
 using DryHydrostaticCancel = std::function<bool()>;
 class DryHydrostaticDriver {
  public:
