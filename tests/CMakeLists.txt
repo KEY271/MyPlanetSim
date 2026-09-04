@@ -37,6 +37,8 @@ mps_add_test(phase5.dry_hydrostatic_transport test_dry_hydrostatic_transport.cpp
 set_tests_properties(phase5.dry_hydrostatic_transport PROPERTIES LABELS phase5_gate)
 mps_add_test(phase5.dry_hydrostatic_benchmarks test_dry_hydrostatic_benchmarks.cpp)
 set_tests_properties(phase5.dry_hydrostatic_benchmarks PROPERTIES LABELS phase5_gate)
+mps_add_test(phase6.orographic_responses test_orographic_responses.cpp)
+set_tests_properties(phase6.orographic_responses PROPERTIES LABELS phase6_gate)
 mps_add_test(unit.dry_hydrostatic_io test_dry_hydrostatic_io.cpp)
 mps_add_test(unit.shallow_water_initial_edits test_shallow_water_initial_edits.cpp)
 mps_add_test(unit.shallow_water_flux test_shallow_water_flux.cpp)

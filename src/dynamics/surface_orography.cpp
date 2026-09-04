@@ -55,6 +55,18 @@ Real williamson5_surface_height_m(const Vec3 position) {
   return distance < radius ? 2000.0 * (1.0 - distance / radius) : 0.0;
 }
 
+Real linear_bell_surface_height_m(const Vec3 position, const Real peak_height_m) {
+  if (!is_finite(position) || !(norm_squared(position) > 0.0) ||
+      !(peak_height_m > 0.0) || !std::isfinite(peak_height_m))
+    throw std::invalid_argument("linear bell arguments are invalid");
+  constexpr Vec3 centre{1.0, 0.0, 0.0};
+  constexpr Real radius = std::numbers::pi_v<Real> / 6.0;
+  const Real distance = safe_angle(normalize(position), centre);
+  if (!(distance < radius)) return 0.0;
+  const Real taper = std::cos(0.5 * std::numbers::pi_v<Real> * distance / radius);
+  return peak_height_m * taper * taper;
+}
+
 SurfaceOrography make_surface_orography(const OrographyParameters& parameters,
                                         const CubedSphereGrid& grid,
                                         const Real gravity_m_s2) {
@@ -76,6 +88,13 @@ SurfaceOrography make_surface_orography(const OrographyParameters& parameters,
       geopotential[cell] = gravity_m_s2 *
                            williamson5_surface_height_m(grid.cells()[cell].center);
     return SurfaceOrography(std::move(geopotential), "analytic:williamson5");
+  }
+  if (parameters.kind == OrographyKind::kLinearBell) {
+    std::vector<Real> geopotential(grid.cell_count());
+    for (std::size_t cell = 0; cell < grid.cell_count(); ++cell)
+      geopotential[cell] = gravity_m_s2 *
+                           linear_bell_surface_height_m(grid.cells()[cell].center);
+    return SurfaceOrography(std::move(geopotential), "analytic:linear_bell");
   }
   throw std::invalid_argument("selected orography initializer is not implemented");
 }

@@ -75,6 +75,7 @@ enum class DryHydrostaticTestCase {
   kDcmipHadley,
   kLinearWave,
   kDcmip200Rest,
+  kLinearMountainWave,
   kUmjs14Steady,
   kUmjs14Baroclinic
 };

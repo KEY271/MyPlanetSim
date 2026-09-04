@@ -40,4 +40,10 @@ MPS_TEST_CASE("Williamson 5 terrain is the published isolated cone") {
   MPS_CHECK_EQ(mps::williamson5_surface_height_m({1, 0, 0}), 0.0);
 }
 
+MPS_TEST_CASE("linear bell has fixed support and test-only amplitude scaling") {
+  MPS_CHECK_NEAR(mps::linear_bell_surface_height_m({1, 0, 0}), 10, 1e-14);
+  MPS_CHECK_NEAR(mps::linear_bell_surface_height_m({1, 0, 0}, 5), 5, 1e-14);
+  MPS_CHECK_EQ(mps::linear_bell_surface_height_m({-1, 0, 0}), 0.0);
+}
+
 int main() { return mps::test::run_all(); }

@@ -38,6 +38,14 @@ DryHydrostaticState initialize_dry_hydrostatic_benchmark(
                    config.planet.gravity_m_s2 /
                        (config.planet.gas_constant_j_kg_k * lapse_rate_k_m));
     }
+    if (config.dry_hydrostatic.test_case ==
+        DryHydrostaticTestCase::kLinearMountainWave) {
+      state.surface_pressure_pa[cell] =
+          config.planet.reference_pressure_pa *
+          std::exp(-orography.surface_geopotential_m2_s2()[cell] /
+                   (config.planet.gas_constant_j_kg_k *
+                    config.vertical.initial_temperature_k));
+    }
     const auto geometry = coordinate.geometry(
         state.surface_pressure_pa[cell], config.planet.gravity_m_s2,
         config.planet.gas_constant_j_kg_k, config.planet.heat_capacity_cp_j_kg_k,
@@ -48,6 +56,9 @@ DryHydrostaticState initialize_dry_hydrostatic_benchmark(
       Vec3 velocity{};
       Real tracer = 0.0;
       switch (config.dry_hydrostatic.test_case) {
+        case DryHydrostaticTestCase::kLinearMountainWave:
+          velocity = 10.0 * cross(Vec3{0, 0, 1}, position);
+          break;
         case DryHydrostaticTestCase::kSolidBodyTransport:
           velocity = 20.0 * cross(Vec3{0, 0, 1}, position);
           tracer = std::exp(-20.0 * ((longitude - 0.5) * (longitude - 0.5) +

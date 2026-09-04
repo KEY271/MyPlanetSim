@@ -346,11 +346,11 @@ MPS_TEST_CASE("orography configuration is bounded and conditionally canonical") 
 
   const auto analytic =
       parse(std::string(kValidDryHydrostaticConfig) +
-            "orography.kind = linear_bell\n");
-  MPS_CHECK(analytic.orography.kind == mps::OrographyKind::kLinearBell);
+            "orography.kind = jw06\n");
+  MPS_CHECK(analytic.orography.kind == mps::OrographyKind::kJw06);
   std::ostringstream analytic_output;
   mps::write_experiment_config(analytic_output, analytic);
-  MPS_CHECK(analytic_output.str().find("orography.kind = linear_bell\n") !=
+  MPS_CHECK(analytic_output.str().find("orography.kind = jw06\n") !=
             std::string::npos);
 
   const std::string imported =

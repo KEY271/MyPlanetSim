@@ -31,5 +31,7 @@ class SurfaceOrography {
     Real gravity_m_s2);
 [[nodiscard]] Real dcmip_2_0_0_surface_height_m(Vec3 position);
 [[nodiscard]] Real williamson5_surface_height_m(Vec3 position);
+[[nodiscard]] Real linear_bell_surface_height_m(Vec3 position,
+                                                Real peak_height_m = 10.0);
 
 }  // namespace mps
