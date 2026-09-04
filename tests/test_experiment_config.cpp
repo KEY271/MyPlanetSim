@@ -214,6 +214,7 @@ MPS_TEST_CASE("transport configuration has a strict canonical round trip") {
   MPS_CHECK_THROWS_AS(
       parse(std::string(kValidTransportConfig) + "ode.initial_value = 1\n"),
       std::runtime_error);
+
 }
 
 MPS_TEST_CASE("transport configuration rejects invalid numerical choices") {
@@ -313,6 +314,14 @@ MPS_TEST_CASE("dry-hydrostatic configuration reuses vertical schema strictly") {
   MPS_CHECK_THROWS_AS(parse(std::string(kValidDryHydrostaticConfig) +
                             "vertical.forcing_amplitude = 0\n"),
                       std::runtime_error);
+  auto dcmip_text = std::string(kValidDryHydrostaticConfig);
+  const auto test_case = dcmip_text.find("isothermal_rest");
+  dcmip_text.replace(test_case, std::string("isothermal_rest").size(),
+                     "dcmip_2_0_0_rest");
+  const auto dcmip =
+      parse(dcmip_text + "orography.kind = dcmip_2_0_0\n");
+  MPS_CHECK(dcmip.dry_hydrostatic.test_case ==
+            mps::DryHydrostaticTestCase::kDcmip200Rest);
 }
 
 MPS_TEST_CASE("orography configuration is bounded and conditionally canonical") {
@@ -323,11 +332,11 @@ MPS_TEST_CASE("orography configuration is bounded and conditionally canonical") 
 
   const auto analytic =
       parse(std::string(kValidDryHydrostaticConfig) +
-            "orography.kind = dcmip_2_0_0\n");
-  MPS_CHECK(analytic.orography.kind == mps::OrographyKind::kDcmip200);
+            "orography.kind = linear_bell\n");
+  MPS_CHECK(analytic.orography.kind == mps::OrographyKind::kLinearBell);
   std::ostringstream analytic_output;
   mps::write_experiment_config(analytic_output, analytic);
-  MPS_CHECK(analytic_output.str().find("orography.kind = dcmip_2_0_0\n") !=
+  MPS_CHECK(analytic_output.str().find("orography.kind = linear_bell\n") !=
             std::string::npos);
 
   const std::string imported =

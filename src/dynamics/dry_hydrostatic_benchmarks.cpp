@@ -6,11 +6,14 @@ namespace mps {
 
 DryHydrostaticState initialize_dry_hydrostatic_benchmark(
     const ExperimentConfig& config, const CubedSphereGrid& grid,
-    const AtmosphericHybridCoordinate& coordinate) {
+    const AtmosphericHybridCoordinate& coordinate,
+    const SurfaceOrography& orography) {
   DryHydrostaticState state{.time_s = config.run.start_time_s};
   const auto cells = grid.cell_count();
   const auto levels = coordinate.levels();
   state.surface_pressure_pa.assign(cells, config.vertical.surface_pressure_pa);
+  if (orography.surface_geopotential_m2_s2().size() != cells)
+    throw std::invalid_argument("benchmark orography shape does not match grid");
   state.horizontal_momentum_mass_kg_m_s.resize(cells * levels);
   state.potential_temperature_mass_k_kg_m2.resize(cells * levels);
   state.tracer_mass_kg_m2.resize(cells * levels);
@@ -22,6 +25,18 @@ DryHydrostaticState initialize_dry_hydrostatic_benchmark(
     if (config.dry_hydrostatic.test_case == DryHydrostaticTestCase::kLinearWave) {
       state.surface_pressure_pa[cell] *=
           1.0 + 1.0e-5 * std::cos(longitude) * std::cos(latitude);
+    }
+    if (config.dry_hydrostatic.test_case ==
+        DryHydrostaticTestCase::kDcmip200Rest) {
+      constexpr Real reference_temperature_k = 300.0;
+      constexpr Real lapse_rate_k_m = 0.0065;
+      const Real height_m = orography.surface_geopotential_m2_s2()[cell] /
+                            config.planet.gravity_m_s2;
+      state.surface_pressure_pa[cell] =
+          config.planet.reference_pressure_pa *
+          std::pow(1.0 - lapse_rate_k_m * height_m / reference_temperature_k,
+                   config.planet.gravity_m_s2 /
+                       (config.planet.gas_constant_j_kg_k * lapse_rate_k_m));
     }
     const auto geometry = coordinate.geometry(
         state.surface_pressure_pa[cell], config.planet.gravity_m_s2,
@@ -58,8 +73,17 @@ DryHydrostaticState initialize_dry_hydrostatic_benchmark(
         default:
           break;
       }
-      const Real theta =
-          config.vertical.initial_temperature_k / geometry.exner_full[level];
+      Real temperature = config.vertical.initial_temperature_k;
+      if (config.dry_hydrostatic.test_case ==
+          DryHydrostaticTestCase::kDcmip200Rest) {
+        constexpr Real lapse_rate_k_m = 0.0065;
+        temperature = 300.0 *
+                      std::pow(geometry.pressure_full_pa[level] /
+                                   config.planet.reference_pressure_pa,
+                               config.planet.gas_constant_j_kg_k * lapse_rate_k_m /
+                                   config.planet.gravity_m_s2);
+      }
+      const Real theta = temperature / geometry.exner_full[level];
       state.horizontal_momentum_mass_kg_m_s[offset] =
           geometry.air_mass_kg_m2[level] * velocity;
       state.potential_temperature_mass_k_kg_m2[offset] =

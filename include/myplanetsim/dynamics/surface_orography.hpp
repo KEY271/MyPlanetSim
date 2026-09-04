@@ -27,6 +27,8 @@ class SurfaceOrography {
 };
 
 [[nodiscard]] SurfaceOrography make_surface_orography(
-    const OrographyParameters& parameters, const CubedSphereGrid& grid);
+    const OrographyParameters& parameters, const CubedSphereGrid& grid,
+    Real gravity_m_s2);
+[[nodiscard]] Real dcmip_2_0_0_surface_height_m(Vec3 position);
 
 }  // namespace mps

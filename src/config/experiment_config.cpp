@@ -424,6 +424,8 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kDcmipHadley;
     else if (value == "linear_wave")
       config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kLinearWave;
+    else if (value == "dcmip_2_0_0_rest")
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kDcmip200Rest;
     else if (value == "umjs14_steady")
       config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kUmjs14Steady;
     else if (value == "umjs14_baroclinic")
@@ -647,6 +649,10 @@ void ExperimentConfig::validate() const {
       throw std::invalid_argument(
           "dry_hydrostatic diffusion coefficient must be zero exactly when kind is "
           "none");
+    if ((dry_hydrostatic.test_case == DryHydrostaticTestCase::kDcmip200Rest) !=
+        (orography.kind == OrographyKind::kDcmip200))
+      throw std::invalid_argument(
+          "dcmip_2_0_0_rest requires dcmip_2_0_0 orography and vice versa");
   }
 
   if (orography.kind == OrographyKind::kFlat) {
@@ -962,6 +968,8 @@ std::string_view dry_hydrostatic_test_case_name(
       return "dcmip_hadley";
     case DryHydrostaticTestCase::kLinearWave:
       return "linear_wave";
+    case DryHydrostaticTestCase::kDcmip200Rest:
+      return "dcmip_2_0_0_rest";
     case DryHydrostaticTestCase::kUmjs14Steady:
       return "umjs14_steady";
     case DryHydrostaticTestCase::kUmjs14Baroclinic:

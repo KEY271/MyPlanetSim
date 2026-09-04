@@ -15,12 +15,14 @@ DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
                   config_.vertical.minimum_surface_pressure_pa,
                   config_.vertical.maximum_surface_pressure_pa,
                   config_.vertical.minimum_pressure_thickness_pa),
-      orography_(make_surface_orography(config_.orography, grid_)) {
+      orography_(make_surface_orography(config_.orography, grid_,
+                                        config_.planet.gravity_m_s2)) {
   if (config_.kind != ExperimentKind::kDryHydrostatic)
     throw std::invalid_argument("dry driver requires dry_hydrostatic config");
 }
 DryHydrostaticState DryHydrostaticDriver::initial_state() const {
-  return initialize_dry_hydrostatic_benchmark(config_, grid_, coordinate_);
+  return initialize_dry_hydrostatic_benchmark(config_, grid_, coordinate_,
+                                               orography_);
 }
 DryHydrostaticDerived DryHydrostaticDriver::diagnose(
     const DryHydrostaticState& s) const {
