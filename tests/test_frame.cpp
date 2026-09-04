@@ -73,4 +73,6 @@ MPS_TEST_CASE("FrameV1 rejects truncation and wrong fingerprint") {
   std::filesystem::remove(truncated);
 }
 
+MPS_TEST_CASE("FrameV2 round trips fixed cell-major level fields") {const mps::CubedSphereGrid grid(1,1);mps::DryHydrostaticDerived d{.cells=6,.levels=2,.pressure_pa=std::vector<mps::Real>(12,50000),.velocity_m_s=std::vector<mps::Vec3>(12,{1,2,3}),.potential_temperature_k=std::vector<mps::Real>(12,300),.tracer_mixing_ratio=std::vector<mps::Real>(12,.5),.temperature_k=std::vector<mps::Real>(12,280)};auto output=path();mps::write_frame_v2_file(output,{.cells_per_panel=1,.levels=2,.time_s=3,.step=4,.config_fingerprint="fp"},std::vector<mps::Real>(6,100000),d);auto f=mps::read_frame_v2_file(output,"fp");MPS_CHECK_EQ(f.metadata.levels,2);MPS_CHECK_EQ(f.derived.pressure_pa.size(),12U);MPS_CHECK_EQ(f.derived.velocity_m_s[3].z,3.0);std::filesystem::remove(output);}
+
 int main() { return mps::test::run_all(); }
