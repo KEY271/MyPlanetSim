@@ -72,6 +72,30 @@ DryHydrostaticState unflatten_dry_hydrostatic_state(const Real time_s,
   return state;
 }
 
+std::vector<Real> flatten_dry_hydrostatic_surface_state(
+    const DryHydrostaticState& state, const std::size_t levels) {
+  if (state.surface_temperature_k.size() != state.surface_pressure_pa.size())
+    throw std::invalid_argument("surface state must contain one temperature per cell");
+  auto values = flatten_dry_hydrostatic_state(state, levels);
+  values.insert(values.end(), state.surface_temperature_k.begin(),
+                state.surface_temperature_k.end());
+  return values;
+}
+
+DryHydrostaticState unflatten_dry_hydrostatic_surface_state(
+    const Real time_s, const std::uint64_t step, const std::span<const Real> values,
+    const std::size_t cells, const std::size_t levels) {
+  const std::size_t atmospheric_size = cells + 5 * cells * levels;
+  if (cells == 0 || values.size() != atmospheric_size + cells)
+    throw std::invalid_argument(
+        "dry hydrostatic surface flat state size does not match shape");
+  auto state = unflatten_dry_hydrostatic_state(
+      time_s, step, values.first(atmospheric_size), cells, levels);
+  state.surface_temperature_k.assign(
+      values.begin() + static_cast<std::ptrdiff_t>(atmospheric_size), values.end());
+  return state;
+}
+
 DryHydrostaticDerived diagnose_dry_hydrostatic_state(
     const DryHydrostaticState& state, const AtmosphericHybridCoordinate& coordinate,
     const PlanetParameters& planet) {

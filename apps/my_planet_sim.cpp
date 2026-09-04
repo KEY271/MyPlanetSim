@@ -11,6 +11,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -731,6 +732,10 @@ int main(const int argc, const char* const argv[]) {
         throw std::invalid_argument("dry hydrostatic supports only ssprk3");
       }
       if (command_line.control_request_path.has_value()) {
+        if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance) {
+          throw std::invalid_argument(
+              "machine control mode does not support surface energy balance");
+        }
         if (command_line.restart_path.has_value() ||
             command_line.checkpoint_path.has_value()) {
           throw std::invalid_argument(
@@ -806,11 +811,19 @@ int main(const int argc, const char* const argv[]) {
       if (command_line.restart_path.has_value()) {
         const auto cells = driver.grid().cell_count();
         const auto levels = static_cast<std::size_t>(config.vertical.levels);
-        auto checkpoint = mps::read_checkpoint_file(
-            *command_line.restart_path, fingerprint,
-            mps::kDryHydrostaticCheckpointLayout, cells + 5 * cells * levels);
-        state = mps::unflatten_dry_hydrostatic_state(checkpoint.time_s, checkpoint.step,
-                                                     checkpoint.state, cells, levels);
+        const bool has_surface =
+            config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance;
+        const auto layout = has_surface ? mps::kDryHydrostaticSurfaceCheckpointLayout
+                                        : mps::kDryHydrostaticCheckpointLayout;
+        const auto state_size = cells + 5 * cells * levels + (has_surface ? cells : 0);
+        auto checkpoint = mps::read_checkpoint_file(*command_line.restart_path,
+                                                    fingerprint, layout, state_size);
+        state = has_surface ? mps::unflatten_dry_hydrostatic_surface_state(
+                                  checkpoint.time_s, checkpoint.step, checkpoint.state,
+                                  cells, levels)
+                            : mps::unflatten_dry_hydrostatic_state(
+                                  checkpoint.time_s, checkpoint.step, checkpoint.state,
+                                  cells, levels);
       }
       std::optional<PhysicsDiagnosticsAccumulator> physics_diagnostics;
       std::optional<mps::ClimateStatisticsAccumulator> climate_statistics;
@@ -820,18 +833,24 @@ int main(const int argc, const char* const argv[]) {
         climate_statistics.emplace(driver.grid(),
                                    static_cast<std::size_t>(config.vertical.levels));
       }
-      driver.advance(state, config.run.end_time_s,
-                     [&physics_diagnostics, &climate_statistics](
-                         const mps::DryHydrostaticState& sampled,
-                         const mps::DryHydrostaticDerived& derived,
-                         const mps::DryHydrostaticStepDiagnostics& step) {
-                       if (physics_diagnostics.has_value()) {
-                         physics_diagnostics->observe(sampled, derived, step);
-                       }
-                       if (climate_statistics.has_value()) {
-                         climate_statistics->observe(sampled, derived);
-                       }
-                     });
+      std::vector<std::pair<mps::Real, mps::SurfaceEnergyDiagnostics>>
+          surface_diagnostics;
+      driver.advance(
+          state, config.run.end_time_s,
+          [&physics_diagnostics, &climate_statistics, &surface_diagnostics, &config](
+              const mps::DryHydrostaticState& sampled,
+              const mps::DryHydrostaticDerived& derived,
+              const mps::DryHydrostaticStepDiagnostics& step) {
+            if (physics_diagnostics.has_value()) {
+              physics_diagnostics->observe(sampled, derived, step);
+            }
+            if (climate_statistics.has_value()) {
+              climate_statistics->observe(sampled, derived);
+            }
+            if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance &&
+                sampled.step % config.diagnostics.interval_steps == 0)
+              surface_diagnostics.emplace_back(sampled.time_s, step.surface_rates);
+          });
       if (physics_diagnostics.has_value()) physics_diagnostics->write();
       if (climate_statistics.has_value()) {
         const std::filesystem::path directory(config.output_directory);
@@ -840,15 +859,69 @@ int main(const int argc, const char* const argv[]) {
         if (!output) throw std::runtime_error("unable to open climate statistics CSV");
         mps::write_climate_statistics_csv(output, climate_statistics->rows());
       }
+      if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance) {
+        const std::filesystem::path directory(config.output_directory);
+        std::filesystem::create_directories(directory);
+        std::ofstream surface_state(directory / "surface_state.csv", std::ios::trunc);
+        if (!surface_state)
+          throw std::runtime_error("unable to open surface state CSV");
+        surface_state << std::setprecision(17)
+                      << "panel,i,j,longitude_deg,latitude_deg,height_m,"
+                         "land_fraction,heat_capacity_j_m2_k,"
+                         "surface_temperature_k\n";
+        const auto& boundary = *driver.surface_boundary();
+        for (std::size_t cell = 0; cell < driver.grid().cell_count(); ++cell) {
+          const auto& geometry = driver.grid().cells()[cell];
+          const auto longitude = std::atan2(geometry.center.y, geometry.center.x) *
+                                 180.0 / std::numbers::pi_v<mps::Real>;
+          const auto latitude = std::asin(std::clamp(geometry.center.z, -1.0, 1.0)) *
+                                180.0 / std::numbers::pi_v<mps::Real>;
+          const auto fraction = boundary.land_fraction()[cell];
+          surface_state << mps::panel_index(geometry.id.panel) << ',' << geometry.id.i
+                        << ',' << geometry.id.j << ',' << longitude << ',' << latitude
+                        << ','
+                        << boundary.surface_geopotential_m2_s2()[cell] /
+                               config.planet.gravity_m_s2
+                        << ',' << fraction << ','
+                        << mps::mixed_surface_heat_capacity(
+                               fraction, config.surface->land_heat_capacity_j_m2_k,
+                               config.surface->ocean_heat_capacity_j_m2_k)
+                        << ',' << state.surface_temperature_k[cell] << '\n';
+        }
+        std::ofstream diagnostics_output(directory / "surface_diagnostics.csv",
+                                         std::ios::trunc);
+        if (!diagnostics_output)
+          throw std::runtime_error("unable to open surface diagnostics CSV");
+        diagnostics_output
+            << std::setprecision(17)
+            << "time_s,absorbed_stellar_power_w,internal_heat_power_w,"
+               "outgoing_longwave_power_w,sensible_to_atmosphere_power_w,"
+               "surface_storage_rate_w,surface_budget_residual_w\n";
+        for (const auto& [time, rates] : surface_diagnostics)
+          diagnostics_output << time << ',' << rates.absorbed_stellar_power_w << ','
+                             << rates.internal_heat_power_w << ','
+                             << rates.outgoing_longwave_power_w << ','
+                             << rates.sensible_to_atmosphere_power_w << ','
+                             << rates.surface_storage_rate_w << ','
+                             << rates.surface_budget_residual_w << '\n';
+      }
       if (command_line.checkpoint_path.has_value()) {
+        const bool has_surface =
+            config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance;
         mps::write_checkpoint_file(
             *command_line.checkpoint_path,
             {.time_s = state.time_s,
              .step = state.step,
-             .state = mps::flatten_dry_hydrostatic_state(
-                 state, static_cast<std::size_t>(config.vertical.levels)),
+             .state =
+                 has_surface
+                     ? mps::flatten_dry_hydrostatic_surface_state(
+                           state, static_cast<std::size_t>(config.vertical.levels))
+                     : mps::flatten_dry_hydrostatic_state(
+                           state, static_cast<std::size_t>(config.vertical.levels)),
              .config_fingerprint = fingerprint,
-             .layout_id = std::string(mps::kDryHydrostaticCheckpointLayout)});
+             .layout_id =
+                 std::string(has_surface ? mps::kDryHydrostaticSurfaceCheckpointLayout
+                                         : mps::kDryHydrostaticCheckpointLayout)});
       }
       const auto derived = driver.diagnose(state);
       const auto diagnostics = mps::diagnose_dry_hydrostatic_budgets(

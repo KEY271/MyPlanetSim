@@ -19,6 +19,29 @@ MPS_TEST_CASE("dry hydrostatic state is cell-major and round trips") {
                       std::invalid_argument);
 }
 
+MPS_TEST_CASE("surface checkpoint layout appends one optional cell tail") {
+  mps::DryHydrostaticState state{
+      .time_s = 4,
+      .step = 2,
+      .surface_pressure_pa = {90000, 100000},
+      .horizontal_momentum_mass_kg_m_s = {{1, 2, 3}, {4, 5, 6}},
+      .potential_temperature_mass_k_kg_m2 = {7, 8},
+      .tracer_mass_kg_m2 = {9, 10},
+      .surface_temperature_k = {280, 300}};
+  const auto atmospheric = mps::flatten_dry_hydrostatic_state(state, 1);
+  const auto surface = mps::flatten_dry_hydrostatic_surface_state(state, 1);
+  MPS_CHECK_EQ(atmospheric.size(), 12U);
+  MPS_CHECK_EQ(surface.size(), 14U);
+  for (std::size_t index = 0; index < atmospheric.size(); ++index)
+    MPS_CHECK_EQ(surface[index], atmospheric[index]);
+  const auto restored = mps::unflatten_dry_hydrostatic_surface_state(
+      state.time_s, state.step, surface, 2, 1);
+  MPS_CHECK(restored.surface_temperature_k == state.surface_temperature_k);
+  MPS_CHECK_THROWS_AS(
+      mps::unflatten_dry_hydrostatic_surface_state(0, 0, atmospheric, 2, 1),
+      std::invalid_argument);
+}
+
 MPS_TEST_CASE("cellwise lower boundary shifts only diagnosed geopotential") {
   const mps::AtmosphericHybridCoordinate coordinate({{1000, 0}, {0, 1}}, 90000, 110000,
                                                     100);

@@ -14,6 +14,8 @@ namespace mps {
 
 inline constexpr std::string_view kDryHydrostaticCheckpointLayout =
     "dry_hydrostatic_cell_column_v1";
+inline constexpr std::string_view kDryHydrostaticSurfaceCheckpointLayout =
+    "dry_hydrostatic_surface_v1";
 
 struct DryHydrostaticState {
   Real time_s = 0.0;
@@ -45,6 +47,11 @@ struct DryHydrostaticDerived {
 [[nodiscard]] std::vector<Real> flatten_dry_hydrostatic_state(
     const DryHydrostaticState& state, std::size_t levels);
 [[nodiscard]] DryHydrostaticState unflatten_dry_hydrostatic_state(
+    Real time_s, std::uint64_t step, std::span<const Real> values, std::size_t cells,
+    std::size_t levels);
+[[nodiscard]] std::vector<Real> flatten_dry_hydrostatic_surface_state(
+    const DryHydrostaticState& state, std::size_t levels);
+[[nodiscard]] DryHydrostaticState unflatten_dry_hydrostatic_surface_state(
     Real time_s, std::uint64_t step, std::span<const Real> values, std::size_t cells,
     std::size_t levels);
 [[nodiscard]] DryHydrostaticDerived diagnose_dry_hydrostatic_state(
