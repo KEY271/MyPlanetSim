@@ -53,7 +53,18 @@ Phase 0 の科学・ソフトウェア基盤、Phase 1 の cubed-sphere 幾何�
 
 ### Phase 3 Web UI と native gateway
 
-UI は C++ を必要としない mock/offline preview として起動できます。
+[`just`](https://github.com/casey/just) が利用できる場合、repository root から次の1コマンドで
+native gateway と live UI を起動できます。必要な C++ build または `node_modules` がなければ
+初回だけ自動セットアップし、接続用URLを標準出力へ表示します。終了は `Ctrl-C` です。
+
+```sh
+just dev
+```
+
+既定portを変更する場合は `just dev 9876 5174`、offline/mock UIだけなら `just ui`、
+gatewayだけなら `just gateway` を使用します。全検証は `just check` で実行できます。
+
+`just` を使わない場合、UI は C++ を必要としない mock/offline preview として起動できます。
 
 ```sh
 cd web

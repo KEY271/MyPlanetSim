@@ -1,5 +1,6 @@
 /build/
 /output/
+/.runs/
 /web/node_modules/
 /web/**/dist/
 /web/coverage/

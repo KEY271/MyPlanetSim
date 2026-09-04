@@ -207,7 +207,7 @@ export async function startGateway(options) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const binary = process.env.MPS_SIMULATOR_BINARY; const preset = process.env.MPS_REST_PRESET;
   if (!binary || !preset) throw new Error("MPS_SIMULATOR_BINARY and MPS_REST_PRESET are required");
-  const gateway = await startGateway({ binary, presets: { rest: preset }, runRoot: process.env.MPS_RUN_ROOT ?? ".runs", port: Number(process.env.MPS_GATEWAY_PORT ?? 0) });
+  const gateway = await startGateway({ binary, presets: { rest: preset }, runRoot: process.env.MPS_RUN_ROOT ?? ".runs", sessionToken: process.env.MPS_SESSION_TOKEN, port: Number(process.env.MPS_GATEWAY_PORT ?? 0) });
   const address = gateway.server.address();
   console.log(JSON.stringify({ host: "127.0.0.1", port: typeof address === "object" ? address.port : address, token: gateway.token }));
 }
