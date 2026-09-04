@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "myplanetsim/core/orbit_parameters.hpp"
 #include "myplanetsim/core/planet_parameters.hpp"
 #include "myplanetsim/core/types.hpp"
 
@@ -47,7 +48,8 @@ enum class ShallowWaterTestCase {
   kGalewsky
 };
 enum class DiffusionKind { kNone, kLaplacian, kBiharmonic };
-enum class PhysicsKind { kNone, kHeldSuarez };
+enum class PhysicsKind { kNone, kHeldSuarez, kPlanetaryNewtonian };
+enum class ForcingGeometry { kAxisymmetric, kSubstellar };
 enum class OrographyKind {
   kFlat,
   kDcmip200,
@@ -159,6 +161,7 @@ struct DiagnosticsParameters {
 
 struct PhysicsParameters {
   PhysicsKind kind = PhysicsKind::kNone;
+  ForcingGeometry geometry = ForcingGeometry::kAxisymmetric;
 };
 
 struct SurfaceParameters {
@@ -173,6 +176,7 @@ struct SurfaceParameters {
 struct ExperimentConfig {
   ExperimentKind kind = ExperimentKind::kOde;
   PlanetParameters planet;
+  std::optional<OrbitParameters> orbit;
   RunParameters run;
   OdeParameters ode;
   GridParameters grid{};
@@ -215,6 +219,7 @@ struct ExperimentConfig {
     DryHydrostaticTestCase test_case) noexcept;
 [[nodiscard]] std::string_view orography_kind_name(OrographyKind kind) noexcept;
 [[nodiscard]] std::string_view physics_kind_name(PhysicsKind kind) noexcept;
+[[nodiscard]] std::string_view forcing_geometry_name(ForcingGeometry geometry) noexcept;
 [[nodiscard]] std::string_view surface_geography_name(
     SurfaceGeography geography) noexcept;
 

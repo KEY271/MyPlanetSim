@@ -814,7 +814,8 @@ int main(const int argc, const char* const argv[]) {
       }
       std::optional<PhysicsDiagnosticsAccumulator> physics_diagnostics;
       std::optional<mps::ClimateStatisticsAccumulator> climate_statistics;
-      if (config.physics.kind == mps::PhysicsKind::kHeldSuarez) {
+      if (config.physics.kind == mps::PhysicsKind::kHeldSuarez ||
+          config.physics.kind == mps::PhysicsKind::kPlanetaryNewtonian) {
         physics_diagnostics.emplace(config, driver.grid());
         climate_statistics.emplace(driver.grid(),
                                    static_cast<std::size_t>(config.vertical.levels));

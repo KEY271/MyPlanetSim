@@ -203,6 +203,43 @@ MPS_TEST_CASE("fractional surface configuration is optional and strict") {
                "f6c9b8886a03d401");
 }
 
+MPS_TEST_CASE("planetary forcing has conditional orbit requirements") {
+  auto base = std::string(kValidDryHydrostaticConfig);
+  const auto test_case = base.find("dry_hydrostatic.test_case = isothermal_rest");
+  base.replace(test_case,
+               std::string("dry_hydrostatic.test_case = isothermal_rest").size(),
+               "dry_hydrostatic.test_case = held_suarez");
+  const auto axisymmetric = parse(base +
+                                  "physics.kind = planetary_newtonian\n"
+                                  "forcing.geometry = axisymmetric\n"
+                                  "surface.geography = uniform\n"
+                                  "surface.uniform_land_fraction = 0\n");
+  MPS_CHECK(axisymmetric.physics.kind == mps::PhysicsKind::kPlanetaryNewtonian);
+  MPS_CHECK(!axisymmetric.orbit.has_value());
+  MPS_CHECK_THROWS_AS(parse(base + "physics.kind = planetary_newtonian\n"
+                                   "forcing.geometry = substellar\n"
+                                   "surface.geography = uniform\n"
+                                   "surface.uniform_land_fraction = 0\n"),
+                      std::runtime_error);
+
+  const auto substellar = parse(base +
+                                "physics.kind = planetary_newtonian\n"
+                                "forcing.geometry = substellar\n"
+                                "surface.geography = uniform\n"
+                                "surface.uniform_land_fraction = 0\n"
+                                "orbit.period_s = 86400\n"
+                                "orbit.eccentricity = 0\n"
+                                "orbit.obliquity_rad = 0\n"
+                                "orbit.longitude_of_periapsis_rad = 0\n"
+                                "orbit.initial_mean_anomaly_rad = 0\n"
+                                "orbit.initial_substellar_longitude_rad = 0\n"
+                                "star.flux_at_semimajor_axis_w_m2 = 1361\n");
+  MPS_CHECK(substellar.orbit.has_value());
+  std::ostringstream canonical;
+  mps::write_experiment_config(canonical, substellar);
+  MPS_CHECK(parse(canonical.str()).orbit.has_value());
+}
+
 MPS_TEST_CASE("configuration has a canonical round trip") {
   const auto first = parse(kValidConfig);
   std::ostringstream output;

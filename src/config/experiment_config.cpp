@@ -35,6 +35,16 @@ constexpr std::array<std::string_view, 11> kCommonRequiredKeys{
     "output.directory",
 };
 
+constexpr std::array<std::string_view, 7> kOrbitRequiredKeys{
+    "orbit.period_s",
+    "orbit.eccentricity",
+    "orbit.obliquity_rad",
+    "orbit.longitude_of_periapsis_rad",
+    "orbit.initial_mean_anomaly_rad",
+    "orbit.initial_substellar_longitude_rad",
+    "star.flux_at_semimajor_axis_w_m2",
+};
+
 constexpr std::array<std::string_view, 2> kOdeRequiredKeys{"ode.initial_value",
                                                            "ode.decay_rate_s_1"};
 
@@ -226,6 +236,22 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
     config.planet.heat_capacity_cp_j_kg_k = parse_real(value, line, key);
   } else if (key == "planet.reference_pressure_pa") {
     config.planet.reference_pressure_pa = parse_real(value, line, key);
+  } else if (key.starts_with("orbit.") || key == "star.flux_at_semimajor_axis_w_m2") {
+    if (!config.orbit.has_value()) config.orbit.emplace();
+    if (key == "orbit.period_s")
+      config.orbit->period_s = parse_real(value, line, key);
+    else if (key == "orbit.eccentricity")
+      config.orbit->eccentricity = parse_real(value, line, key);
+    else if (key == "orbit.obliquity_rad")
+      config.orbit->obliquity_rad = parse_real(value, line, key);
+    else if (key == "orbit.longitude_of_periapsis_rad")
+      config.orbit->longitude_of_periapsis_rad = parse_real(value, line, key);
+    else if (key == "orbit.initial_mean_anomaly_rad")
+      config.orbit->initial_mean_anomaly_rad = parse_real(value, line, key);
+    else if (key == "orbit.initial_substellar_longitude_rad")
+      config.orbit->initial_substellar_longitude_rad = parse_real(value, line, key);
+    else
+      config.orbit->stellar_flux_at_semimajor_axis_w_m2 = parse_real(value, line, key);
   } else if (key == "run.start_time_s") {
     config.run.start_time_s = parse_real(value, line, key);
   } else if (key == "run.end_time_s") {
@@ -491,8 +517,17 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.physics.kind = PhysicsKind::kNone;
     else if (value == "held_suarez")
       config.physics.kind = PhysicsKind::kHeldSuarez;
+    else if (value == "planetary_newtonian")
+      config.physics.kind = PhysicsKind::kPlanetaryNewtonian;
     else
       throw parse_error(line, "unknown physics.kind " + std::string(value));
+  } else if (key == "forcing.geometry") {
+    if (value == "axisymmetric")
+      config.physics.geometry = ForcingGeometry::kAxisymmetric;
+    else if (value == "substellar")
+      config.physics.geometry = ForcingGeometry::kSubstellar;
+    else
+      throw parse_error(line, "unknown forcing.geometry " + std::string(value));
   } else if (key == "surface.geography") {
     if (!config.surface.has_value()) config.surface.emplace();
     auto& surface = *config.surface;
@@ -545,6 +580,7 @@ void require_keys(const std::set<std::string, std::less<>>& seen_keys,
 
 void ExperimentConfig::validate() const {
   planet.validate();
+  if (orbit.has_value()) orbit->validate();
   require_non_negative(run.start_time_s, "run.start_time_s");
   require_finite(run.end_time_s, "run.end_time_s");
   require_positive(run.time_step_s, "run.time_step_s");
@@ -715,10 +751,12 @@ void ExperimentConfig::validate() const {
           "JW06 test cases require jw06 orography and vice versa");
     const bool held_suarez_case =
         dry_hydrostatic.test_case == DryHydrostaticTestCase::kHeldSuarez;
-    if (held_suarez_case != (physics.kind == PhysicsKind::kHeldSuarez))
+    const bool benchmark_physics = physics.kind == PhysicsKind::kHeldSuarez ||
+                                   physics.kind == PhysicsKind::kPlanetaryNewtonian;
+    if (held_suarez_case != benchmark_physics)
       throw std::invalid_argument(
-          "held_suarez test case requires held_suarez physics and vice versa");
-    if (held_suarez_case) {
+          "held_suarez test case requires analytic benchmark physics and vice versa");
+    if (physics.kind == PhysicsKind::kHeldSuarez) {
       if (orography.kind != OrographyKind::kFlat)
         throw std::invalid_argument("held_suarez requires flat orography");
       constexpr PlanetParameters earth{6371220.0, 7.29212e-5, 9.80616,
@@ -730,6 +768,15 @@ void ExperimentConfig::validate() const {
           planet.heat_capacity_cp_j_kg_k != earth.heat_capacity_cp_j_kg_k ||
           planet.reference_pressure_pa != earth.reference_pressure_pa)
         throw std::invalid_argument("held_suarez requires registered Earth constants");
+    }
+    if (physics.kind == PhysicsKind::kPlanetaryNewtonian) {
+      if (orography.kind != OrographyKind::kFlat)
+        throw std::invalid_argument("planetary_newtonian requires flat orography");
+      if (!surface.has_value() || surface->geography != SurfaceGeography::kUniform)
+        throw std::invalid_argument(
+            "planetary_newtonian requires uniform surface geography");
+      if (physics.geometry == ForcingGeometry::kSubstellar && !orbit.has_value())
+        throw std::invalid_argument("substellar forcing requires orbit parameters");
     }
     if (surface.has_value()) {
       require_finite(surface->uniform_land_fraction, "surface.uniform_land_fraction");
@@ -840,6 +887,13 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
   }
 
   require_keys(seen_keys, kCommonRequiredKeys);
+  const bool has_orbit_key = std::ranges::any_of(
+      kOrbitRequiredKeys, [&](const auto key) { return seen_keys.contains(key); });
+  if (has_orbit_key) require_keys(seen_keys, kOrbitRequiredKeys);
+  if (config.kind != ExperimentKind::kDryHydrostatic &&
+      (has_orbit_key || seen_keys.contains("forcing.geometry")))
+    throw std::runtime_error(
+        "orbit and forcing keys are valid only for dry_hydrostatic");
   if (config.kind == ExperimentKind::kOde) {
     require_keys(seen_keys, kOdeRequiredKeys);
     for (const auto& key : seen_keys) {
@@ -938,6 +992,14 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
        has_surface_smoothing))
     throw std::runtime_error("uniform surface geography rejects Earth data options");
 
+  const bool has_forcing_geometry = seen_keys.contains("forcing.geometry");
+  if ((config.physics.kind == PhysicsKind::kPlanetaryNewtonian) != has_forcing_geometry)
+    throw std::runtime_error(
+        "planetary_newtonian physics and forcing.geometry must be specified together");
+  if (config.physics.kind == PhysicsKind::kPlanetaryNewtonian &&
+      config.physics.geometry == ForcingGeometry::kSubstellar && !has_orbit_key)
+    throw std::runtime_error("substellar forcing requires all orbit keys");
+
   config.validate();
   return config;
 }
@@ -970,6 +1032,18 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
          << "run.end_time_s = " << config.run.end_time_s << '\n'
          << "run.time_step_s = " << config.run.time_step_s << '\n'
          << "run.random_seed = " << config.run.random_seed << '\n';
+  if (config.orbit.has_value())
+    output << "orbit.period_s = " << config.orbit->period_s << '\n'
+           << "orbit.eccentricity = " << config.orbit->eccentricity << '\n'
+           << "orbit.obliquity_rad = " << config.orbit->obliquity_rad << '\n'
+           << "orbit.longitude_of_periapsis_rad = "
+           << config.orbit->longitude_of_periapsis_rad << '\n'
+           << "orbit.initial_mean_anomaly_rad = "
+           << config.orbit->initial_mean_anomaly_rad << '\n'
+           << "orbit.initial_substellar_longitude_rad = "
+           << config.orbit->initial_substellar_longitude_rad << '\n'
+           << "star.flux_at_semimajor_axis_w_m2 = "
+           << config.orbit->stellar_flux_at_semimajor_axis_w_m2 << '\n';
   if (config.kind == ExperimentKind::kOde) {
     output << "ode.initial_value = " << config.ode.initial_value << '\n'
            << "ode.decay_rate_s_1 = " << config.ode.decay_rate_s_1 << '\n';
@@ -1075,6 +1149,9 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
              << config.dry_hydrostatic.diffusion_coefficient << '\n';
       if (config.physics.kind != PhysicsKind::kNone)
         output << "physics.kind = " << physics_kind_name(config.physics.kind) << '\n';
+      if (config.physics.kind == PhysicsKind::kPlanetaryNewtonian)
+        output << "forcing.geometry = "
+               << forcing_geometry_name(config.physics.geometry) << '\n';
       if (config.surface.has_value()) {
         output << "surface.geography = "
                << surface_geography_name(config.surface->geography) << '\n';
@@ -1180,8 +1257,14 @@ std::string_view physics_kind_name(const PhysicsKind kind) noexcept {
       return "none";
     case PhysicsKind::kHeldSuarez:
       return "held_suarez";
+    case PhysicsKind::kPlanetaryNewtonian:
+      return "planetary_newtonian";
   }
   return "unknown";
+}
+
+std::string_view forcing_geometry_name(const ForcingGeometry geometry) noexcept {
+  return geometry == ForcingGeometry::kAxisymmetric ? "axisymmetric" : "substellar";
 }
 
 std::string_view surface_geography_name(const SurfaceGeography geography) noexcept {

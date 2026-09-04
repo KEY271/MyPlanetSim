@@ -85,6 +85,7 @@ add_library(
   src/io/run_metadata.cpp
   src/phase0/ode_experiment.cpp
   src/physics/held_suarez.cpp
+  src/physics/planetary_newtonian.cpp
   src/numerics/compatible_operators.cpp
   src/numerics/spherical_operators.cpp
   src/transport/spherical_transport.cpp

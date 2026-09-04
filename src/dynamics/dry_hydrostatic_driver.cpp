@@ -10,6 +10,7 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_reconstruction.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
+#include "myplanetsim/physics/planetary_newtonian.hpp"
 namespace mps {
 namespace {
 
@@ -208,6 +209,21 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
           physics.potential_temperature_mass_k_kg_m2_s[n];
     }
     physics_diagnostics = physics.diagnostics;
+  } else if (config_.physics.kind == PhysicsKind::kPlanetaryNewtonian) {
+    std::optional<OrbitState> orbit_state;
+    if (config_.physics.geometry == ForcingGeometry::kSubstellar)
+      orbit_state = evaluate_orbit(*config_.orbit, config_.planet.rotation_rate_rad_s,
+                                   s.time_s - config_.run.start_time_s);
+    auto physics = planetary_newtonian_tendency(
+        grid_, coordinate_, d, s.surface_pressure_pa, config_.planet,
+        config_.physics.geometry, orbit_state ? &*orbit_state : nullptr);
+    for (std::size_t n = 0; n < C * K; ++n) {
+      coupled.tendency.momentum[n] =
+          coupled.tendency.momentum[n] + physics.horizontal_momentum_mass_kg_m_s2[n];
+      coupled.tendency.potential_temperature_mass[n] +=
+          physics.potential_temperature_mass_k_kg_m2_s[n];
+    }
+    physics_diagnostics = physics.diagnostics;
   }
   return {.surface_pressure_pa_s = std::move(coupled.surface_pressure_pa_s),
           .tendency = std::move(coupled.tendency),
@@ -228,6 +244,16 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       sampled.physics_rates =
           held_suarez_tendency(grid_, coordinate_, derived, state.surface_pressure_pa,
                                config_.planet)
+              .diagnostics;
+    } else if (config_.physics.kind == PhysicsKind::kPlanetaryNewtonian) {
+      std::optional<OrbitState> orbit_state;
+      if (config_.physics.geometry == ForcingGeometry::kSubstellar)
+        orbit_state = evaluate_orbit(*config_.orbit, config_.planet.rotation_rate_rad_s,
+                                     state.time_s - config_.run.start_time_s);
+      sampled.physics_rates =
+          planetary_newtonian_tendency(
+              grid_, coordinate_, derived, state.surface_pressure_pa, config_.planet,
+              config_.physics.geometry, orbit_state ? &*orbit_state : nullptr)
               .diagnostics;
     }
     obs(state, derived, sampled);
