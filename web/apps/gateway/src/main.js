@@ -9,6 +9,7 @@ const maxBodyBytes = 64 * 1024;
 // Mirrors @myplanetsim/protocol maxPublishedFrames. The native solver may shrink its time step
 // below the requested maximum, so the budget is enforced again while the run streams events.
 export const maxPublishedFrames = 512;
+export const maxPublishedBytes = 256 * 1024 * 1024;
 
 export function estimatedFrameCount(run) {
   return Math.floor(Math.ceil(run.endTimeSeconds / run.maximumTimeStepSeconds) / run.frameIntervalSteps) + 2;
@@ -28,6 +29,11 @@ export function validateRunRequest(value, presets) {
       !Number.isInteger(run.frameIntervalSteps) || run.frameIntervalSteps < 1 || run.frameIntervalSteps > 1000000 ||
       !Array.isArray(initialCondition.edits) || initialCondition.edits.length > 64) throw protocolError("run parameters are outside the supported range");
   if (estimatedFrameCount(run) > maxPublishedFrames) throw protocolError(`the run would publish more than ${maxPublishedFrames} frames`);
+  const preset = presets.get(value.presetId); const details = typeof preset === "string" ? { path: preset, modelKind: "shallow_water", frameSchemaVersion: 1, levels: null, supportedEdits: ["gaussian_depth"], maximumCellsPerPanel: 96 } : preset;
+  if (grid.cellsPerPanel > details.maximumCellsPerPanel) throw protocolError("grid exceeds preset limit");
+  if (details.modelKind === "dry_hydrostatic" && initialCondition.edits.length !== 0) throw protocolError("dry hydrostatic presets do not support initial edits");
+  const frameBytes = details.frameSchemaVersion === 2 ? 8 * 6 * grid.cellsPerPanel ** 2 * (1 + 7 * details.levels) : 32 * 6 * grid.cellsPerPanel ** 2;
+  if (estimatedFrameCount(run) * frameBytes > maxPublishedBytes) throw protocolError("the run would exceed the published byte budget");
   for (const edit of initialCondition.edits) {
     if (!edit || edit.kind !== "gaussian_depth" || typeof edit.id !== "string" || !Array.isArray(edit.centerUnit) || edit.centerUnit.length !== 3 ||
         !edit.centerUnit.every(finite) || Math.abs(Math.hypot(...edit.centerUnit) - 1) > 1e-12 || !finite(edit.amplitudeMeters) ||
@@ -86,6 +92,7 @@ async function body(request) {
 export function createGatewayServer(options) {
   const binary = resolve(options.binary);
   const presets = new Map(Object.entries(options.presets ?? {}));
+  const presetDetails = [...presets.entries()].map(([id, value]) => typeof value === "string" ? { id, modelKind: "shallow_water", frameSchemaVersion: 1, levels: null, supportedEdits: ["gaussian_depth"], maximumCellsPerPanel: 96 } : { id, ...value, path: undefined });
   const runRoot = resolve(options.runRoot);
   const token = options.sessionToken ?? randomBytes(32).toString("hex");
   const spawn = options.spawn ?? defaultSpawn;
@@ -103,7 +110,7 @@ export function createGatewayServer(options) {
       if (request.method === "OPTIONS") { response.statusCode = 204; response.end(); return; }
       if (request.headers.authorization !== `Bearer ${token}`) return json(response, 401, { error: "unauthorized" });
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
-      if (request.method === "GET" && url.pathname === "/api/v1/capabilities") return json(response, 200, { protocolVersion, presets: [...presets.keys()], supportedEdits: ["gaussian_depth"] });
+      if (request.method === "GET" && url.pathname === "/api/v1/capabilities") return json(response, 200, { protocolVersion, presets: [...presets.keys()], supportedEdits: ["gaussian_depth"], presetDetails });
       if (request.method === "POST" && url.pathname === "/api/v1/runs") {
         if (activeRun) return json(response, 409, { error: "run_in_progress" });
         const requestValue = validateRunRequest(await body(request), presets);
@@ -115,7 +122,7 @@ export function createGatewayServer(options) {
           await mkdir(runRoot, { recursive: true });
           const directory = await mkdtemp(join(runRoot, "run-"));
           await mkdir(join(directory, "frames"));
-          const configPath = resolve(presets.get(requestValue.presetId));
+          const preset = presets.get(requestValue.presetId); const configPath = resolve(typeof preset === "string" ? preset : preset.path);
           const controlPath = join(directory, "control.request");
           await writeFile(controlPath, controlRequestText(requestValue, runId), "utf8");
           const child = spawn(binary, ["--config", configPath, "--control-request", controlPath, "--event-stream", "ndjson"], { cwd: directory, shell: false, stdio: ["ignore", "pipe", "pipe"] });
@@ -131,12 +138,14 @@ export function createGatewayServer(options) {
           run.lastSequence = event.sequence; run.events.push(event);
           if (event.type === "frame.ready") {
             run.frameCount = (run.frameCount ?? 0) + 1;
+            run.publishedBytes = (run.publishedBytes ?? 0) + (event.byteLength ?? 0);
             if (run.frameCount > (options.maxPublishedFrames ?? maxPublishedFrames) && !run.terminal && !run.cancellationRequested) {
               run.cancellationRequested = true; run.status = "cancelling"; run.frameBudgetExceeded = true;
               run.stderr = `${run.stderr}gateway stopped the run after the published frame budget was exceeded\n`.slice(-64 * 1024);
               run.child.kill?.("SIGTERM");
               run.forceTimer = setTimeout(() => { if (!run.terminal) run.child.kill?.("SIGKILL"); }, options.graceMilliseconds ?? 2000);
             }
+            if (run.publishedBytes > (options.maxPublishedBytes ?? maxPublishedBytes) && !run.terminal && !run.cancellationRequested) { run.cancellationRequested = true; run.status = "cancelling"; run.frameBudgetExceeded = true; run.child.kill?.("SIGTERM"); }
           }
           if (event.type === "run.completed" || event.type === "run.cancelled" || event.type === "run.failed") { run.status = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed"; run.terminal = true; }
           for (const waiter of run.waiters) waiter(event);

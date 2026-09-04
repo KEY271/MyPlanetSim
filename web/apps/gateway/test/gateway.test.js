@@ -21,6 +21,13 @@ test("control translation is strict and path-free", () => {
     /more than 512 frames/);
 });
 
+test("dry hydrostatic presets reject edits and enforce their N limit", () => {
+  const presets=new Map([["dry",{path:"dry.cfg",modelKind:"dry_hydrostatic",frameSchemaVersion:2,levels:8,supportedEdits:[],maximumCellsPerPanel:24}]]);
+  const dry={...request,presetId:"dry",initialCondition:{edits:[]}}; assert.equal(validateRunRequest(dry,presets),dry);
+  assert.throws(()=>validateRunRequest({...dry,grid:{cellsPerPanel:25}},presets),/preset limit/);
+  assert.throws(()=>validateRunRequest({...dry,initialCondition:{edits:[{kind:"gaussian_depth"}]}},presets),/do not support/);
+});
+
 test("gateway stops a run that outruns its published frame budget", async () => {
   const root = await mkdtemp(join(tmpdir(), "myplanetsim-gateway-"));
   const preset = join(root, "preset.cfg"); await writeFile(preset, "fixture");
