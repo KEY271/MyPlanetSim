@@ -44,10 +44,19 @@ function App() {
   const [run, setRun] = useState(controller.value);
   const [playing, setPlaying] = useState(false);
   const [presets, setPresets] = useState<readonly PresetDescriptorV1[]>([shallowWaterPresetDescriptor("rest")]);
+  // Swallowing this failure once left the viewer silently stuck on the built-in
+  // shallow-water preset with no way to tell that the gateway was never reached, so the
+  // error is kept and shown next to the preset selector.
+  const [presetError, setPresetError] = useState<string | null>(null);
   useEffect(() => { const unsubscribe = controller.subscribe(setRun); return () => { unsubscribe(); }; }, [controller]);
   useEffect(() => {
     let cancelled = false;
-    void controller.capabilities().then((capabilities) => { if (!cancelled) setPresets(presetDescriptors(capabilities)); }).catch(() => {});
+    void controller.capabilities()
+      .then((capabilities) => { if (!cancelled) { setPresets(presetDescriptors(capabilities)); setPresetError(null); } })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setPresetError(error instanceof Error ? error.message : "the gateway did not return its capabilities");
+      });
     return () => { cancelled = true; };
   }, [controller]);
   useEffect(() => {
@@ -77,6 +86,10 @@ function App() {
   // preset selector must not reinterpret the frames of the run that is already displayed.
   const currentFrame = run.frames[run.currentFrame];
   const dryFrame: VisualFrameV2 | null = currentFrame?.schemaVersion === 2 ? currentFrame : null;
+  // The level selector and the profile need a decoded column, so they cannot appear before
+  // the first frame. Announce them from the preset descriptor instead of leaving the panel
+  // unchanged, which read as the feature being absent.
+  const dryPending = preset.levels !== null && dryFrame === null;
   const dryField = dryFrame ? frameV2Field(dryFieldId) : null;
   const fieldId = dryFrame ? dryFieldId : shallowFieldId;
   const activeLevel = dryFrame ? Math.min(level, dryFrame.levels - 1) : 0;
@@ -126,6 +139,7 @@ function App() {
             : dataset.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
         </select></label>
         {dryFrame ? <label>Model level (0 = top) <input aria-label="Model level" type="range" min="0" max={dryFrame.levels - 1} step="1" value={activeLevel} disabled={!dryField?.volume} onChange={(event) => setLevel(Number(event.target.value))} /></label> : null}
+        {dryPending ? <label>Model level (0 = top) <input aria-label="Model level" type="range" min="0" max={(draft.levels ?? preset.levels ?? 1) - 1} step="1" value={0} disabled readOnly /></label> : null}
         <label>Grid <select value={gridMode} onChange={(event) => setGridMode(event.target.value as typeof gridMode)}><option value="off">Off</option><option value="panel_seams">Panel seams</option><option value="all_cells">All cells</option></select></label>
         <label>N (cells/face) <select value={draft.cellsPerPanel} onChange={(event) => setDraft((current) => ({ ...current, cellsPerPanel: Number(event.target.value) }))}>{gridSizes.filter((value) => value <= preset.maximumCellsPerPanel).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         {preset.levels === null ? null : <label>K (vertical resolution) <input aria-label="K vertical resolution" type="number" min="1" step="1" max={preset.maximumLevels ?? preset.levels} value={draft.levels ?? preset.levels} onChange={(event) => setDraft((current) => ({ ...current, levels: Number(event.target.value) }))} /></label>}
@@ -143,6 +157,8 @@ function App() {
       </section>
       <div className="run-tools">
         <p className="engine-status">Engine: {startupToken ? "native C++" : "deterministic demo"} · model: {preset.modelKind} · frame schema: {dryFrame ? 2 : 1}</p>
+        {presetError ? <p className="preset-error" role="alert">Preset list unavailable ({presetError}); showing the built-in shallow-water preset only.</p> : null}
+        {dryPending ? <p className="preset-hint">{preset.id} publishes {draft.levels ?? preset.levels} model levels. Run it to enable the level selector, the column profile, and the cell inspector.</p> : null}
         <p className="run-status" role="status">Run state: {run.state}{run.error ? ` · ${run.error}` : ""}</p>
         <p className="edit-status" aria-live="polite">{editable
           ? `Configured edits: ${draft.edits.length}${run.request ? ` · current run applied: ${run.request.initialCondition.edits.length}` : ""} · rings show center and sigma`

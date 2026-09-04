@@ -1,6 +1,8 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { ProtocolError, validateRunRequest } from "./index";
-import { presetDescriptors, shallowWaterPresetDescriptor } from "./client";
+import { HttpSimulationClient, presetDescriptors, shallowWaterPresetDescriptor } from "./client";
 import { decodeFrame, decodeFrameV1, decodeFrameV2, frameV2CellCount, frameV2Field, frameV2Fields, FrameV2FieldId, frameV2LevelDataset, frameV2Sample, levelSlice, selectedColumn, VisualFrameV2 } from "./visual";
 
 const fieldCount = 7;
@@ -178,6 +180,65 @@ describe("FrameV2 decoding", () => {
       expect(() => frameV2Sample(frame, "temperature", cell, 0)).toThrow(/cell is out of range/);
     }
     expect(() => frameV2Sample(frame, "temperature", 0, 3)).toThrow(/level is out of range/);
+  });
+});
+
+describe("HTTP client receiver", () => {
+  // A browser's `fetch` is a WebIDL operation on Window and throws "Illegal invocation"
+  // when it is called with any other receiver. Node's fetch ignores its receiver, so this
+  // gate asserts the receiver directly instead of relying on the call to fail.
+  it("never invokes fetch as a method of the client", async () => {
+    const receivers: unknown[] = [];
+    function probe(this: unknown) {
+      receivers.push(this);
+      return Promise.resolve(new Response(JSON.stringify({ protocolVersion: 1, presets: ["rest"], supportedEdits: ["gaussian_depth"] }),
+        { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    const client = new HttpSimulationClient("http://127.0.0.1:8787", "token", probe as unknown as typeof fetch);
+    await client.capabilities();
+    await client.submit({ protocolVersion: 1, presetId: "rest", grid: { cellsPerPanel: 2 }, run: { endTimeSeconds: 1, maximumTimeStepSeconds: 1, frameIntervalSteps: 1 }, initialCondition: { edits: [] } });
+    await client.frame("run", 0);
+    await client.bundle("run");
+    await client.cancel("run");
+    expect(receivers).toHaveLength(5);
+    for (const receiver of receivers) {
+      expect(receiver).not.toBe(client);
+      expect(receiver).toBe(globalThis);
+    }
+  });
+});
+
+describe("browser transport", () => {
+  // Node's fetch accepts any receiver, so a defect that only a browser rejects can pass the
+  // whole node suite. This drives the real client over a real socket through a fetch that
+  // enforces the browser rule, which is the closest a node gate gets to the viewer.
+  it("reads capabilities from a real server under browser fetch semantics", async () => {
+    const payload = { protocolVersion: 1, presets: ["rest", "dry"], supportedEdits: ["gaussian_depth"],
+      presetDetails: [{ id: "dry", modelKind: "dry_hydrostatic", frameSchemaVersion: 2, levels: 8, maximumLevels: 30, supportedEdits: [], maximumCellsPerPanel: 24 }] };
+    const server = createServer((request, response) => {
+      if (request.headers.authorization !== "Bearer token") { response.statusCode = 401; response.end(); return; }
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify(payload));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const nodeFetch = globalThis.fetch;
+      function browserFetch(this: unknown, ...args: Parameters<typeof fetch>) {
+        // WebIDL operations on Window reject a foreign receiver.
+        if (this !== undefined && this !== globalThis) {
+          throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+        }
+        return nodeFetch.apply(globalThis, args);
+      }
+      const client = new HttpSimulationClient(`http://127.0.0.1:${port}`, "token", browserFetch as typeof fetch);
+      const descriptors = presetDescriptors(await client.capabilities());
+      expect(descriptors.map((value) => value.id)).toEqual(["rest", "dry"]);
+      expect(descriptors[1].modelKind).toBe("dry_hydrostatic");
+      expect(descriptors[1].levels).toBe(8);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 

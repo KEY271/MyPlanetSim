@@ -107,11 +107,23 @@ generated coordinate, a configuration fingerprint distinct from the preset's, an
 of `K = 0` and `K = 31` before the solver is started. The shallow-water
 FrameV1 live run and cancel in the same file are unchanged.
 
+### Browser transport
+
+Node's `fetch` accepts any receiver, so the viewer's HTTP client passed the whole node
+suite while calling `fetch` as a method of the client, which a browser rejects with
+`Illegal invocation`. Every request from the browser therefore failed, and the viewer fell
+back to its built-in shallow-water preset without reporting anything. `frame-v2.test.ts`
+now asserts that the client never invokes `fetch` with itself as the receiver, and drives
+the real client over a real socket through a `fetch` that enforces the browser rule. Both
+checks fail with the browser error if the binding is removed.
+
 ### Known gaps
 
 - The offline/mock client publishes FrameV1 only, so the dry hydrostatic viewer requires
   the native gateway; there is no browser-side dry model to regress against.
 - Browser matrix coverage (Chromium/Firefox/WebKit) and a WebGL-failure path for the
-  profile panel remain the Phase 3 automation gap and are not extended here.
+  profile panel remain the Phase 3 automation gap and are not extended here. The browser
+  transport gate above simulates the receiver rule rather than running a real browser, so a
+  different browser-only API mismatch could still reach the viewer unnoticed.
 - The interactive allowlist is bounded at `N <= 24`, `K <= 30` and a 256 MiB run budget.
   Partial frame retrieval is deliberately not designed until a measurement needs it.

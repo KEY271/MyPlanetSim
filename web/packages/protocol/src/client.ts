@@ -55,19 +55,27 @@ export interface SimulationClient {
 
 export class HttpSimulationClient implements SimulationClient {
   private readonly baseUrl: string;
+  private readonly fetcher: typeof fetch;
+  private readonly sessionToken: string;
 
   constructor(
     baseUrl: string,
-    private readonly sessionToken: string,
-    private readonly fetcher: typeof fetch = fetch,
+    sessionToken: string,
+    fetcher: typeof fetch = fetch,
   ) {
     if (!sessionToken) throw new ProtocolError("missing_token", "a gateway session token is required");
+    this.sessionToken = sessionToken;
     const parsed = new URL(baseUrl);
     if (parsed.protocol !== "http:" ||
         (parsed.hostname !== "127.0.0.1" && parsed.hostname !== "localhost" && parsed.hostname !== "[::1]")) {
       throw new ProtocolError("invalid_gateway", "the gateway URL must use HTTP on a loopback host");
     }
     this.baseUrl = parsed.href.replace(/\/$/, "");
+    // `fetch` is a WebIDL operation on Window, so calling it as a method of this client
+    // ("this.fetcher(...)") throws "Illegal invocation" in a browser. Node's fetch is a
+    // plain function that ignores its receiver, which is why the node live gate never saw
+    // this. Bind once here so every request has a valid receiver in both runtimes.
+    this.fetcher = fetcher.bind(globalThis);
   }
 
   private headers(values: HeadersInit = {}): Headers {

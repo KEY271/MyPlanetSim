@@ -163,6 +163,9 @@ h1 { margin: 0; font-size: clamp(1.05rem, 2vw, 1.45rem); }
   text-align: center;
 }
 
+.preset-error { margin: 0.2rem 0; color: #ff9c9c; font-size: 0.78rem; }
+.preset-hint { margin: 0.2rem 0; color: #7bdff2; font-size: 0.78rem; }
+
 .inspector { margin-top: 0.35rem; color: #cfdce6; font-size: 0.76rem; }
 .inspector p { margin: 0.1rem 0; font-variant-numeric: tabular-nums; }
 
