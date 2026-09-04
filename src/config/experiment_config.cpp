@@ -45,6 +45,16 @@ constexpr std::array<std::string_view, 7> kOrbitRequiredKeys{
     "star.flux_at_semimajor_axis_w_m2",
 };
 
+constexpr std::array<std::string_view, 7> kSurfacePhysicsRequiredKeys{
+    "surface.land_heat_capacity_j_m2_k",
+    "surface.ocean_heat_capacity_j_m2_k",
+    "surface.initial_temperature_k",
+    "surface.albedo",
+    "surface.emissivity",
+    "surface.air_exchange_coefficient_w_m2_k",
+    "surface.internal_heat_flux_w_m2",
+};
+
 constexpr std::array<std::string_view, 2> kOdeRequiredKeys{"ode.initial_value",
                                                            "ode.decay_rate_s_1"};
 
@@ -519,6 +529,8 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.physics.kind = PhysicsKind::kHeldSuarez;
     else if (value == "planetary_newtonian")
       config.physics.kind = PhysicsKind::kPlanetaryNewtonian;
+    else if (value == "surface_energy_balance")
+      config.physics.kind = PhysicsKind::kSurfaceEnergyBalance;
     else
       throw parse_error(line, "unknown physics.kind " + std::string(value));
   } else if (key == "forcing.geometry") {
@@ -552,6 +564,25 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
   } else if (key == "surface.smoothing_passes") {
     if (!config.surface.has_value()) config.surface.emplace();
     config.surface->smoothing_passes = parse_index(value, line, key);
+  } else if (key.starts_with("surface.")) {
+    if (!config.surface.has_value()) config.surface.emplace();
+    const Real parsed = parse_real(value, line, key);
+    if (key == "surface.land_heat_capacity_j_m2_k")
+      config.surface->land_heat_capacity_j_m2_k = parsed;
+    else if (key == "surface.ocean_heat_capacity_j_m2_k")
+      config.surface->ocean_heat_capacity_j_m2_k = parsed;
+    else if (key == "surface.initial_temperature_k")
+      config.surface->initial_temperature_k = parsed;
+    else if (key == "surface.albedo")
+      config.surface->albedo = parsed;
+    else if (key == "surface.emissivity")
+      config.surface->emissivity = parsed;
+    else if (key == "surface.air_exchange_coefficient_w_m2_k")
+      config.surface->air_exchange_coefficient_w_m2_k = parsed;
+    else if (key == "surface.internal_heat_flux_w_m2")
+      config.surface->internal_heat_flux_w_m2 = parsed;
+    else
+      throw parse_error(line, "unknown key " + std::string(key));
   } else if (key == "orography.input_file") {
     config.orography.input_file = value;
   } else if (key == "orography.input_fingerprint_fnv1a64") {
@@ -778,6 +809,25 @@ void ExperimentConfig::validate() const {
       if (physics.geometry == ForcingGeometry::kSubstellar && !orbit.has_value())
         throw std::invalid_argument("substellar forcing requires orbit parameters");
     }
+    if (physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
+      if (!surface.has_value() || !orbit.has_value())
+        throw std::invalid_argument(
+            "surface_energy_balance requires surface and orbit parameters");
+      require_positive(surface->land_heat_capacity_j_m2_k,
+                       "surface.land_heat_capacity_j_m2_k");
+      require_positive(surface->ocean_heat_capacity_j_m2_k,
+                       "surface.ocean_heat_capacity_j_m2_k");
+      require_positive(surface->initial_temperature_k, "surface.initial_temperature_k");
+      require_finite(surface->albedo, "surface.albedo");
+      require_finite(surface->emissivity, "surface.emissivity");
+      if (surface->albedo < 0.0 || surface->albedo > 1.0 || surface->emissivity < 0.0 ||
+          surface->emissivity > 1.0)
+        throw std::invalid_argument("surface albedo and emissivity must be in [0, 1]");
+      require_non_negative(surface->air_exchange_coefficient_w_m2_k,
+                           "surface.air_exchange_coefficient_w_m2_k");
+      require_finite(surface->internal_heat_flux_w_m2,
+                     "surface.internal_heat_flux_w_m2");
+    }
     if (surface.has_value()) {
       require_finite(surface->uniform_land_fraction, "surface.uniform_land_fraction");
       if (surface->uniform_land_fraction < 0.0 || surface->uniform_land_fraction > 1.0)
@@ -999,6 +1049,18 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
   if (config.physics.kind == PhysicsKind::kPlanetaryNewtonian &&
       config.physics.geometry == ForcingGeometry::kSubstellar && !has_orbit_key)
     throw std::runtime_error("substellar forcing requires all orbit keys");
+  const bool has_surface_physics_key =
+      std::ranges::any_of(kSurfacePhysicsRequiredKeys,
+                          [&](const auto key) { return seen_keys.contains(key); });
+  if (config.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
+    require_keys(seen_keys, kSurfacePhysicsRequiredKeys);
+    if (!has_orbit_key || !has_surface_geography)
+      throw std::runtime_error(
+          "surface_energy_balance requires orbit and surface geography keys");
+  } else if (has_surface_physics_key) {
+    throw std::runtime_error(
+        "surface physics parameters require surface_energy_balance");
+  }
 
   config.validate();
   return config;
@@ -1166,6 +1228,19 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
                  << '\n'
                  << "surface.smoothing_passes = " << config.surface->smoothing_passes
                  << '\n';
+        if (config.physics.kind == PhysicsKind::kSurfaceEnergyBalance)
+          output << "surface.land_heat_capacity_j_m2_k = "
+                 << config.surface->land_heat_capacity_j_m2_k << '\n'
+                 << "surface.ocean_heat_capacity_j_m2_k = "
+                 << config.surface->ocean_heat_capacity_j_m2_k << '\n'
+                 << "surface.initial_temperature_k = "
+                 << config.surface->initial_temperature_k << '\n'
+                 << "surface.albedo = " << config.surface->albedo << '\n'
+                 << "surface.emissivity = " << config.surface->emissivity << '\n'
+                 << "surface.air_exchange_coefficient_w_m2_k = "
+                 << config.surface->air_exchange_coefficient_w_m2_k << '\n'
+                 << "surface.internal_heat_flux_w_m2 = "
+                 << config.surface->internal_heat_flux_w_m2 << '\n';
       }
     }
     if (config.orography.kind != OrographyKind::kFlat) {
@@ -1259,6 +1334,8 @@ std::string_view physics_kind_name(const PhysicsKind kind) noexcept {
       return "held_suarez";
     case PhysicsKind::kPlanetaryNewtonian:
       return "planetary_newtonian";
+    case PhysicsKind::kSurfaceEnergyBalance:
+      return "surface_energy_balance";
   }
   return "unknown";
 }

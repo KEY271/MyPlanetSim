@@ -48,7 +48,12 @@ enum class ShallowWaterTestCase {
   kGalewsky
 };
 enum class DiffusionKind { kNone, kLaplacian, kBiharmonic };
-enum class PhysicsKind { kNone, kHeldSuarez, kPlanetaryNewtonian };
+enum class PhysicsKind {
+  kNone,
+  kHeldSuarez,
+  kPlanetaryNewtonian,
+  kSurfaceEnergyBalance
+};
 enum class ForcingGeometry { kAxisymmetric, kSubstellar };
 enum class OrographyKind {
   kFlat,
@@ -171,6 +176,13 @@ struct SurfaceParameters {
   std::string input_fingerprint_fnv1a64;
   Index quadrature_order = 1;
   Index smoothing_passes = 0;
+  Real land_heat_capacity_j_m2_k = 0.0;
+  Real ocean_heat_capacity_j_m2_k = 0.0;
+  Real initial_temperature_k = 0.0;
+  Real albedo = 0.0;
+  Real emissivity = 0.0;
+  Real air_exchange_coefficient_w_m2_k = 0.0;
+  Real internal_heat_flux_w_m2 = 0.0;
 };
 
 struct ExperimentConfig {

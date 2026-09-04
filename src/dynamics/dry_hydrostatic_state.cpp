@@ -17,7 +17,9 @@ void require_shape(const DryHydrostaticState& state, const std::size_t levels) {
   if (cells == 0 || levels == 0 ||
       state.horizontal_momentum_mass_kg_m_s.size() != volume ||
       state.potential_temperature_mass_k_kg_m2.size() != volume ||
-      state.tracer_mass_kg_m2.size() != volume) {
+      state.tracer_mass_kg_m2.size() != volume ||
+      (!state.surface_temperature_k.empty() &&
+       state.surface_temperature_k.size() != cells)) {
     throw std::invalid_argument("dry hydrostatic state shape is invalid");
   }
 }
@@ -151,5 +153,8 @@ void validate_dry_hydrostatic_state(const DryHydrostaticState& state,
         throw std::runtime_error("dry hydrostatic cell-layer invariant failed");
     }
   }
+  for (const Real temperature : state.surface_temperature_k)
+    if (!(temperature > 0.0) || !std::isfinite(temperature))
+      throw std::runtime_error("dry hydrostatic surface temperature is invalid");
 }
 }  // namespace mps

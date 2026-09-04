@@ -1,0 +1,39 @@
+#pragma once
+
+#include <span>
+#include <vector>
+
+#include "myplanetsim/config/experiment_config.hpp"
+#include "myplanetsim/core/orbit_parameters.hpp"
+#include "myplanetsim/dynamics/dry_hydrostatic_state.hpp"
+#include "myplanetsim/dynamics/surface_boundary.hpp"
+#include "myplanetsim/grid/cubed_sphere_grid.hpp"
+
+namespace mps {
+
+inline constexpr Real kStefanBoltzmannWm2K4 = 5.670374419e-8;
+
+struct SurfaceEnergyDiagnostics {
+  Real absorbed_stellar_power_w = 0.0;
+  Real internal_heat_power_w = 0.0;
+  Real outgoing_longwave_power_w = 0.0;
+  Real sensible_to_atmosphere_power_w = 0.0;
+  Real surface_storage_rate_w = 0.0;
+  Real surface_budget_residual_w = 0.0;
+};
+
+struct SurfaceEnergyTendency {
+  std::vector<Real> surface_temperature_k_s;
+  std::vector<Real> potential_temperature_mass_k_kg_m2_s;
+  std::vector<Vec3> horizontal_momentum_mass_kg_m_s2;
+  SurfaceEnergyDiagnostics diagnostics;
+};
+
+[[nodiscard]] SurfaceEnergyTendency surface_energy_tendency(
+    const CubedSphereGrid& grid, const SurfaceBoundary& boundary,
+    std::span<const Real> surface_temperature_k,
+    const DryHydrostaticDerived& atmosphere, std::span<const Real> surface_pressure_pa,
+    const PlanetParameters& planet, const SurfaceParameters& parameters,
+    const OrbitState& orbit_state);
+
+}  // namespace mps

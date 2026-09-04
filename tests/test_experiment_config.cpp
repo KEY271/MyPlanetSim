@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -238,6 +239,16 @@ MPS_TEST_CASE("planetary forcing has conditional orbit requirements") {
   std::ostringstream canonical;
   mps::write_experiment_config(canonical, substellar);
   MPS_CHECK(parse(canonical.str()).orbit.has_value());
+}
+
+MPS_TEST_CASE("registered Phase 8 presets parse and validate") {
+  const auto root = std::filesystem::path(__FILE__).parent_path().parent_path();
+  for (const auto* name :
+       {"phase8_earth_like.cfg", "phase8_slow_rotator.cfg", "phase8_rapid_rotator.cfg",
+        "phase8_tidally_locked.cfg", "phase8_earth_geography.cfg"}) {
+    const auto config = mps::load_experiment_config(root / "configs" / name);
+    MPS_CHECK(config.kind == mps::ExperimentKind::kDryHydrostatic);
+  }
 }
 
 MPS_TEST_CASE("configuration has a canonical round trip") {

@@ -22,6 +22,7 @@ struct DryHydrostaticState {
   std::vector<Vec3> horizontal_momentum_mass_kg_m_s;
   std::vector<Real> potential_temperature_mass_k_kg_m2;
   std::vector<Real> tracer_mass_kg_m2;
+  std::vector<Real> surface_temperature_k;
 };
 
 struct DryHydrostaticDerived {

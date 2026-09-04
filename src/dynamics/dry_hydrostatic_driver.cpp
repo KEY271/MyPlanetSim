@@ -11,6 +11,7 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
 #include "myplanetsim/physics/planetary_newtonian.hpp"
+#include "myplanetsim/physics/surface_energy_balance.hpp"
 namespace mps {
 namespace {
 
@@ -29,6 +30,9 @@ namespace {
         scale * tendency.tendency.potential_temperature_mass[n];
     result.tracer_mass_kg_m2[n] += scale * tendency.tendency.tracer_mass[n];
   }
+  for (std::size_t cell = 0; cell < result.surface_temperature_k.size(); ++cell)
+    result.surface_temperature_k[cell] +=
+        scale * tendency.surface_temperature_k_s[cell];
   return result;
 }
 
@@ -59,6 +63,11 @@ namespace {
         stage_weight * (stage.tracer_mass_kg_m2[n] +
                         time_step_s * tendency.tendency.tracer_mass[n]);
   }
+  for (std::size_t cell = 0; cell < result.surface_temperature_k.size(); ++cell)
+    result.surface_temperature_k[cell] =
+        initial_weight * initial.surface_temperature_k[cell] +
+        stage_weight * (stage.surface_temperature_k[cell] +
+                        time_step_s * tendency.surface_temperature_k_s[cell]);
   return result;
 }
 
@@ -109,6 +118,12 @@ void halve_time_step(const DryHydrostaticState& state, Real& time_step_s) {
   return std::min(rhs.horizontal_stable_time_step_s, rhs.vertical_stable_time_step_s);
 }
 
+[[nodiscard]] bool surface_temperature_is_positive(const DryHydrostaticState& state) {
+  return std::ranges::all_of(state.surface_temperature_k, [](const Real value) {
+    return value > 0.0 && std::isfinite(value);
+  });
+}
+
 }  // namespace
 
 DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
@@ -123,9 +138,23 @@ DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
                                         config_.source_directory)) {
   if (config_.kind != ExperimentKind::kDryHydrostatic)
     throw std::invalid_argument("dry driver requires dry_hydrostatic config");
+  if (config_.surface.has_value()) {
+    surface_boundary_ =
+        make_surface_boundary(*config_.surface, config_.orography, grid_,
+                              config_.planet.gravity_m_s2, config_.source_directory);
+    orography_ = SurfaceOrography(
+        std::vector<Real>(surface_boundary_->surface_geopotential_m2_s2().begin(),
+                          surface_boundary_->surface_geopotential_m2_s2().end()),
+        surface_boundary_->source_fingerprint());
+  }
 }
 DryHydrostaticState DryHydrostaticDriver::initial_state() const {
-  return initialize_dry_hydrostatic_benchmark(config_, grid_, coordinate_, orography_);
+  auto state =
+      initialize_dry_hydrostatic_benchmark(config_, grid_, coordinate_, orography_);
+  if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance)
+    state.surface_temperature_k.assign(grid_.cell_count(),
+                                       config_.surface->initial_temperature_k);
+  return state;
 }
 DryHydrostaticDerived DryHydrostaticDriver::diagnose(
     const DryHydrostaticState& s) const {
@@ -199,6 +228,8 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
                                    sources.pressure_gradient_kg_m_s2[n] +
                                    sources.coriolis_kg_m_s2[n];
   HeldSuarezDiagnostics physics_diagnostics{};
+  SurfaceEnergyDiagnostics surface_diagnostics{};
+  std::vector<Real> surface_temperature_rate;
   if (config_.physics.kind == PhysicsKind::kHeldSuarez) {
     auto physics = held_suarez_tendency(grid_, coordinate_, d, s.surface_pressure_pa,
                                         config_.planet);
@@ -209,6 +240,21 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
           physics.potential_temperature_mass_k_kg_m2_s[n];
     }
     physics_diagnostics = physics.diagnostics;
+  } else if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
+    const auto orbit_state =
+        evaluate_orbit(*config_.orbit, config_.planet.rotation_rate_rad_s,
+                       s.time_s - config_.run.start_time_s);
+    auto physics = surface_energy_tendency(
+        grid_, *surface_boundary_, s.surface_temperature_k, d, s.surface_pressure_pa,
+        config_.planet, *config_.surface, orbit_state);
+    for (std::size_t n = 0; n < C * K; ++n) {
+      coupled.tendency.momentum[n] =
+          coupled.tendency.momentum[n] + physics.horizontal_momentum_mass_kg_m_s2[n];
+      coupled.tendency.potential_temperature_mass[n] +=
+          physics.potential_temperature_mass_k_kg_m2_s[n];
+    }
+    surface_temperature_rate = std::move(physics.surface_temperature_k_s);
+    surface_diagnostics = physics.diagnostics;
   } else if (config_.physics.kind == PhysicsKind::kPlanetaryNewtonian) {
     std::optional<OrbitState> orbit_state;
     if (config_.physics.geometry == ForcingGeometry::kSubstellar)
@@ -230,7 +276,9 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
           .horizontal_stable_time_step_s = dt,
           .vertical_stable_time_step_s = vertical_dt,
           .maximum_continuity_residual_pa_s = coupled.maximum_continuity_residual_pa_s,
-          .physics_diagnostics = physics_diagnostics};
+          .physics_diagnostics = physics_diagnostics,
+          .surface_temperature_k_s = std::move(surface_temperature_rate),
+          .surface_diagnostics = surface_diagnostics};
 }
 void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                                    const DryHydrostaticObserver& obs,
@@ -254,6 +302,15 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           planetary_newtonian_tendency(
               grid_, coordinate_, derived, state.surface_pressure_pa, config_.planet,
               config_.physics.geometry, orbit_state ? &*orbit_state : nullptr)
+              .diagnostics;
+    } else if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
+      const auto orbit_state =
+          evaluate_orbit(*config_.orbit, config_.planet.rotation_rate_rad_s,
+                         state.time_s - config_.run.start_time_s);
+      sampled.surface_rates =
+          surface_energy_tendency(
+              grid_, *surface_boundary_, state.surface_temperature_k, derived,
+              state.surface_pressure_pa, config_.planet, *config_.surface, orbit_state)
               .diagnostics;
     }
     obs(state, derived, sampled);
@@ -287,7 +344,8 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     while (true) {
       auto stage1 = euler_update(initial, rhs1, dt);
       stage1.time_s = initial.time_s + dt;
-      if (!pressure_is_in_range(config_, stage1)) {
+      if (!pressure_is_in_range(config_, stage1) ||
+          !surface_temperature_is_positive(stage1)) {
         halve_time_step(initial, dt);
         continue;
       }
@@ -300,7 +358,8 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
 
       auto stage2 = convex_update(initial, 0.75, stage1, rhs2, 0.25, dt);
       stage2.time_s = initial.time_s + 0.5 * dt;
-      if (!pressure_is_in_range(config_, stage2)) {
+      if (!pressure_is_in_range(config_, stage2) ||
+          !surface_temperature_is_positive(stage2)) {
         halve_time_step(initial, dt);
         continue;
       }
@@ -314,7 +373,8 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       auto next = convex_update(initial, 1.0 / 3.0, stage2, rhs3, 2.0 / 3.0, dt);
       next.time_s = initial.time_s + dt;
       next.step = initial.step + 1;
-      if (!pressure_is_in_range(config_, next)) {
+      if (!pressure_is_in_range(config_, next) ||
+          !surface_temperature_is_positive(next)) {
         halve_time_step(initial, dt);
         continue;
       }
