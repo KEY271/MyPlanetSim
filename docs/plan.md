@@ -193,11 +193,15 @@ user-facing visualizer は column 単独では作らず、3D 結合後の Phase 
 
 ### Phase 5 — 地形なし乾燥 3D 静水圧力学コア
 
+state、数値結合、C++ gate、最後に visualizer を更新するコミット順は
+[Phase 5 実装計画](phase-5-plan.md) に定める。3D state と水平・鉛直 mass coupling は
+[ADR 0006](adr/0006-dry-hydrostatic-state-and-coupling.md) に固定する。
+
 実装するもの:
 
 - cubed-sphere と hybrid 座標を直積した 3D field
 - 乾燥 hydrostatic primitive equations、熱力学式、3D tracer 輸送
-- surface pressure、鉛直速度、hydrostatic geopotential の診断
+- surface pressure、coordinate-relative pressure velocity、hydrostatic geopotential の診断
 - 水平・鉛直 flux の整合、外部重力波に対する時間積分
 - 3D state 確定後の version 付き frame/data contract と gateway 対応
 - 既存 globe/map の model-level 表示と、選択した水平 cell の鉛直 profile panel
@@ -206,7 +210,7 @@ user-facing visualizer は column 単独では作らず、3D 結合後の Phase 
 
 - 静止等温大気と静止成層大気を維持すること
 - 3D solid-body tracer transport、DCMIP の 3D deformational flow / Hadley-like circulation
-- Jablonowski–Williamson の地形なし定常基本場を保ち、摂動時の baroclinic wave を参照解と比較
+- UMJS14 の平坦地表・定常基本場を保ち、摂動時の baroclinic wave を参照解と比較
 - 3D の乾燥質量、トレーサ質量、全エネルギー、軸角運動量 budget
 - 水平・鉛直解像度を独立に上げた収束、鉛直モード・層間 decoupling の検査
 - 長時間積分で上端反射、負圧、温度逸走、面境界ノイズがないこと
@@ -331,7 +335,8 @@ Phase 0–3 は完了済みであり、次の実装スプリントは Phase 4 �
 - J. Thuburn, C. J. Cotter, T. Dubos (2014), [A mimetic, semi-implicit, forward-in-time, finite volume shallow water model](https://doi.org/10.5194/gmd-7-909-2014): cubed-sphere 上の質量・エネルギー・PV 整合性と mimetic 演算子の評価観点。
 - A. J. Simmons, D. M. Burridge (1981), [An Energy and Angular-Momentum Conserving Vertical Finite-Difference Scheme and Hybrid Vertical Coordinates](https://doi.org/10.1175/1520-0493(1981)109%3C0758:AEAAMC%3E2.0.CO;2): hybrid 座標と鉛直差分の保存性。
 - ECMWF, [Vertical coordinate](https://confluence.ecmwf.int/plugins/viewsource/viewpagesrc.action?pageId=85406187): 実運用される half-level の `p = A + B ps` 定義と上下層の性質。
-- C. Jablonowski, D. L. Williamson (2006), [A baroclinic instability test case for atmospheric model dynamical cores](https://doi.org/10.1256/qj.06.12): 地形なし 3D 定常場と baroclinic wave の二段階評価。
+- P. A. Ullrich et al. (2014), [A proposed baroclinic wave test case for deep- and shallow-atmosphere dynamical cores](https://doi.org/10.1002/qj.2241): constant surface pressure と zero surface geopotential を持つ Phase 5 の平坦地表 baroclinic test。
+- C. Jablonowski, D. L. Williamson (2006), [A baroclinic instability test case for atmospheric model dynamical cores](https://doi.org/10.1256/qj.06.12): smooth surface geopotential を含む Phase 6 の baroclinic test。
 - DCMIP (2012), [Dynamical Core Model Intercomparison Project test case document](https://public.websites.umich.edu/~cjablono/DCMIP-2012_TestCaseDocument_v1.7.pdf): 3D 輸送、静水圧静止大気、地形性 pressure-gradient error などの段階的テスト。
 - I. M. Held, M. J. Suarez (1994), [A Proposal for the Intercomparison of the Dynamical Cores of Atmospheric General Circulation Models](https://www.gfdl.noaa.gov/bibliography/related_files/ih9401.pdf): 乾燥力学コアの長時間統計ベンチマーク。
 - K. Heng, K. Menou, P. J. Phillipps (2011), [Atmospheric circulation of tidally locked exoplanets: a suite of benchmark tests for dynamical solvers](https://doi.org/10.1111/j.1365-2966.2011.18315.x): 架空惑星・同期回転惑星への拡張時の比較ケース。
