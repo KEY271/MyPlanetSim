@@ -39,6 +39,16 @@ mps_add_test(unit.dry_hydrostatic_driver test_dry_hydrostatic_driver.cpp)
 mps_add_test(unit.held_suarez test_held_suarez.cpp)
 mps_add_test(unit.planetary_newtonian test_planetary_newtonian.cpp)
 mps_add_test(unit.surface_energy_balance test_surface_energy_balance.cpp)
+mps_add_test(phase8.planetary_core test_phase8_planetary_core.cpp)
+set_tests_properties(phase8.planetary_core PROPERTIES LABELS phase8_gate)
+set_tests_properties(
+  unit.orbit_parameters
+  unit.planetary_scales
+  unit.surface_boundary
+  unit.planetary_newtonian
+  unit.surface_energy_balance
+  PROPERTIES LABELS phase8_gate
+)
 mps_add_test(unit.climate_statistics test_climate_statistics.cpp)
 set_tests_properties(unit.held_suarez unit.climate_statistics PROPERTIES LABELS phase7_gate)
 mps_add_test(phase7.forced_dry_core test_forced_dry_core.cpp)

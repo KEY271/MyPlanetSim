@@ -95,7 +95,6 @@ MPS_TEST_CASE("driver advances the coupled surface at SSP-RK3 stages") {
   mps::ExperimentConfig config{
       .kind = mps::ExperimentKind::kDryHydrostatic,
       .planet = {6371220, 7.29212e-5, 9.80616, 287, 1004, 100000},
-      .orbit = mps::OrbitParameters{86400, 0, 0, 0, 0, 0, 1361},
       .run = {0, 2, 1, 0},
       .grid = {2},
       .vertical = {.levels = 2,
@@ -113,17 +112,18 @@ MPS_TEST_CASE("driver advances the coupled surface at SSP-RK3 stages") {
                    .cfl = .5},
       .dry_hydrostatic = {.test_case = mps::DryHydrostaticTestCase::kIsothermalRest},
       .physics = {.kind = mps::PhysicsKind::kSurfaceEnergyBalance},
-      .surface = mps::SurfaceParameters{.geography = mps::SurfaceGeography::kUniform,
-                                        .uniform_land_fraction = 0.5,
-                                        .land_heat_capacity_j_m2_k = 2e6,
-                                        .ocean_heat_capacity_j_m2_k = 4e7,
-                                        .initial_temperature_k = 288,
-                                        .albedo = 0.3,
-                                        .emissivity = 1,
-                                        .air_exchange_coefficient_w_m2_k = 10,
-                                        .internal_heat_flux_w_m2 = 0},
       .diagnostics = {1},
       .output_directory = "x"};
+  config.orbit = mps::OrbitParameters{86400, 0, 0, 0, 0, 0, 1361};
+  config.surface = mps::SurfaceParameters{.geography = mps::SurfaceGeography::kUniform,
+                                          .uniform_land_fraction = 0.5,
+                                          .land_heat_capacity_j_m2_k = 2e6,
+                                          .ocean_heat_capacity_j_m2_k = 4e7,
+                                          .initial_temperature_k = 288,
+                                          .albedo = 0.3,
+                                          .emissivity = 1,
+                                          .air_exchange_coefficient_w_m2_k = 10,
+                                          .internal_heat_flux_w_m2 = 0};
   config.validate();
   const mps::DryHydrostaticDriver driver(config);
   auto state = driver.initial_state();

@@ -217,6 +217,15 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase7_csv.cmake
   )
   set_tests_properties(phase7.csv_output PROPERTIES LABELS phase7_gate)
+  add_test(
+    NAME phase8.csv_output
+    COMMAND
+      ${CMAKE_COMMAND} -DMPS_EXECUTABLE=$<TARGET_FILE:my_planet_sim>
+      -DMPS_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/configs/phase8_earth_geography.cfg
+      -DMPS_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR} -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase8_csv.cmake
+  )
+  set_tests_properties(phase8.csv_output PROPERTIES LABELS phase8_gate)
   add_test(NAME smoke.invalid_cli COMMAND my_planet_sim --unknown value)
   set_tests_properties(smoke.invalid_cli PROPERTIES WILL_FAIL TRUE)
   add_subdirectory(tests)

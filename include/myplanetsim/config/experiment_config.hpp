@@ -15,15 +15,15 @@
 namespace mps {
 
 struct RunParameters {
-  Real start_time_s;
-  Real end_time_s;
-  Real time_step_s;
-  Seed random_seed;
+  Real start_time_s = 0.0;
+  Real end_time_s = 0.0;
+  Real time_step_s = 0.0;
+  Seed random_seed = 0;
 };
 
 struct OdeParameters {
-  Real initial_value;
-  Real decay_rate_s_1;
+  Real initial_value = 0.0;
+  Real decay_rate_s_1 = 0.0;
 };
 
 enum class ExperimentKind {
@@ -188,7 +188,6 @@ struct SurfaceParameters {
 struct ExperimentConfig {
   ExperimentKind kind = ExperimentKind::kOde;
   PlanetParameters planet;
-  std::optional<OrbitParameters> orbit;
   RunParameters run;
   OdeParameters ode;
   GridParameters grid{};
@@ -198,11 +197,12 @@ struct ExperimentConfig {
   DryHydrostaticParameters dry_hydrostatic{};
   OrographyParameters orography{};
   PhysicsParameters physics{};
-  std::optional<SurfaceParameters> surface;
   DiagnosticsParameters diagnostics{};
   std::string output_directory;
   // Runtime-only origin used to resolve portable config-relative inputs.
   std::filesystem::path source_directory;
+  std::optional<OrbitParameters> orbit;
+  std::optional<SurfaceParameters> surface;
 
   void validate() const;
 };
