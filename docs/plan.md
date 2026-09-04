@@ -169,6 +169,11 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 ### Phase 4 — 鉛直 1D と hybrid sigma-pressure
 
+数値方式、state、C++ column core のコミット列は
+[Phase 4 実装計画](phase-4-plan.md) に定める。鉛直座標・mass flux の規約は
+[ADR 0005](adr/0005-hybrid-vertical-coordinate-and-column-state.md) に記録する。
+user-facing visualizer は column 単独では作らず、3D 結合後の Phase 5 で更新する。
+
 実装するもの:
 
 - `A/B` 係数、full/half level、層質量 `Delta p/g`
@@ -181,7 +186,7 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 - pure pressure (`B=0`) と pure sigma に近い極限がそれぞれ既知の式へ一致すること
 - 任意の妥当な `ps` で圧力境界が単調、層質量が正、層質量和が `(ps-p_top)/g` と一致すること
 - 等温・乾燥断熱の静水圧柱で geopotential が解析解に一致し収束すること
-- 静止柱が加速せず、鉛直 remap が質量・定数トレーサを保存すること
+- 静止柱の state が変化せず、鉛直 mass flux が質量・定数トレーサを保存すること
 - `ps` 変化時にも定数場保持、positivity、上下境界 flux が整合すること
 
 完了ゲート: 鉛直演算子だけの unit/convergence テストが通り、水平力学から独立して質量・熱力学 budget を閉じられる。
@@ -194,6 +199,8 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 - 乾燥 hydrostatic primitive equations、熱力学式、3D tracer 輸送
 - surface pressure、鉛直速度、hydrostatic geopotential の診断
 - 水平・鉛直 flux の整合、外部重力波に対する時間積分
+- 3D state 確定後の version 付き frame/data contract と gateway 対応
+- 既存 globe/map の model-level 表示と、選択した水平 cell の鉛直 profile panel
 
 検証するもの:
 
@@ -203,8 +210,12 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 - 3D の乾燥質量、トレーサ質量、全エネルギー、軸角運動量 budget
 - 水平・鉛直解像度を独立に上げた収束、鉛直モード・層間 decoupling の検査
 - 長時間積分で上端反射、負圧、温度逸走、面境界ノイズがないこと
+- globe/map の field・level・time・選択 cell と鉛直 profile が同じ C++ frame に一致すること
+- 3D frame の size、転送、decode、描画 budget と旧 shallow-water UI の回帰
 
-完了ゲート: 地形なしの標準 3D テストが複数解像度で再現し、shallow-water 段階の水平誤差と新しい鉛直誤差を区別できる。
+完了ゲート: 地形なしの標準 3D テストが複数解像度で再現し、shallow-water 段階の水平誤差と
+新しい鉛直誤差を区別できる。C++ gate の完了後、同じ 3D state を既存 visualizer の level map と
+選択 column profile で表示し、native run から UI まで自動検証できる。
 
 ### Phase 6 — 地形と下部境界
 
@@ -301,15 +312,15 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 
 ## 5. 直近の実装順
 
-Phase 0–2 は完了済みであり、次の実装スプリントは Phase 3 の C++ 制御付き独立 Web 可視化 UI を
-対象にする。
+Phase 0–3 は完了済みであり、次の実装スプリントは Phase 4 の C++ 鉛直 1D column core を
+対象にする。visualizer は Phase 4 に含めず、Phase 5 の 3D 結合後に更新する。
 
-1. UI/gateway/C++境界とrun/event/frame protocolをADRで固定する。
-2. C++へinitial-condition edit、frame observer、machine-readable CLIを追加する。
-3. `web/` に独立UI、shared protocol、local control gateway、quality gateを作る。
-4. cubed-sphere geometry/grid、3D globe、2D全球地図を実装する。
-5. click editからnative C++ run/progress/cancel/frame表示までを接続する。
-6. scientific/live/security/browser/performance gateを実行し、Phase 3 reportを作る。
+1. hybrid `A/B`、full/half level、column state、mass-flux 規約を ADR 0005 に固定する。
+2. C++ に coordinate geometry、乾燥熱力学、静水圧積分を追加する。
+3. surface-pressure tendency、鉛直 mass flux、保存型 theta/tracer 輸送を追加する。
+4. static、moving-`ps`、manufactured transport の driver と diagnostics/I/O を追加する。
+5. coordinate limit、解析的静水圧、space/time convergence、budget、restart gate を実行する。
+6. Phase 5 で cubed-sphere と結合し、3D state の検証後に frame/gateway/visualizer を更新する。
 
 ## 6. 調査資料と計画への反映
 

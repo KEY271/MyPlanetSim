@@ -162,7 +162,9 @@ reserved for prose and figures.
 The following are intentionally not fixed in Phase 0:
 
 - prognostic momentum representation and horizontal staggering;
-- exact hybrid `A/B` profile and model top pressure;
+- experiment-specific hybrid `A/B` values and model top pressure remain explicit preset data;
+  their representation and validation contract are fixed in
+  [ADR 0005](adr/0005-hybrid-vertical-coordinate-and-column-state.md);
 - large field file format and parallel I/O library;
 - deterministic reduction strategy across multiple threads or MPI ranks.
 
