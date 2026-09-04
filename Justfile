@@ -32,6 +32,7 @@ gateway gateway_port="8787":
 	cd "{{web_dir}}"
 	MPS_SIMULATOR_BINARY="{{simulator}}" \
 	MPS_REST_PRESET="{{root}}/configs/phase3_rest_n4.cfg" \
+	MPS_DRY_PRESET="{{root}}/configs/phase5_visualizer_rest_n4.cfg" \
 	MPS_RUN_ROOT="{{root}}/.runs" \
 	MPS_GATEWAY_PORT="{{gateway_port}}" \
 	npm run start --workspace @myplanetsim/gateway
@@ -52,6 +53,7 @@ dev gateway_port="8787" ui_port="5173":
 	token="$(node --input-type=module -e 'import { randomBytes } from "node:crypto"; process.stdout.write(randomBytes(32).toString("hex"))')"
 	export MPS_SIMULATOR_BINARY="{{simulator}}"
 	export MPS_REST_PRESET="{{root}}/configs/phase3_rest_n4.cfg"
+	export MPS_DRY_PRESET="{{root}}/configs/phase5_visualizer_rest_n4.cfg"
 	export MPS_RUN_ROOT="{{root}}/.runs"
 	export MPS_GATEWAY_PORT="{{gateway_port}}"
 	export MPS_SESSION_TOKEN="$token"

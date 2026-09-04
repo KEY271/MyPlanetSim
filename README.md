@@ -41,7 +41,7 @@ cmake --build build/dev --target format-check
 
 実行ファイルは `experiment.kind` に応じて、Phase 0 の製造 ODE、Phase 1 の
 全球 cubed-sphere tracer 輸送、Phase 2 の全球 shallow-water、Phase 4 の独立した
-hybrid 鉛直 column を実行します。
+hybrid 鉛直 column、Phase 5 の地形なし乾燥 3D 静水圧コアを実行します。
 輸送ケースは診断を標準出力へ、cell snapshot を `output.directory/tracer.csv`
 へ出力します。shallow-water ケースは診断と保存量 drift、計算コストを標準
 出力へ、cell snapshot を `output.directory/shallow_water.csv`、区間診断を
@@ -51,6 +51,7 @@ hybrid 鉛直 column を実行します。
 ./build/dev/my_planet_sim --config configs/phase2_williamson2.cfg
 ./build/dev/my_planet_sim --config configs/phase4_isothermal.cfg
 ./build/dev/my_planet_sim --config configs/phase4_manufactured_transport.cfg
+./build/dev/my_planet_sim --config configs/phase5_isothermal_rest.cfg
 ```
 
 Phase 0 の科学・ソフトウェア基盤、Phase 1 の cubed-sphere 幾何・球面受動
@@ -58,7 +59,7 @@ Phase 0 の科学・ソフトウェア基盤、Phase 1 の cubed-sphere 幾何�
 基盤はローカル検証を完了しています。Phase 3 の検証結果と既知 gap は
 [Phase 3 検証報告](docs/validation/phase-3.md)に記録しています。
 
-### Phase 3 Web UI と native gateway
+### Web UI と native gateway
 
 [`just`](https://github.com/casey/just) が利用できる場合、repository root から次の1コマンドで
 native gateway と live UI を起動できます。必要な C++ build または `node_modules` がなければ
@@ -87,9 +88,17 @@ API request に使います。
 ```sh
 MPS_SIMULATOR_BINARY="$PWD/../build/dev/my_planet_sim" \
 MPS_REST_PRESET="$PWD/../configs/phase3_rest_n4.cfg" \
+MPS_DRY_PRESET="$PWD/../configs/phase5_visualizer_rest_n4.cfg" \
 MPS_RUN_ROOT="$PWD/../.runs" \
 npm run start --workspace @myplanetsim/gateway
 ```
+
+`MPS_DRY_PRESET` は任意です。指定すると capabilities が Phase 5 の
+dry hydrostatic preset を additive に返し、UI の preset selector に現れます。gateway は
+起動時に `--describe-control` と preset descriptor の compatibility を検査し、preset ごとの
+N 上限、edit 可否、累積 published byte 予算 (既定 256 MiB) を強制します。shallow-water
+preset は Phase 3 の FrameV1 と Gaussian edit を維持し、dry hydrostatic preset は FrameV2 を
+publish して edit を拒否します。
 
 gateway API は loopback と Bearer token を要求します。run request を送信した後、
 `POST /api/v1/runs/{id}/cancel` で停止し、`GET /api/v1/runs/{id}/bundle` で request、
@@ -109,7 +118,13 @@ npm run test:live --workspace @myplanetsim/gateway
 http://localhost:5173/#token=<token>&gateway=http%3A%2F%2F127.0.0.1%3A<port>
 ```
 
-tokenを指定しない場合は安全なoffline/mock clientを使用します。Chromium/Firefox/WebKitの
+dry hydrostatic preset を選ぶと、UI は model level selector、surface pressure/pressure/
+potential temperature/temperature/tracer/wind speed の field selector、選択 column の
+対数 pressure profile、選択 cell の inspector を表示します。level slice は 2D map と 3D globe が
+共有し、cell click は edit ではなく column selection になります。
+
+tokenを指定しない場合は安全なoffline/mock clientを使用します。offline/mock client は
+shallow-water preset のみを提供し、dry hydrostatic は native gateway を必要とします。Chromium/Firefox/WebKitの
 自動matrixは次の拡張対象です。
 
 ## 将来のファイル構成

@@ -19,6 +19,22 @@ function protocolError(message) { const error = new Error(message); error.code =
 
 function finite(value) { return typeof value === "number" && Number.isFinite(value); }
 
+// A preset is configured either as a bare path, which keeps the Phase 3 shallow-water
+// contract, or as a descriptor that states its model kind, frame schema, levels, edits,
+// and interactive N limit.
+export function presetDescriptor(preset, id) {
+  const described = typeof preset === "string" ? { path: preset } : preset;
+  return { id, modelKind: "shallow_water", frameSchemaVersion: 1, levels: null,
+    supportedEdits: ["gaussian_depth"], maximumCellsPerPanel: 96, ...described };
+}
+
+// FrameV2 stores surface pressure plus seven volume fields as little-endian float64, so the
+// published size of one frame is exact and can be checked before the run starts.
+export function frameBytes(details, cellsPerPanel) {
+  const cells = 6 * cellsPerPanel ** 2;
+  return details.frameSchemaVersion === 2 ? 8 * cells * (1 + 7 * details.levels) : 32 * cells;
+}
+
 export function validateRunRequest(value, presets) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw protocolError("request must be an object");
   if (value.protocolVersion !== protocolVersion || typeof value.presetId !== "string" || !presets.has(value.presetId)) throw protocolError("unsupported protocol or preset");
@@ -29,11 +45,14 @@ export function validateRunRequest(value, presets) {
       !Number.isInteger(run.frameIntervalSteps) || run.frameIntervalSteps < 1 || run.frameIntervalSteps > 1000000 ||
       !Array.isArray(initialCondition.edits) || initialCondition.edits.length > 64) throw protocolError("run parameters are outside the supported range");
   if (estimatedFrameCount(run) > maxPublishedFrames) throw protocolError(`the run would publish more than ${maxPublishedFrames} frames`);
-  const preset = presets.get(value.presetId); const details = typeof preset === "string" ? { path: preset, modelKind: "shallow_water", frameSchemaVersion: 1, levels: null, supportedEdits: ["gaussian_depth"], maximumCellsPerPanel: 96 } : preset;
+  const details = presetDescriptor(presets.get(value.presetId), value.presetId);
   if (grid.cellsPerPanel > details.maximumCellsPerPanel) throw protocolError("grid exceeds preset limit");
-  if (details.modelKind === "dry_hydrostatic" && initialCondition.edits.length !== 0) throw protocolError("dry hydrostatic presets do not support initial edits");
-  const frameBytes = details.frameSchemaVersion === 2 ? 8 * 6 * grid.cellsPerPanel ** 2 * (1 + 7 * details.levels) : 32 * 6 * grid.cellsPerPanel ** 2;
-  if (estimatedFrameCount(run) * frameBytes > maxPublishedBytes) throw protocolError("the run would exceed the published byte budget");
+  if (initialCondition.edits.length !== 0 && !details.supportedEdits.includes("gaussian_depth")) {
+    throw protocolError(`${details.modelKind} presets do not support initial edits`);
+  }
+  if (estimatedFrameCount(run) * frameBytes(details, grid.cellsPerPanel) > maxPublishedBytes) {
+    throw protocolError("the run would exceed the published byte budget");
+  }
   for (const edit of initialCondition.edits) {
     if (!edit || edit.kind !== "gaussian_depth" || typeof edit.id !== "string" || !Array.isArray(edit.centerUnit) || edit.centerUnit.length !== 3 ||
         !edit.centerUnit.every(finite) || Math.abs(Math.hypot(...edit.centerUnit) - 1) > 1e-12 || !finite(edit.amplitudeMeters) ||
@@ -92,7 +111,10 @@ async function body(request) {
 export function createGatewayServer(options) {
   const binary = resolve(options.binary);
   const presets = new Map(Object.entries(options.presets ?? {}));
-  const presetDetails = [...presets.entries()].map(([id, value]) => typeof value === "string" ? { id, modelKind: "shallow_water", frameSchemaVersion: 1, levels: null, supportedEdits: ["gaussian_depth"], maximumCellsPerPanel: 96 } : { id, ...value, path: undefined });
+  const presetDetails = [...presets.entries()].map(([id, value]) => {
+    const { path, ...descriptor } = presetDescriptor(value, id);
+    return descriptor;
+  });
   const runRoot = resolve(options.runRoot);
   const token = options.sessionToken ?? randomBytes(32).toString("hex");
   const spawn = options.spawn ?? defaultSpawn;
@@ -122,7 +144,7 @@ export function createGatewayServer(options) {
           await mkdir(runRoot, { recursive: true });
           const directory = await mkdtemp(join(runRoot, "run-"));
           await mkdir(join(directory, "frames"));
-          const preset = presets.get(requestValue.presetId); const configPath = resolve(typeof preset === "string" ? preset : preset.path);
+          const configPath = resolve(presetDescriptor(presets.get(requestValue.presetId), requestValue.presetId).path);
           const controlPath = join(directory, "control.request");
           await writeFile(controlPath, controlRequestText(requestValue, runId), "utf8");
           const child = spawn(binary, ["--config", configPath, "--control-request", controlPath, "--event-stream", "ndjson"], { cwd: directory, shell: false, stdio: ["ignore", "pipe", "pipe"] });
@@ -223,8 +245,30 @@ export async function describeSimulator(options) {
   });
 }
 
+// A preset descriptor promises the browser a model kind, a frame schema, and an N limit.
+// If the simulator on disk cannot honour that promise the gateway refuses to start, rather
+// than failing once a reader has already submitted a run.
+export function assertPresetsAreSupported(description, presets) {
+  for (const [id, value] of Object.entries(presets ?? {})) {
+    const details = presetDescriptor(value, id);
+    const kinds = description.modelKinds ?? ["shallow_water"];
+    const schemas = description.frameSchemaVersions ?? [1];
+    if (!kinds.includes(details.modelKind)) throw new Error(`the simulator does not support ${details.modelKind} preset ${id}`);
+    if (!schemas.includes(details.frameSchemaVersion)) throw new Error(`the simulator does not publish frame schema ${details.frameSchemaVersion} for preset ${id}`);
+    if (details.modelKind !== "dry_hydrostatic") continue;
+    const limits = description.dryHydrostatic ?? {};
+    if (!Number.isInteger(details.levels) || details.levels < 1 || details.levels > (limits.maxLevels ?? 0)) {
+      throw new Error(`preset ${id} declares an unsupported level count`);
+    }
+    if (details.maximumCellsPerPanel > (limits.maxCellsPerPanel ?? 0)) {
+      throw new Error(`preset ${id} exceeds the interactive dry hydrostatic grid limit`);
+    }
+    if (details.supportedEdits.length !== 0) throw new Error(`preset ${id} cannot support initial edits`);
+  }
+}
+
 export async function startGateway(options) {
-  await describeSimulator(options);
+  assertPresetsAreSupported(await describeSimulator(options), options.presets);
   const gateway = createGatewayServer(options);
   const host = options.host ?? "127.0.0.1";
   if (host !== "127.0.0.1" && host !== "::1") throw new Error("gateway host must be loopback");
@@ -235,7 +279,15 @@ export async function startGateway(options) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const binary = process.env.MPS_SIMULATOR_BINARY; const preset = process.env.MPS_REST_PRESET;
   if (!binary || !preset) throw new Error("MPS_SIMULATOR_BINARY and MPS_REST_PRESET are required");
-  const gateway = await startGateway({ binary, presets: { rest: preset }, runRoot: process.env.MPS_RUN_ROOT ?? ".runs", sessionToken: process.env.MPS_SESSION_TOKEN, port: Number(process.env.MPS_GATEWAY_PORT ?? 0) });
+  const presets = { rest: preset };
+  // The dry hydrostatic preset is optional so an existing shallow-water session keeps
+  // working; its level count must match the configured vertical.levels of the preset file.
+  if (process.env.MPS_DRY_PRESET) {
+    presets.dry_hydrostatic_rest = { path: process.env.MPS_DRY_PRESET, modelKind: "dry_hydrostatic",
+      frameSchemaVersion: 2, levels: Number(process.env.MPS_DRY_PRESET_LEVELS ?? 8),
+      supportedEdits: [], maximumCellsPerPanel: Number(process.env.MPS_DRY_PRESET_MAX_N ?? 24) };
+  }
+  const gateway = await startGateway({ binary, presets, runRoot: process.env.MPS_RUN_ROOT ?? ".runs", sessionToken: process.env.MPS_SESSION_TOKEN, port: Number(process.env.MPS_GATEWAY_PORT ?? 0) });
   const address = gateway.server.address();
   console.log(JSON.stringify({ host: "127.0.0.1", port: typeof address === "object" ? address.port : address, token: gateway.token }));
 }

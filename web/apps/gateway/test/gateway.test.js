@@ -6,9 +6,11 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { controlRequestText, createGatewayServer, validateRunRequest } from "../src/main.js";
+import { assertPresetsAreSupported, controlRequestText, createGatewayServer, frameBytes, presetDescriptor, validateRunRequest } from "../src/main.js";
 
 const request = { protocolVersion: 1, presetId: "rest", grid: { cellsPerPanel: 4 }, run: { endTimeSeconds: 10, maximumTimeStepSeconds: 1, frameIntervalSteps: 2 }, initialCondition: { edits: [] } };
+const dryPreset = { path: "dry.cfg", modelKind: "dry_hydrostatic", frameSchemaVersion: 2, levels: 8, supportedEdits: [], maximumCellsPerPanel: 24 };
+const dryDescription = { protocolVersion: 1, supportedEdits: ["gaussian_depth"], modelKinds: ["shallow_water", "dry_hydrostatic"], frameSchemaVersions: [1, 2], dryHydrostatic: { maxCellsPerPanel: 24, maxLevels: 30, supportedEdits: [] } };
 
 test("control translation is strict and path-free", () => {
   const text = controlRequestText(request, "run-1");
@@ -22,10 +24,80 @@ test("control translation is strict and path-free", () => {
 });
 
 test("dry hydrostatic presets reject edits and enforce their N limit", () => {
-  const presets=new Map([["dry",{path:"dry.cfg",modelKind:"dry_hydrostatic",frameSchemaVersion:2,levels:8,supportedEdits:[],maximumCellsPerPanel:24}]]);
-  const dry={...request,presetId:"dry",initialCondition:{edits:[]}}; assert.equal(validateRunRequest(dry,presets),dry);
-  assert.throws(()=>validateRunRequest({...dry,grid:{cellsPerPanel:25}},presets),/preset limit/);
-  assert.throws(()=>validateRunRequest({...dry,initialCondition:{edits:[{kind:"gaussian_depth"}]}},presets),/do not support/);
+  const presets = new Map([["dry", dryPreset]]);
+  const dry = { ...request, presetId: "dry", initialCondition: { edits: [] } };
+  assert.equal(validateRunRequest(dry, presets), dry);
+  assert.throws(() => validateRunRequest({ ...dry, grid: { cellsPerPanel: 25 } }, presets), /preset limit/);
+  assert.throws(() => validateRunRequest({ ...dry, initialCondition: { edits: [{ kind: "gaussian_depth" }] } }, presets), /do not support/);
+  // The shallow-water preset keeps its own, larger limit and still accepts edits.
+  assert.ok(validateRunRequest({ ...request, grid: { cellsPerPanel: 96 } }, new Map([["rest", "preset.cfg"]])));
+});
+
+test("an undescribed preset keeps the shallow-water contract", () => {
+  assert.deepEqual(presetDescriptor("preset.cfg", "rest"),
+    { id: "rest", path: "preset.cfg", modelKind: "shallow_water", frameSchemaVersion: 1, levels: null, supportedEdits: ["gaussian_depth"], maximumCellsPerPanel: 96 });
+  assert.equal(presetDescriptor(dryPreset, "dry").modelKind, "dry_hydrostatic");
+});
+
+test("capabilities describe every preset without leaking its configuration path", async () => {
+  const root = await mkdtemp(join(tmpdir(), "myplanetsim-gateway-"));
+  const preset = join(root, "preset.cfg"); await writeFile(preset, "fixture");
+  const gateway = createGatewayServer({ binary: "/configured/simulator", presets: { rest: preset, dry: { ...dryPreset, path: preset } }, runRoot: root, sessionToken: "token", spawn: () => { throw new Error("not spawned"); } });
+  await new Promise((resolve) => gateway.server.listen(0, "127.0.0.1", resolve));
+  const port = gateway.server.address().port;
+  const response = await fetch(`http://127.0.0.1:${port}/api/v1/capabilities`, { headers: { authorization: "Bearer token" } });
+  const capabilities = await response.json();
+  assert.deepEqual(capabilities.presets, ["rest", "dry"]);
+  assert.deepEqual(capabilities.presetDetails.map((value) => value.id), ["rest", "dry"]);
+  assert.deepEqual(capabilities.presetDetails[1], { id: "dry", modelKind: "dry_hydrostatic", frameSchemaVersion: 2, levels: 8, supportedEdits: [], maximumCellsPerPanel: 24 });
+  assert.equal(capabilities.presetDetails[0].frameSchemaVersion, 1);
+  assert.equal(JSON.stringify(capabilities).includes(root), false);
+  await gateway.shutdown();
+});
+
+test("the published byte budget is exact and bounds the run before it starts", () => {
+  // 8 bytes per value, one surface field plus seven volume fields.
+  assert.equal(frameBytes(presetDescriptor(dryPreset, "dry"), 24), 8 * 3456 * (1 + 7 * 8));
+  assert.equal(frameBytes(presetDescriptor({ ...dryPreset, levels: 30 }, "dry"), 24), 5833728);
+  assert.equal(frameBytes(presetDescriptor("preset.cfg", "rest"), 4), 32 * 96);
+  const presets = new Map([["dry", { ...dryPreset, levels: 30 }]]);
+  const withinBudget = { ...request, presetId: "dry", grid: { cellsPerPanel: 24 }, run: { endTimeSeconds: 40, maximumTimeStepSeconds: 1, frameIntervalSteps: 1 } };
+  assert.ok(validateRunRequest(withinBudget, presets));
+  assert.throws(() => validateRunRequest({ ...withinBudget, run: { endTimeSeconds: 60, maximumTimeStepSeconds: 1, frameIntervalSteps: 1 } }, presets), /byte budget/);
+});
+
+test("the gateway refuses to start when the simulator cannot honour a preset", () => {
+  assertPresetsAreSupported(dryDescription, { rest: "preset.cfg", dry: dryPreset });
+  const legacy = { protocolVersion: 1, supportedEdits: ["gaussian_depth"] };
+  assertPresetsAreSupported(legacy, { rest: "preset.cfg" });
+  assert.throws(() => assertPresetsAreSupported(legacy, { dry: dryPreset }), /does not support dry_hydrostatic/);
+  assert.throws(() => assertPresetsAreSupported({ ...dryDescription, frameSchemaVersions: [1] }, { dry: dryPreset }), /frame schema 2/);
+  assert.throws(() => assertPresetsAreSupported(dryDescription, { dry: { ...dryPreset, levels: 31 } }), /unsupported level count/);
+  assert.throws(() => assertPresetsAreSupported(dryDescription, { dry: { ...dryPreset, maximumCellsPerPanel: 25 } }), /grid limit/);
+  assert.throws(() => assertPresetsAreSupported(dryDescription, { dry: { ...dryPreset, supportedEdits: ["gaussian_depth"] } }), /cannot support initial edits/);
+});
+
+test("a dry hydrostatic run is stopped when its published bytes exceed the budget", async () => {
+  const root = await mkdtemp(join(tmpdir(), "myplanetsim-gateway-"));
+  const preset = join(root, "preset.cfg"); await writeFile(preset, "fixture");
+  const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+  let signal = null; child.kill = (value) => { signal = value; return true; };
+  const gateway = createGatewayServer({ binary: "/configured/simulator", presets: { dry: { ...dryPreset, path: preset } }, runRoot: root, sessionToken: "token", spawn: () => child, maxPublishedBytes: 1000 });
+  await new Promise((resolve) => gateway.server.listen(0, "127.0.0.1", resolve));
+  const port = gateway.server.address().port;
+  const headers = { authorization: "Bearer token", "content-type": "application/json" };
+  const response = await fetch(`http://127.0.0.1:${port}/api/v1/runs`, { method: "POST", headers, body: JSON.stringify({ ...request, presetId: "dry" }) });
+  const { runId } = await response.json();
+  for (let sequence = 0; sequence < 3; sequence += 1) {
+    child.stdout.write(`${JSON.stringify({ protocolVersion: 1, runId, sequence, type: "frame.ready", frameSequence: sequence, timeSeconds: sequence, step: sequence, relativePath: `frame_${sequence}.bin`, byteLength: 600, frameSchemaVersion: 2 })}\n`);
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(signal, "SIGTERM");
+  assert.equal(gateway.runs.get(runId).status, "cancelling");
+  assert.equal(gateway.runs.get(runId).events.filter((event) => event.type === "frame.ready").every((event) => event.frameSchemaVersion === 2), true);
+  child.emit("close", 0, "SIGTERM");
+  assert.equal(gateway.runs.get(runId).status, "cancelled");
+  await gateway.shutdown();
 });
 
 test("gateway stops a run that outruns its published frame budget", async () => {

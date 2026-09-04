@@ -1,6 +1,6 @@
 # Phase 5 実装計画 — 地形なし乾燥 3D 静水圧力学コア
 
-**状態:** 設計済み・未実装。Phase 4 の検証済み C++ column core を開始点とし、3D state と
+**状態:** 実装済み（既知 gap は [Phase 5 検証報告](validation/phase-5.md) を参照）。Phase 4 の検証済み C++ column core を開始点とし、3D state と
 水平・鉛直結合の判断は
 [ADR 0006](adr/0006-dry-hydrostatic-state-and-coupling.md) に固定する。
 
@@ -430,23 +430,25 @@ P5.12 -> P5.13 -> P5.14 -> P5.15 -> P5.16  [Milestone B]
 
 ### C++ core
 
-- [ ] state/mass/index/staggering が ADR 0005/0006 と一致する。
-- [ ] horizontal unique-edge flux と vertical recurrence が一つの dry-mass budget を閉じる。
-- [ ] constant theta/tracer、positivity、tangency、上下端 flux が全 stage で成立する。
+- [x] state/mass/index/staggering が ADR 0005/0006 と一致する。
+- [x] horizontal unique-edge flux と vertical recurrence が一つの dry-mass budget を閉じる。
+- [x] constant theta/tracer、positivity、tangency、上下端 flux が全 stage で成立する。
 - [ ] pressure gradient、linear wave、3D transport が設計どおり収束する。
+      （bounded initialization/regression まで。定量的な refinement は既知 gap。）
 - [ ] flat rest と UMJS14 steady/perturbed case が記録した gate を満たす。
-- [ ] mass/theta/tracer、energy/AAM、continuity/hydrostatic residual を説明できる。
-- [ ] checkpoint/restart、CLI/CSV、旧 test、sanitizer/toolchain gate が通る。
-- [ ] C++ validation report 完了まで `web/` が変更されていない。
+      （rest は満たす。UMJS14 の reference envelope 比較は既知 gap。）
+- [x] mass/theta/tracer、energy/AAM、continuity/hydrostatic residual を説明できる。
+- [x] checkpoint/restart、CLI/CSV、旧 test、sanitizer/toolchain gate が通る。
+- [x] C++ validation report 完了まで `web/` が変更されていない。
 
 ### Visualizer
 
-- [ ] FrameV2 が C++ state から生成され、V1 と独立に version/shape/size 検証される。
-- [ ] gateway が preset/edit/N/frame/byte budget と既存 local security を守る。
-- [ ] globe/map/profile の field/level/time/cell が同じ C++ frame に一致する。
-- [ ] browser が pressure/hydrostatic/transport を再計算しない。
-- [ ] shallow-water V1 UI と live edit が回帰しない。
-- [ ] native V2 E2E と cancel が再現可能である。
+- [x] FrameV2 が C++ state から生成され、V1 と独立に version/shape/size 検証される。
+- [x] gateway が preset/edit/N/frame/byte budget と既存 local security を守る。
+- [x] globe/map/profile の field/level/time/cell が同じ C++ frame に一致する。
+- [x] browser が pressure/hydrostatic/transport を再計算しない。
+- [x] shallow-water V1 UI と live edit が回帰しない。
+- [x] native V2 E2E と cancel が再現可能である。
 
 ## 15. 参照
 

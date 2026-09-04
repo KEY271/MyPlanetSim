@@ -8,6 +8,7 @@ Validated with:
 cmake --preset dev
 cmake --build --preset dev -j4
 ctest --preset dev --output-on-failure
+cmake --build build/dev --target format-check
 build/dev/my_planet_sim --config configs/phase5_isothermal_rest.cfg
 ```
 
@@ -25,6 +26,76 @@ or vertical mixing.
 
 ## Visualizer gate
 
-The browser-facing gate is recorded separately below when FrameV2, gateway, level slicing,
-and selected-column tests are run. Passing this section alone is not a Phase 5 numerical
-validation claim.
+Passing this section alone is not a Phase 5 numerical validation claim; it gates only the
+browser-facing path from a validated C++ state to the screen.
+
+Validated with:
+
+```sh
+cd web
+npm ci
+npm run typecheck && npm run lint && npm run test && npm run build
+npm run test:live --workspace @myplanetsim/gateway
+```
+
+### Native publication
+
+`experiment.kind = dry_hydrostatic` accepts `--control-request` and `--event-stream ndjson`.
+The driver's existing observer and cancel hooks publish a FrameV2 file at the requested
+frame interval and again for the final step, each announced by a `frame.ready` event that
+carries `frameSchemaVersion: 2`. Initial-condition edits are rejected because the dry core
+has no depth field. `--describe-control` reports the supported model kinds, frame schema
+versions, and the interactive dry limits (`N <= 24`, `K <= 30`).
+
+### Decoding and slicing
+
+`web/packages/protocol/src/frame-v2.test.ts` builds the fixed byte layout directly and
+checks magic dispatch against FrameV1, per-field offsets in `cell-major, then k` order,
+agreement between a level slice, a selected column, and a single sample, wind speed as a
+derived magnitude, and the adapted single-field dataset for every field. Rejection is
+gated for a wrong schema version, `N > 24`, `K > 30`, a mismatched declared cell count,
+truncation, trailing bytes, a non-finite value, a fingerprint mismatch, and an
+out-of-range level or cell.
+
+### Viewer
+
+`web/apps/ui/src/visualization.test.ts` gates that the map, globe, profile, and inspector
+report the same decoded number for every cell and level; that time, step, and fingerprint
+follow each adapted level; that the top level, the bottom level, and panel-corner and
+seam cells are ordinary members of the slice; that a surface field, a constant field, and
+a signed field display correctly; that the memoized cell and edge geometry is identical
+across field, level, and frame changes; and that pressure is plotted downward on a
+logarithmic axis with a constant column centred rather than divided by a zero span. The
+narrow-viewport and reduced-motion rules are gated against the stylesheet.
+`controller.test.ts` gates that a FrameV2 run is stored as published, with no
+shallow-water derivation applied, alongside the unchanged FrameV1 mock regression.
+
+### Gateway
+
+`web/apps/gateway/test/gateway.test.js` gates the preset descriptors returned by
+`/api/v1/capabilities` (without leaking a configuration path), the shallow-water fallback
+for an undescribed preset, the per-preset N limit and edit rejection, the exact FrameV2
+byte size `8 * C * (1 + 7K)`, the pre-flight and streaming byte budget, and the startup
+compatibility check between `--describe-control` and the configured preset descriptors.
+The existing loopback auth, shell-free argv, path containment, reconnect, cancel, and
+bundle regressions are unchanged.
+
+### Live end to end
+
+`web/apps/gateway/test/live.test.js` runs the native binary against
+`configs/phase5_visualizer_rest_n4.cfg` at `N = 4`, `K = 8`. It checks the advertised
+preset descriptor, rejection of a `gaussian_depth` edit, `run.completed` with every frame
+announced as schema 2, the exact frame byte length, frame 0 matching the initialized state
+before integration (uniform 100000 Pa surface pressure, pressure increasing downward,
+288 K, zero wind), a later frame advancing time and step, and a cancelled run whose
+announced frames are all still servable at their announced length. The shallow-water
+FrameV1 live run and cancel in the same file are unchanged.
+
+### Known gaps
+
+- The offline/mock client publishes FrameV1 only, so the dry hydrostatic viewer requires
+  the native gateway; there is no browser-side dry model to regress against.
+- Browser matrix coverage (Chromium/Firefox/WebKit) and a WebGL-failure path for the
+  profile panel remain the Phase 3 automation gap and are not extended here.
+- The interactive allowlist is bounded at `N <= 24`, `K <= 30` and a 256 MiB run budget.
+  Partial frame retrieval is deliberately not designed until a measurement needs it.
