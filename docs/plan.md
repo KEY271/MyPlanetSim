@@ -172,14 +172,16 @@ p_observed = log(error(h) / error(h/2)) / log(2)
 数値方式、state、C++ column core のコミット列は
 [Phase 4 実装計画](phase-4-plan.md) に定める。鉛直座標・mass flux の規約は
 [ADR 0005](adr/0005-hybrid-vertical-coordinate-and-column-state.md) に記録する。
-user-facing visualizer は column 単独では作らず、3D 結合後の Phase 5 で更新する。
+C++ column core の検証を先に完了し、その後で C++ が出力する `column_profile.csv` を読む
+offline profile visualizer を更新する。live 実行と 3D 連動は Phase 5 で更新する。
 
 実装するもの:
 
 - `A/B` 係数、full/half level、層質量 `Delta p/g`
 - 静水圧積分、温位/温度/Exner 関数変換
-- 鉛直移流、鉛直 mass flux、必要なら conservative remap
+- 固定 `A/B` 上の鉛直移流と鉛直 mass flux（conservative remap は導入しない）
 - 上端・下端境界条件と鉛直診断
+- C++ の最終 profile CSV を再計算なしで表示する offline column view
 
 検証するもの:
 
@@ -189,7 +191,9 @@ user-facing visualizer は column 単独では作らず、3D 結合後の Phase 
 - 静止柱の state が変化せず、鉛直 mass flux が質量・定数トレーサを保存すること
 - `ps` 変化時にも定数場保持、positivity、上下境界 flux が整合すること
 
-完了ゲート: 鉛直演算子だけの unit/convergence テストが通り、水平力学から独立して質量・熱力学 budget を閉じられる。
+完了ゲート: まず鉛直演算子だけの unit/convergence テストが通り、水平力学から独立して質量・
+熱力学 budget を閉じられる。その後、strict CSV parser と column profile view の Web test/build が
+通り、既存 shallow-water visualizer が回帰しない。
 
 ### Phase 5 — 地形なし乾燥 3D 静水圧力学コア
 
@@ -316,15 +320,16 @@ state、数値結合、C++ gate、最後に visualizer を更新するコミッ�
 
 ## 5. 直近の実装順
 
-Phase 0–3 は完了済みであり、次の実装スプリントは Phase 4 の C++ 鉛直 1D column core を
-対象にする。visualizer は Phase 4 に含めず、Phase 5 の 3D 結合後に更新する。
+Phase 0–3 と Phase 4 の C++ 鉛直 1D column core は完了済みである。次の実装スプリントは
+Phase 4 の最終段として、確定済み CSV を読む offline column profile visualizer を対象にする。
 
 1. hybrid `A/B`、full/half level、column state、mass-flux 規約を ADR 0005 に固定する。
 2. C++ に coordinate geometry、乾燥熱力学、静水圧積分を追加する。
 3. surface-pressure tendency、鉛直 mass flux、保存型 theta/tracer 輸送を追加する。
 4. static、moving-`ps`、manufactured transport の driver と diagnostics/I/O を追加する。
 5. coordinate limit、解析的静水圧、space/time convergence、budget、restart gate を実行する。
-6. Phase 5 で cubed-sphere と結合し、3D state の検証後に frame/gateway/visualizer を更新する。
+6. C++ gate 後に strict CSV parser と offline column profile view を追加し、Web 回帰 gate を通す。
+7. Phase 5 で cubed-sphere と結合し、3D state の検証後に frame/gateway/live visualizer を更新する。
 
 ## 6. 調査資料と計画への反映
 

@@ -1,14 +1,16 @@
 # Phase 4 実装計画 — 鉛直 1D と hybrid sigma-pressure
 
-**状態:** 実装・検証済み。Phase 3 の完了状態を開始点とし、鉛直座標と column state の
-判断は [ADR 0005](adr/0005-hybrid-vertical-coordinate-and-column-state.md) に固定する。
+**状態:** C++ column core は実装・検証済み。visualizer 最終段は設計済み・未実装。
+Phase 3 の完了状態を開始点とし、鉛直座標と column state の判断は
+[ADR 0005](adr/0005-hybrid-vertical-coordinate-and-column-state.md) に固定する。
 
 ## 1. 到達点
 
 Phase 4 では、Phase 5 の乾燥 3D 静水圧力学へ組み込める鉛直 1D column core を C++ で
 実装し、水平格子から独立に座標、熱力学、静水圧、鉛直質量 flux、保存型 scalar 輸送を
-検証する。Phase 4 は C++ の数値仕様・出力・検証 gate までとし、cubed-sphere と結合した
-user-facing visualizer は 3D state が確定する Phase 5 で更新する。
+検証する。数値仕様、state、出力は C++ 側で先に確定し、C++ gate が通った後に、その出力を
+読み取り専用で表示する column profile visualizer を更新する。cubed-sphere と結合した live 3D
+visualizer は、3D state が確定する Phase 5 で更新する。
 
 成果物は次を含む。
 
@@ -19,27 +21,37 @@ user-facing visualizer は 3D state が確定する Phase 5 で更新する。
 - donor-cell 基準方式と bounded linear reconstruction
 - isothermal、dry-adiabatic、moving-`ps`、manufactured transport の column case
 - column diagnostics、checkpoint、CSV、CLI preset
+- C++ が出力した `column_profile.csv` を表示する offline column profile view
 - Phase 4 の再現手順と検証報告
 
-Phase 4 の完了は C++ 単独の unit、convergence、conservation gate で判定する。column 専用の
-Web tab、binary frame、live protocol は作らない。検証用 profile は CSV と数値 test で確認し、
-Phase 5 で一体化した globe/map/column profile UI を設計する。
+Phase 4 の科学計算は C++ 単独の unit、convergence、conservation gate で判定する。その gate を
+変更せず、最後に既存 CSV の strict parser、profile 描画、Web 回帰 test を通して Phase 4 全体を
+完了とする。column 専用 binary frame、live protocol、gateway 制御は作らない。Phase 5 で
+globe/map の level field と選択 column profile を同じ 3D frame から表示する。
 
 ## 2. 実装順序の境界
 
 ### 2.1 必須の順序
 
-Phase 4 は C++ column core の一つの milestone とする。
+Phase 4 は、C++ column core と、その完了後にのみ着手する offline visualizer の二つの milestone
+に分ける。
 
 ```text
-Phase 4 C++ column core
+Milestone A: C++ column core
   coordinate -> thermodynamics -> hydrostatic -> state -> mass flux
   -> transport -> driver -> diagnostics/I/O -> C++ validation
+
+                    C++ gate / CSV contract freeze
+                                  |
+                                  v
+Milestone B: offline visualizer
+  strict CSV parser -> column profile view -> Web validation
 ```
 
-Phase 4 では `web/` を変更しない。これにより Web schema や表示都合が C++ state、staggering、
-単位、数値方式を決めることを防ぐ。Phase 5 では結合済み C++ 3D state を authoritative data とし、
-ブラウザ内に別の静水圧積分や鉛直輸送を実装しない。
+Milestone A の作業中は `web/` を変更しない。Milestone B は確定済みの
+`column_profile.csv` を consumer として扱い、C++ state、staggering、単位、数値方式を変更しない。
+ブラウザは pressure、temperature、height などを再計算せず、CSV の値をそのまま描画する。
+Phase 5 でも結合済み C++ 3D state を authoritative data とし、この原則を維持する。
 
 ### 2.2 Phase 4 に含めないもの
 
@@ -49,7 +61,8 @@ Phase 4 では `web/` を変更しない。これにより Web schema や表示�
 - moist thermodynamics、condensate、放射、境界層、対流調節
 - time-varying `A/B`、鉛直 AMR、isentropic coordinate、conservative remap
 - semi-implicit 鉛直音波/重力波 solver
-- Web protocol、binary live frame、gateway、visualizer の変更（Phase 5）
+- column の live 実行、binary frame、gateway/control protocol の変更（Phase 5）
+- column time animation、3D volume、水平 cell と column の連動（Phase 5）
 
 Phase 4 の column driver へ入る水平 tendency は manufactured forcing であり、水平力学の代用品
 ではない。総エネルギーが閉じると主張せず、dry mass、potential-temperature mass、tracer mass、
@@ -309,12 +322,18 @@ residual を報告する。reduction order を固定し、既存 diagnostics CSV
 変更しない。profile CSV は level location を明示するため layer と interface を別 file または
 `location,index` 列で区別し、pressure・geopotential・unit を header 名へ含める。
 
-### 8.3 Phase 5 への出力 handoff
+### 8.3 visualizer への出力 handoff
 
-Phase 4 は human-readable な column profile/diagnostics CSV と checkpoint までを所有する。
-column 専用 binary frame や live control schema は固定しない。Phase 5 で 3D state、field 数、
-staggering、必要な部分取得方法、frame size 上限を確定してから、surface map、model level、選択 column
-profile を一つの run/frame contract として設計する。
+C++ が出力する `column_profile.csv` を Phase 4 visualizer の唯一の profile data contract とする。
+既存の header と意味を変更せず、`location=interface` は pressure、geopotential、height、
+`location=full` はそれらに加えて air mass、theta、temperature、tracer を持つ。CSV は C++ が
+計算した最終 state の診断値であり、Web 側で checkpoint を解釈したり、Exner・静水圧積分・
+full-level pressure を再計算したりしない。
+
+Phase 4 では `column_diagnostics.csv` の時系列グラフ、column 専用 binary frame、live control schema
+を追加しない。診断 CSV は数値検証用のまま維持する。Phase 5 で 3D state、field 数、staggering、
+必要な部分取得方法、frame size 上限を確定してから、surface map、model level、選択 column profile
+を一つの run/frame contract として設計する。
 
 ## 9. C++ 検証 gate
 
@@ -354,12 +373,71 @@ profile を一つの run/frame contract として設計する。
 - column CSV/checkpoint は round-trip し、wrong layout、wrong shape、non-finite、fingerprint mismatch を
   拒否する。
 
-この節の gate と `configs/phase4_*` の clean run が全て通った時点を Phase 4 完了とする。
+この節の gate と `configs/phase4_*` の clean run が全て通った時点で C++ milestone を完了とし、
+その後にだけ visualizer milestone へ進む。
 
-## 10. コミット規約
+## 10. visualizer 最終段
 
-各コミットは一つの C++ 数値責務と対応 test を含む。Phase 4 では `web/`、browser-facing
-protocol、gateway を変更しない。既存 Phase 3 の C++/Web test は回帰 gate として維持する。
+### 10.1 data model と parser
+
+既存の cubed-sphere 用 `VisualDatasetV1` を column へ無理に拡張せず、protocol package に
+`ColumnProfileDatasetV1` と `parseColumnProfileCsv` を追加する。dataset は full level と interface
+level を分離し、元の `index` と全列の unit を保持する。
+
+```text
+ColumnProfileDatasetV1
+  sourceKind = offline_csv
+  interfaces[] = {index, pressurePa, geopotentialM2S2, heightM}
+  fullLevels[] = {index, pressurePa, geopotentialM2S2, heightM,
+                  airMassKgM2, thetaK, temperatureK, tracer}
+```
+
+parser は次を拒否する。
+
+- header、列数、`location` が規約外の CSV
+- 非有限値、正でない pressure、負または重複した index
+- `interface=0..nz`、`full=0..nz-1` が連続しない shape
+- interface 行の full-level 専用列が空でない、または full 行に空列がある data
+- pressure が下向きに増加しない profile、full pressure が対応 layer 内にない profile
+
+これは file format と shape の validation であり、Web 側へ熱力学・静水圧の計算を複製するもの
+ではない。`nz<=4096` に制限し、巨大・不正 CSV で描画を停止させない。実装場所は既存の
+`web/packages/protocol/src/visual.ts` とその test とし、run/control protocol の型へ混ぜない。
+
+### 10.2 UI
+
+既存 UI に `Shallow water` / `Vertical column` の表示 mode を置く。`Vertical column` では
+`column_profile.csv` の file input と、横軸 field、縦軸の選択だけを表示し、shallow-water の
+run controls、初期値 edit、timeline、2D map、3D globe は隠す。
+
+- 初期表示は temperature 対 log-pressure。pressure は上端を上、surface を下に表示する。
+- 縦軸は log-pressure と height の切替を許す。
+- 横軸は temperature、theta、tracer、air mass、geopotential から選ぶ。
+- full level は点と折れ線、interface level は対応する高さの目盛として描き、補間や smoothing はしない。
+- hover/focus で `location`、index、元値、unit を確認できる。
+- SVG と既存 CSS で実装し、新しい chart library は導入しない。
+
+この view は offline final-state inspector である。ブラウザから column run を開始する機能、
+frame playback、initial-condition editor は Phase 4 に含めない。UI の変更対象は
+`web/apps/ui/src/ColumnProfile.tsx`、component test、`main.tsx`、`style.css` に限定する。
+
+### 10.3 Web 検証 gate
+
+- C++ test fixture と同じ header/shape の CSV を parser が読み、全値と index を loss なく保持する。
+- malformed header、空欄規約、重複/missing index、NaN/Inf、pressure 配置違反を拒否する。
+- profile component が field/axis 切替、上端/下端の向き、level 数、unit を正しく表示する。
+- keyboard と pointer の双方で level 値を inspection できる。
+- shallow-water mode の既存 protocol、mock/live controller、2D/3D view test が回帰しない。
+- `npm run lint && npm run test && npm run build` が clean checkout で通る。
+
+画像 pixel 比較は gate にせず、parser の数値一致、SVG の scale/point 座標、accessible label を
+検査する。C++ gate とこの Web gate の両方が通った時点を Phase 4 完了とする。
+
+## 11. コミット規約
+
+P4.01–P4.13 は一つの C++ 数値責務と対応 test を含む。visualizer は C++ gate 完了後の
+P4.14–P4.15 に限定する。既存 browser-facing run protocol、gateway、native `FrameV1` は変更せず、
+Phase 3 の C++/Web test を回帰 gate として維持する。
 
 generated column output、checkpoint、test report は commit しない。reference tolerance は
 式・conditioning・truncation error から決め、失敗後に根拠なく緩和しない。
@@ -378,7 +456,7 @@ include/myplanetsim/diagnostics/vertical_column_diagnostics.hpp
 
 対応する `src/` 実装と `tests/test_*` を同じ commit へ置く。
 
-## 11. コミット列
+## 12. コミット列
 
 ### P4.01 — vertical coordinate ADR
 
@@ -487,19 +565,41 @@ coordinate limits、analytic hydrostatic、space/time convergence、moving-`ps`�
 Phase 4 gate を固める。clean build/run、数値 tolerance、収束表、budget、既知 gap を
 `docs/validation/phase-4.md` に記録する。
 
-## 12. 依存関係
+### P4.14 — column profile parser と view
+
+```text
+web: visualize offline vertical column profiles
+```
+
+strict `column_profile.csv` parser、typed dataset、SVG profile view、field/axis selector と unit/component
+test を追加する。C++ CSV schema、gateway、`FrameV1` は変更しない。
+
+### P4.15 — Phase 4 visualizer gate
+
+```text
+test(web): gate vertical column profile visualization
+```
+
+不正 CSV、level 配置、accessibility、shallow-water 回帰、Web build を gate 化し、再現手順と
+visualizer の制約を `docs/validation/phase-4.md` に追記する。
+
+## 13. 依存関係
 
 ```text
 P4.01 -> P4.02 -> P4.03 -> P4.04 -> P4.05 -> P4.06
                                                    |
                                                    v
 P4.07 -> P4.08 -> P4.09 -> P4.10 -> P4.11 -> P4.12 -> P4.13
+                                                            |
+                                                            v
+                                                      P4.14 -> P4.15
 ```
 
 実装は commit 番号順を基本とする。P4.04 の scalar thermodynamics tests は P4.03 と並行可能だが、
-履歴上は coordinate convention 確定後に置く。visualizer work は Phase 5 の 3D state 検証後に行う。
+履歴上は coordinate convention 確定後に置く。P4.14 は P4.13 の C++ gate と CSV schema 確定後に
+のみ開始する。Phase 5 の live 3D visualizer work は Phase 5 の 3D state 検証後に行う。
 
-## 13. 完了チェックリスト
+## 14. 完了チェックリスト
 
 - [x] `A/B`、full/half level、pressure/mass convention が ADR と code で一致する。
 - [x] arbitrary valid `ps` で pressure が単調、layer mass が正、mass sum が閉じる。
@@ -508,5 +608,8 @@ P4.07 -> P4.08 -> P4.09 -> P4.10 -> P4.11 -> P4.12 -> P4.13
 - [x] donor-cell/linear transport の conservation、boundedness、設計収束が確認できる。
 - [x] C++ checkpoint/restart と profile/diagnostics CSV が通る。
 - [x] Phase 0–3 C++ gate、GCC/Clang、ASan/UBSan、format が回帰しない。
-- [x] `web/`、Phase 3 protocol、shallow-water UI に Phase 4 固有変更が入っていない。
-- [x] Phase 4 検証報告が clean checkout から再生成できる。
+- [x] C++ milestone の間は `web/`、Phase 3 protocol、shallow-water UI を変更していない。
+- [ ] strict parser が C++ の `column_profile.csv` を再計算なしで読み取れる。
+- [ ] offline profile view で field、pressure/height 軸、level 値と unit を確認できる。
+- [ ] Phase 3 protocol、gateway、`FrameV1` と shallow-water UI test が回帰しない。
+- [ ] C++ と Web の両 gate を含む Phase 4 検証報告を clean checkout から再生成できる。

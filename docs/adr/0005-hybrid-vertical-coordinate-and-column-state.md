@@ -99,9 +99,12 @@ phase introduces time-varying coefficients, vertical grid regeneration, or model
 adaptation, that feature requires a separate ADR and a conservative remap with its own
 mass, boundedness, and constant-preservation gates.
 
-Phase 4 also does not add a column-only Web protocol or visualizer. The user-facing
-visualizer is updated in Phase 5 after the column is coupled to the cubed-sphere and the
-three-dimensional state, staggering, and frame-size requirements are known.
+Phase 4 does not add a column-only live Web protocol. After the C++ numerical and I/O
+gates pass, the existing Web application may read the final `column_profile.csv` as an
+offline, read-only profile. It must not recompute pressure, thermodynamics, or
+hydrostatic balance. Live column control, binary frames, and a profile linked to a
+cubed-sphere cell remain Phase 5 work, after the three-dimensional state, staggering,
+and frame-size requirements are known.
 
 ## Limits fixed for Phase 4
 

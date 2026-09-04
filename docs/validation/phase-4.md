@@ -1,9 +1,10 @@
-# Phase 4 検証報告 — hybrid 鉛直 column
+# Phase 4 C++ milestone 検証報告 — hybrid 鉛直 column
 
 Phase 4 は水平格子と結合しない C++ column core として実装した。`vertical_column` は
 `A/B` hybrid interface、log-pressure full level、dry Exner/温位変換、静水圧
 geopotential、mass-flux recurrence、保存型 scalar transport を所有する。Web、gateway、
-既存 shallow-water frame は変更していない。
+既存 shallow-water frame はこの C++ milestone では変更していない。Phase 4 全体の残作業は、
+C++ が出力する `column_profile.csv` の offline visualizer と Web gate である。
 
 ## 再現手順
 
@@ -51,5 +52,6 @@ dry mass `-3.09e-11 kg m-2`、theta mass `-5.12e-9 K kg m-2`、tracer mass
 format-check も成功した。
 
 各 CLI run は `column_profile.csv`、`column_diagnostics.csv`、必要に応じて
-`vertical_column_hybrid_v1` checkpoint を出力する。Phase 5 で水平との結合、3D state、
-browser-facing frame は別途検証する。
+`vertical_column_hybrid_v1` checkpoint を出力する。Phase 4 の visualizer は最終 profile CSV を
+読み取り専用で表示する。Phase 5 で水平との結合、3D state、browser-facing frame、live profile
+を別途検証する。
