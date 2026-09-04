@@ -1,6 +1,7 @@
 #include <cmath>
 #include <numbers>
 
+#include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
 #include "support/test.hpp"
@@ -29,6 +30,14 @@ namespace {
           .physics = {.kind = mps::PhysicsKind::kHeldSuarez},
           .diagnostics = {1},
           .output_directory = "x"};
+}
+
+[[nodiscard]] mps::AtmosphericHybridCoordinate coordinate(
+    const mps::ExperimentConfig& parameters) {
+  return {{parameters.vertical.a_half_pa, parameters.vertical.b_half},
+          parameters.vertical.minimum_surface_pressure_pa,
+          parameters.vertical.maximum_surface_pressure_pa,
+          parameters.vertical.minimum_pressure_thickness_pa};
 }
 
 }  // namespace
@@ -68,8 +77,9 @@ MPS_TEST_CASE("Held-Suarez tendency preserves mass shapes and tangent momentum")
           20.0 * mps::cross(mps::Vec3{0, 0, 1}, driver.grid().cells()[cell].center);
     }
   }
-  const auto forcing = mps::held_suarez_tendency(
-      driver.grid(), derived, state.surface_pressure_pa, parameters.planet);
+  const auto forcing =
+      mps::held_suarez_tendency(driver.grid(), coordinate(parameters), derived,
+                                state.surface_pressure_pa, parameters.planet);
   MPS_CHECK_EQ(forcing.potential_temperature_mass_k_kg_m2_s.size(),
                derived.cells * derived.levels);
   MPS_CHECK(forcing.diagnostics.rayleigh_drag_work_w <= 0.0);
@@ -101,14 +111,45 @@ MPS_TEST_CASE("Held-Suarez equilibrium at rest has exact zero sources") {
       derived.velocity_m_s[offset] = {};
     }
   }
-  const auto forcing = mps::held_suarez_tendency(
-      driver.grid(), derived, state.surface_pressure_pa, parameters.planet);
+  const auto forcing =
+      mps::held_suarez_tendency(driver.grid(), coordinate(parameters), derived,
+                                state.surface_pressure_pa, parameters.planet);
   for (const auto value : forcing.potential_temperature_mass_k_kg_m2_s)
     MPS_CHECK_EQ(value, 0.0);
   for (const auto value : forcing.horizontal_momentum_mass_kg_m_s2)
     MPS_CHECK_EQ(mps::norm(value), 0.0);
   MPS_CHECK_EQ(forcing.diagnostics.thermal_energy_rate_w, 0.0);
   MPS_CHECK_EQ(forcing.diagnostics.rayleigh_drag_work_w, 0.0);
+}
+
+MPS_TEST_CASE("reported thermal power is the discrete total-energy derivative") {
+  const auto parameters = config();
+  const mps::DryHydrostaticDriver driver(parameters);
+  const auto state = driver.initial_state();
+  const auto derived = driver.diagnose(state);
+  const auto forcing =
+      mps::held_suarez_tendency(driver.grid(), coordinate(parameters), derived,
+                                state.surface_pressure_pa, parameters.planet);
+  constexpr mps::Real epsilon_s = 100.0;
+  auto plus = state;
+  auto minus = state;
+  for (std::size_t index = 0; index < state.potential_temperature_mass_k_kg_m2.size();
+       ++index) {
+    plus.potential_temperature_mass_k_kg_m2[index] +=
+        epsilon_s * forcing.potential_temperature_mass_k_kg_m2_s[index];
+    minus.potential_temperature_mass_k_kg_m2[index] -=
+        epsilon_s * forcing.potential_temperature_mass_k_kg_m2_s[index];
+  }
+  const auto plus_derived = driver.diagnose(plus);
+  const auto minus_derived = driver.diagnose(minus);
+  const auto plus_energy = mps::diagnose_dry_hydrostatic_budgets(
+      driver.grid(), plus, plus_derived, parameters.planet);
+  const auto minus_energy = mps::diagnose_dry_hydrostatic_budgets(
+      driver.grid(), minus, minus_derived, parameters.planet);
+  const mps::Real numerical_rate =
+      (plus_energy.total_energy_j - minus_energy.total_energy_j) / (2.0 * epsilon_s);
+  MPS_CHECK_NEAR(numerical_rate, forcing.diagnostics.thermal_energy_rate_w,
+                 2e-9 * std::abs(forcing.diagnostics.thermal_energy_rate_w));
 }
 
 int main() { return mps::test::run_all(); }

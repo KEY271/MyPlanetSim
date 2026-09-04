@@ -82,9 +82,10 @@ energy change. Mass, tracer mass, minimum temperature, maximum wind, and non-fin
 are health columns.
 
 The energy rates are diagnosed from the tendencies actually added to `M*theta` and `M*u`:
-thermal power is the discrete internal-energy directional derivative using the current
-Exner function, and drag work is `area * dot(u, d(Mu)/dt)`. Thus Rayleigh work must be
-non-positive; Newtonian relaxation may have either sign.
+thermal power is the directional derivative of the current discrete internal plus
+hydrostatic potential energy, including the geopotential response above a heated layer,
+and drag work is `area * dot(u, d(Mu)/dt)`. Thus Rayleigh work must be non-positive;
+Newtonian relaxation may have either sign.
 
 ### Online climate statistics
 

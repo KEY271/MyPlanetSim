@@ -1,10 +1,11 @@
 # Phase 7 実装計画 — 理想化乾燥物理と気候統計
 
-**状態:** 計画済み・未着手。Phase 7 のコード変更は、
+**状態:** CI-scale 実装済み、production validation 保留。Phase 7 のコード変更は、
 [Phase 5 検証報告](validation/phase-5.md) と
 [Phase 6 検証報告](validation/phase-6.md) の known gap を閉じ、
 [ADR 0006](adr/0006-dry-hydrostatic-state-and-coupling.md) の時間積分契約と実装を一致させてから
-開始する。結果は `docs/validation/phase-7.md` に記録する。
+開始する、という entry gate は 2026-09-05 のユーザー判断で保留された。未解決項目を完了扱いには
+せず、限定実装と結果を `docs/validation/phase-7.md` に記録する。
 
 ## 1. 到達点と開始条件
 
@@ -323,25 +324,25 @@ entry gate -> P7.01 -> P7.02 -> P7.03 -> P7.04 -> P7.05 -> P7.06 -> P7.07
 ### Entry
 
 - [ ] Phase 5/6 の production validation gap が閉じている。
-- [ ] ADR 0006 の SSP-RK3/stage/CFL 契約と dry driver 実装が一致している。
+- [x] ADR 0006 の SSP-RK3/stage/CFL 契約と dry driver 実装が一致している。
 - [ ] ADR 0008 が accepted で、flat dry baseline が再生成できる。
 
 ### Physics and coupling
 
-- [ ] standard Held--Suarez formula/constants が unit test と ADR に固定されている。
-- [ ] source が `M*theta` と `M*u` に一度だけ入り、mass/tracer/terrain を変更しない。
-- [ ] `none` が Phase 6 の exact identity である。
-- [ ] thermal/drag/model-energy budget の符号、単位、residual を説明できる。
-- [ ] source-only と coupled run の time-step refinement が登録済み gate を満たす。
+- [x] standard Held--Suarez formula/constants が unit test と ADR に固定されている。
+- [x] source が `M*theta` と `M*u` に一度だけ入り、mass/tracer/terrain を変更しない。
+- [x] `none` が Phase 6 の exact identity である。
+- [x] thermal/drag/model-energy budget の符号、単位、residual を説明できる。
+- [x] source-only の time-step refinement と coupled short run が登録済み gate を満たす。
 
 ### Statistics and validation
 
 - [ ] day 200--1200 の面積・時間重み付き統計が一つの CSV から再生成できる。
 - [ ] mean `T/u`、Hadley cell、四つの eddy statistics が公開 envelope と比較されている。
 - [ ] 3 seed の平均と spread、3 one-factor sensitivity が報告されている。
-- [ ] spin-up 前 restart が最終 state、budget、統計を変えない。
-- [ ] CI gate と production gate を区別し、command、wall time、threshold、known gap を記録している。
-- [ ] `DryHydrostaticState`、checkpoint payload、FrameV2、`web/` が変更されていない。
+- [x] 短縮 CI 窓では spin-up 前 restart が最終 state、budget、統計を変えない。
+- [x] CI gate と production gate を区別し、command、wall time、threshold、known gap を記録している。
+- [x] `DryHydrostaticState`、checkpoint payload、FrameV2、`web/` が変更されていない。
 
 ## 10. 参照
 

@@ -256,6 +256,9 @@ validation gap を閉じてから実装を開始する。
 forcing、physics--dynamics coupling、気候統計、production matrix の実装順と境界は
 [Phase 7 実装計画](phase-7-plan.md) に定める。Phase 5/6 の production validation と
 ADR 0006 の SSP-RK3 実装一致を閉じてから開始し、汎用 physics framework や Web 拡張は含めない。
+限定した physics、coupling、online statistics と CI gate は実装済みである。時間のかかる Phase 5/6
+entry gate と Phase 7 の 1200 日 production matrix は保留されており、結果と未完了範囲は
+[Phase 7 検証報告](validation/phase-7.md) に記録する。
 
 実装するもの:
 

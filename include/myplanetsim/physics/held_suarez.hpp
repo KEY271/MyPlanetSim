@@ -37,7 +37,8 @@ struct HeldSuarezTendency {
                                                 const PlanetParameters& planet);
 
 [[nodiscard]] HeldSuarezTendency held_suarez_tendency(
-    const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
-    std::span<const Real> surface_pressure_pa, const PlanetParameters& planet);
+    const CubedSphereGrid& grid, const AtmosphericHybridCoordinate& coordinate,
+    const DryHydrostaticDerived& derived, std::span<const Real> surface_pressure_pa,
+    const PlanetParameters& planet);
 
 }  // namespace mps

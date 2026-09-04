@@ -199,8 +199,8 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
                                    sources.coriolis_kg_m_s2[n];
   HeldSuarezDiagnostics physics_diagnostics{};
   if (config_.physics.kind == PhysicsKind::kHeldSuarez) {
-    auto physics =
-        held_suarez_tendency(grid_, d, s.surface_pressure_pa, config_.planet);
+    auto physics = held_suarez_tendency(grid_, coordinate_, d, s.surface_pressure_pa,
+                                        config_.planet);
     for (std::size_t n = 0; n < C * K; ++n) {
       coupled.tendency.momentum[n] =
           coupled.tendency.momentum[n] + physics.horizontal_momentum_mass_kg_m_s2[n];
@@ -226,7 +226,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     auto sampled = step;
     if (config_.physics.kind == PhysicsKind::kHeldSuarez) {
       sampled.physics_rates =
-          held_suarez_tendency(grid_, derived, state.surface_pressure_pa,
+          held_suarez_tendency(grid_, coordinate_, derived, state.surface_pressure_pa,
                                config_.planet)
               .diagnostics;
     }
