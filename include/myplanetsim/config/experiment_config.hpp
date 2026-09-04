@@ -164,6 +164,10 @@ struct PhysicsParameters {
 struct SurfaceParameters {
   SurfaceGeography geography = SurfaceGeography::kUniform;
   Real uniform_land_fraction = 0.0;
+  std::string input_file;
+  std::string input_fingerprint_fnv1a64;
+  Index quadrature_order = 1;
+  Index smoothing_passes = 0;
 };
 
 struct ExperimentConfig {

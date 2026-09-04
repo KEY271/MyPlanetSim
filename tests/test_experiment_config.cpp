@@ -188,6 +188,19 @@ MPS_TEST_CASE("fractional surface configuration is optional and strict") {
                             "surface.geography = earth\n"
                             "surface.uniform_land_fraction = 0\n"),
                       std::runtime_error);
+
+  const auto earth =
+      parse(std::string(kValidDryHydrostaticConfig) +
+            "surface.geography = earth\n"
+            "surface.input_file = ../data/earth/earth_surface_derived.csv\n"
+            "surface.input_fingerprint_fnv1a64 = f6c9b8886a03d401\n"
+            "surface.quadrature_order = 2\n"
+            "surface.smoothing_passes = 0\n");
+  MPS_CHECK(earth.surface->geography == mps::SurfaceGeography::kEarth);
+  std::ostringstream earth_text;
+  mps::write_experiment_config(earth_text, earth);
+  MPS_CHECK_EQ(parse(earth_text.str()).surface->input_fingerprint_fnv1a64,
+               "f6c9b8886a03d401");
 }
 
 MPS_TEST_CASE("configuration has a canonical round trip") {

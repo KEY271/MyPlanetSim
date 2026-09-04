@@ -505,6 +505,18 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
   } else if (key == "surface.uniform_land_fraction") {
     if (!config.surface.has_value()) config.surface.emplace();
     config.surface->uniform_land_fraction = parse_real(value, line, key);
+  } else if (key == "surface.input_file") {
+    if (!config.surface.has_value()) config.surface.emplace();
+    config.surface->input_file = value;
+  } else if (key == "surface.input_fingerprint_fnv1a64") {
+    if (!config.surface.has_value()) config.surface.emplace();
+    config.surface->input_fingerprint_fnv1a64 = value;
+  } else if (key == "surface.quadrature_order") {
+    if (!config.surface.has_value()) config.surface.emplace();
+    config.surface->quadrature_order = parse_index(value, line, key);
+  } else if (key == "surface.smoothing_passes") {
+    if (!config.surface.has_value()) config.surface.emplace();
+    config.surface->smoothing_passes = parse_index(value, line, key);
   } else if (key == "orography.input_file") {
     config.orography.input_file = value;
   } else if (key == "orography.input_fingerprint_fnv1a64") {
@@ -727,6 +739,31 @@ void ExperimentConfig::validate() const {
           surface->uniform_land_fraction != 0.0)
         throw std::invalid_argument(
             "earth geography does not accept a uniform land fraction");
+      if (surface->geography == SurfaceGeography::kUniform &&
+          (!surface->input_file.empty() ||
+           !surface->input_fingerprint_fnv1a64.empty() ||
+           surface->quadrature_order != 1 || surface->smoothing_passes != 0))
+        throw std::invalid_argument(
+            "uniform surface geography does not accept data options");
+      if (surface->geography == SurfaceGeography::kEarth) {
+        if (surface->input_file.empty() ||
+            surface->input_file.find_first_of("\r\n") != std::string::npos ||
+            std::filesystem::path(surface->input_file).is_absolute())
+          throw std::invalid_argument(
+              "earth surface geography requires a relative input file");
+        if (surface->input_fingerprint_fnv1a64.size() != 16 ||
+            !std::ranges::all_of(surface->input_fingerprint_fnv1a64,
+                                 [](const char value) {
+                                   return (value >= '0' && value <= '9') ||
+                                          (value >= 'a' && value <= 'f');
+                                 }))
+          throw std::invalid_argument(
+              "earth surface fingerprint must be 16 lowercase hexadecimal digits");
+        if (surface->quadrature_order <= 0 || surface->quadrature_order > 8)
+          throw std::invalid_argument("surface.quadrature_order must be in [1, 8]");
+        if (surface->smoothing_passes < 0)
+          throw std::invalid_argument("surface.smoothing_passes must be nonnegative");
+      }
     }
   } else if (physics.kind != PhysicsKind::kNone) {
     throw std::invalid_argument("physics is supported only for dry_hydrostatic");
@@ -872,7 +909,14 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
 
   const bool has_surface_geography = seen_keys.contains("surface.geography");
   const bool has_uniform_fraction = seen_keys.contains("surface.uniform_land_fraction");
-  if (!has_surface_geography && has_uniform_fraction)
+  const bool has_surface_input = seen_keys.contains("surface.input_file");
+  const bool has_surface_fingerprint =
+      seen_keys.contains("surface.input_fingerprint_fnv1a64");
+  const bool has_surface_quadrature = seen_keys.contains("surface.quadrature_order");
+  const bool has_surface_smoothing = seen_keys.contains("surface.smoothing_passes");
+  if (!has_surface_geography &&
+      (has_uniform_fraction || has_surface_input || has_surface_fingerprint ||
+       has_surface_quadrature || has_surface_smoothing))
     throw std::runtime_error("surface options require surface.geography");
   if (has_surface_geography &&
       config.surface->geography == SurfaceGeography::kUniform && !has_uniform_fraction)
@@ -882,6 +926,17 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
       has_uniform_fraction)
     throw std::runtime_error(
         "earth surface geography rejects surface.uniform_land_fraction");
+  if (has_surface_geography && config.surface->geography == SurfaceGeography::kEarth &&
+      !(has_surface_input && has_surface_fingerprint && has_surface_quadrature &&
+        has_surface_smoothing))
+    throw std::runtime_error(
+        "earth surface geography requires input, fingerprint, quadrature, and "
+        "smoothing keys");
+  if (has_surface_geography &&
+      config.surface->geography == SurfaceGeography::kUniform &&
+      (has_surface_input || has_surface_fingerprint || has_surface_quadrature ||
+       has_surface_smoothing))
+    throw std::runtime_error("uniform surface geography rejects Earth data options");
 
   config.validate();
   return config;
@@ -1026,6 +1081,14 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
         if (config.surface->geography == SurfaceGeography::kUniform)
           output << "surface.uniform_land_fraction = "
                  << config.surface->uniform_land_fraction << '\n';
+        else
+          output << "surface.input_file = " << config.surface->input_file << '\n'
+                 << "surface.input_fingerprint_fnv1a64 = "
+                 << config.surface->input_fingerprint_fnv1a64 << '\n'
+                 << "surface.quadrature_order = " << config.surface->quadrature_order
+                 << '\n'
+                 << "surface.smoothing_passes = " << config.surface->smoothing_passes
+                 << '\n';
       }
     }
     if (config.orography.kind != OrographyKind::kFlat) {
