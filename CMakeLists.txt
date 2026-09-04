@@ -147,7 +147,19 @@ if(BUILD_TESTING)
       -DMPS_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR} -P
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase4_csv.cmake
   )
-  set_tests_properties(phase4.csv_output PROPERTIES LABELS phase4_gate)
+  add_test(
+    NAME phase4.checkpoint_restart
+    COMMAND
+      ${CMAKE_COMMAND} -DMPS_EXECUTABLE=$<TARGET_FILE:my_planet_sim>
+      -DMPS_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/configs/phase4_manufactured_transport.cfg
+      -DMPS_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR} -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase4_checkpoint.cmake
+  )
+  set_tests_properties(
+    phase4.csv_output
+    phase4.checkpoint_restart
+    PROPERTIES LABELS phase4_gate
+  )
   set_tests_properties(
     smoke.phase1_transport
     PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"

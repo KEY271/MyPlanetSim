@@ -17,7 +17,7 @@ ctest --preset dev -R 'phase4|unit.experiment_config' --output-on-failure
 ./build/dev/my_planet_sim --config configs/phase4_manufactured_transport.cfg
 ```
 
-`phase4.vertical_column` と `phase4.csv_output` は以下を確認する。
+`phase4.vertical_column`、`phase4.csv_output`、`phase4.checkpoint_restart` は以下を確認する。
 
 - hybrid mass の telescoping と full pressure の layer 内部性
 - Exner/温位の round trip と layer-wise hydrostatic residual
@@ -30,6 +30,7 @@ ctest --preset dev -R 'phase4|unit.experiment_config' --output-on-failure
 - 非ゼロ `run.start_time_s` と pressure-bound stage の自動細分化
 - source-integrated dry/theta/tracer budget、上下端 flux、continuity、実 CFL
 - version 2 checkpoint と profile/diagnostics CSV schema
+- 実ファイル checkpoint からの CLI restart と連続実行結果の bitwise 一致
 
 `nz=32/64` の smooth manufactured flux に対する L2 error と observed order は次のとおり。
 
@@ -46,8 +47,8 @@ quarter-period surface-pressure solutionを `dt=2,1,0.5 s` で比較した error
 標準 moving-surface-pressure run では最大実 CFL は `1.2626262626262648e-4`、
 continuity residual と上下端 flux は `0` だった。最終 source-integrated residual は
 dry mass `-3.09e-11 kg m-2`、theta mass `-5.12e-9 K kg m-2`、tracer mass
-`-2.50e-12 kg m-2` である。dev の全 CTest は `43/43`、GCC 15 の Phase 4 test は
-`6/6`、ASan/UBSan の Phase 4 test と format-check も成功した。
+`-2.50e-12 kg m-2` である。dev の全 CTest、GCC 15 と ASan/UBSan の Phase 4 test、
+format-check も成功した。
 
 各 CLI run は `column_profile.csv`、`column_diagnostics.csv`、必要に応じて
 `vertical_column_hybrid_v1` checkpoint を出力する。Phase 5 で水平との結合、3D state、

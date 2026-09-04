@@ -146,7 +146,7 @@ MPS_TEST_CASE("frame observer reports initial intervals and one final frame") {
 MPS_TEST_CASE("cancellation is evaluated at step boundaries") {
   auto value = config();
   value.run.end_time_s = 10.0;
-  FrameTrace trace{.cancel_after = 2};
+  FrameTrace trace{.steps = {}, .cancel_after = 2};
   const auto result = mps::run_shallow_water(value, std::nullopt, std::nullopt, {},
                                              {.on_frame = record_frame,
                                               .observer_context = &trace,
