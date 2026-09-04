@@ -16,6 +16,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 6 実装計画](docs/phase-6-plan.md): 固定地形、傾いた hybrid 面の pressure gradient、山岳 benchmark と最小の地形入力設計
 - [Phase 7 実装計画](docs/phase-7-plan.md): Held--Suarez 型の理想化乾燥物理、source budget、長時間気候統計の限定実装
 - [Phase 8 実装計画](docs/phase-8-plan.md): 惑星・軌道設定、Earth 地形、fractional land--ocean surface と理想化熱強制
+- [Phase 9 実装計画](docs/phase-9-plan.md): 演算子・CFL・平衡ベンチマークの修正、静的 cache と性能ゲート、production gate の unblock
 - [科学・数値規約](docs/conventions.md): 単位、座標、添字、符号、誤差・保存量の共通定義
 - [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
 - [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果
@@ -29,6 +30,9 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [乾燥 3D 結合 ADR](docs/adr/0006-dry-hydrostatic-state-and-coupling.md): 3D state、水平・鉛直 flux、pressure gradient、実装順序の規約
 - [固定地形 ADR](docs/adr/0008-fixed-orography-and-lower-boundary.md): 不変な surface geopotential、下部境界、地形 source と I/O 境界
 - [惑星 forcing・fractional surface ADR](docs/adr/0010-planetary-forcing-and-fractional-surface.md): benchmark forcing、軌道、陸海 fraction、ゼロ深度 surface 熱収支
+- [ベクトル演算子・時間刻み ADR](docs/adr/0011-vector-operators-and-time-step-normalization.md): 球面ベクトル Laplacian、cell 単位 CFL、地表 reservoir の安定性制約
+- [静的 cache・性能ゲート ADR](docs/adr/0012-static-grid-cache-and-performance-gates.md): 時間不変な格子量の前計算、RHS workspace、正しさと分離した性能ゲート
+- [平衡初期場 ADR](docs/adr/0013-balanced-benchmark-initial-states.md): `steady` の定義、UMJS14/JW06 の惑星整合、DCMIP 座標の修復
 
 ## ビルドと実行
 

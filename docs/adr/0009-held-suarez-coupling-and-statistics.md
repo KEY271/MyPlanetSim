@@ -140,13 +140,37 @@ These are structural acceptance bounds, not digitized reference fields. A later 
 them requires a new ADR or an explicit amendment explaining the independent evidence; a
 failed run is not grounds for loosening them.
 
+## Amendment (Phase 9, 2026-09-05)
+
+Two of the assumptions above have been measured and are wrong. This amendment changes the
+production candidate and unblocks the six-run matrix. It changes nothing about the forcing
+constants, the 200-to-1200-day window, or the registered sanity envelopes.
+
+- **The candidate's time step becomes about 264 s, not 600 s.** The dry core limited its
+  horizontal step per edge rather than per cell, which is roughly four times too weak on a
+  quadrilateral cell. The candidate reports CFL 0.45 but runs at an effective cell CFL of
+  about 1.02. [ADR 0011](0011-vector-operators-and-time-step-normalization.md) normalizes
+  all three solvers to the per-cell condition; the candidate's step follows from it rather
+  than from a request. No production run existed at the old step, so nothing is
+  invalidated.
+- **The diffusion member is no longer blocked.** The dry core now applies
+  `dry_hydrostatic.diffusion_*` level by level, as ADR 0006 already permitted, using the
+  corrected spherical vector Laplacian. `diffusion_kind = none` remains byte-exact with
+  every earlier run, so the five existing members are unchanged.
+
+The consequence is cost, not meaning: at the corrected step a 1200-day run is about
+392,700 steps. [ADR 0012](0012-static-grid-cache-and-performance-gates.md) registers the
+performance work that makes the six-run matrix affordable without MPI or OpenMP. The
+matrix itself is still not run by Phase 9, which delivers one pilot run and its measured
+cost.
+
 ## Consequences
 
 - Phase 7 adds no generic process registry and no new prognostic or checkpoint field.
 - Restart equality inside the statistics window is intentionally unsupported.
 - Terrain plus Held--Suarez is rejected rather than assigned an unvalidated meaning.
-- The complete production claim remains unavailable while the deferred Phase 5/6 gate and
-  the dry horizontal-diffusion gap remain open.
+- The complete production claim remains unavailable while the deferred Phase 5/6 gate
+  remains open. The dry horizontal-diffusion gap is closed by the amendment above.
 
 ## References
 

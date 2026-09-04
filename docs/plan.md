@@ -301,7 +301,29 @@ surface の詳細設計と実装順は [Phase 8 実装計画](phase-8-plan.md) �
 
 完了ゲート: コード変更なしに惑星設定を切替でき、各 preset が設定・診断・再現手順を伴う。
 
-### Phase 9 — 物理拡張と性能（基本コア完成後）
+### Phase 9 — 正しさの回復、性能、平衡ベンチマーク
+
+Phase 8 完了時点の全体レビューが見つけた欠陥と、Phase 5--7 検証報告および ADR 0009 に記録済みの
+production gap を、新しい物理を追加せずに閉じる。詳細な設計とコミット順は
+[Phase 9 実装計画](phase-9-plan.md) に定める。
+
+実装するもの:
+
+- 球面ベクトル Laplacian の符号と曲率項の修正（[ADR 0011](adr/0011-vector-operators-and-time-step-normalization.md)）
+- 乾燥・shallow-water・輸送の CFL 定義を cell 単位へ統一し、地表 reservoir に時間刻み制約を課す
+- 乾燥コアへの水平拡散の配線。ADR 0009 の 6-run matrix の blocker を外す
+- 静的格子ジオメトリ cache、RHS workspace、observer 間隔化と性能ゲート（[ADR 0012](adr/0012-static-grid-cache-and-performance-gates.md)）
+- 平衡 benchmark 初期場と DCMIP 座標の修復（[ADR 0013](adr/0013-balanced-benchmark-initial-states.md)）
+
+検証するもの:
+
+- `steady` を名乗る preset の初期残差が解像度とともに減少すること
+- 性能コミットの bit-exact 性と、数値を動かす唯一のコミットの登録許容差
+- 暗黙 Rusanov 散逸と陽的拡散を同じ単位で比較した測定
+
+完了ゲート: production matrix が MPI/OpenMP なしで実行可能であり、1 run の pilot コストが実測されている。
+
+### Phase 10 — 物理拡張と性能（基本コア完成後）
 
 候補:
 
@@ -339,17 +361,18 @@ surface の詳細設計と実装順は [Phase 8 実装計画](phase-8-plan.md) �
 
 ## 5. 直近の実装順
 
-Phase 6 の C++ 実装列は完了したが、Phase 5/6 検証報告には production 規模の定量的 gap が残る。
-次のスプリントは新しい physics を追加する前にこれを閉じ、dry driver と ADR 0006 の SSP-RK3 契約を
-一致させる。その後は [Phase 7 実装計画](phase-7-plan.md) の限定した順序で進める。
+Phase 8 までの C++ 実装列は完了したが、全体レビューは誤った演算子、solver ごとに意味の異なる CFL、
+定常でない「定常」ベンチマークを見つけ、Phase 5--7 検証報告には production 規模の定量的 gap が残る。
+次のスプリントは新しい physics を追加する前にこれを閉じる。順序と根拠は
+[Phase 9 実装計画](phase-9-plan.md) に定める。
 
-1. Phase 5 の pressure-gradient、linear-wave、3D transport convergence と UMJS14 envelope を閉じる。
-2. ADR 0006 の state、reconstruction、SSP-RK3、CFL 契約を実装・test と一致させる。
-3. Phase 6 の DCMIP 2-0-0、Williamson 5、linear response、JW06 production gate を閉じる。
-4. Phase 5/6 validation report を完了し、ADR 0008 を accepted にする。
-5. Held--Suarez の式、stage coupling、統計定義、reference envelope を ADR 0009 に固定する。
-6. 一つの forcing kernel、source budget、online climate statistics の順に実装する。
-7. short CI gate の後に 3 seed と三つの一要因感度だけを実行し、Web は変更しない。
+1. ADR 0011/0012/0013 と ADR 0009 amendment で契約を確定する。
+2. 球面ベクトル Laplacian を修正し、その上で乾燥コアの水平拡散を配線する。
+3. CFL 定義を cell 単位へ統一し、DCMIP 座標と平衡初期場を修復する。
+4. 静的 geometry cache、workspace、observer 間隔化を bit-exact / 登録許容差の別で進める。
+5. 平衡性・収束 gate と診断の健全性を強化し、gateway と ingest の衛生を閉じる。
+6. Phase 5--7 production gate の blocker が外れたことを 1 本の pilot で示す。
+7. 放射・湿潤・非静水圧・並列化は Phase 10 として、上記の完了後に着手する。
 
 ## 6. 調査資料と計画への反映
 
