@@ -21,6 +21,8 @@
 #include "myplanetsim/control/control_request.hpp"
 #include "myplanetsim/diagnostics/reductions.hpp"
 #include "myplanetsim/diagnostics/vertical_column_diagnostics.hpp"
+#include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
+#include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
 #include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
 #include "myplanetsim/dynamics/shallow_water_driver.hpp"
 #include "myplanetsim/dynamics/vertical_column_driver.hpp"
@@ -569,6 +571,44 @@ int main(const int argc, const char* const argv[]) {
           result.budget);
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
       write_vertical_column_result(std::cout, result, diagnostics);
+    } else if (config.kind == mps::ExperimentKind::kDryHydrostatic) {
+      if (command_line.integrator != mps::IntegratorKind::kSspRk3 ||
+          command_line.control_request_path.has_value() ||
+          command_line.event_stream_ndjson) {
+        throw std::invalid_argument(
+            "dry hydrostatic standalone mode supports only ssprk3");
+      }
+      mps::DryHydrostaticDriver driver(config);
+      auto state = driver.initial_state();
+      if (command_line.restart_path.has_value()) {
+        const auto cells = driver.grid().cell_count();
+        const auto levels = static_cast<std::size_t>(config.vertical.levels);
+        auto checkpoint = mps::read_checkpoint_file(
+            *command_line.restart_path, fingerprint,
+            mps::kDryHydrostaticCheckpointLayout, cells + 5 * cells * levels);
+        state = mps::unflatten_dry_hydrostatic_state(
+            checkpoint.time_s, checkpoint.step, checkpoint.state, cells, levels);
+      }
+      driver.advance(state, config.run.end_time_s);
+      if (command_line.checkpoint_path.has_value()) {
+        mps::write_checkpoint_file(
+            *command_line.checkpoint_path,
+            {.time_s = state.time_s,
+             .step = state.step,
+             .state = mps::flatten_dry_hydrostatic_state(
+                 state, static_cast<std::size_t>(config.vertical.levels)),
+             .config_fingerprint = fingerprint,
+             .layout_id = std::string(mps::kDryHydrostaticCheckpointLayout)});
+      }
+      const auto derived = driver.diagnose(state);
+      const auto diagnostics = mps::diagnose_dry_hydrostatic_budgets(
+          driver.grid(), state, derived, config.planet);
+      mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
+      std::cout << "result.status = complete\nresult.time_s = " << state.time_s
+                << "\nresult.step = " << state.step
+                << "\ndiagnostics.dry_mass_kg = " << diagnostics.dry_mass_kg
+                << "\ndiagnostics.total_energy_j = " << diagnostics.total_energy_j
+                << '\n';
     } else {
       if (command_line.integrator != mps::IntegratorKind::kSspRk3) {
         throw std::invalid_argument("shallow water supports only ssprk3");

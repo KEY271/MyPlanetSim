@@ -53,6 +53,7 @@ add_library(
   src/diagnostics/reductions.cpp
   src/diagnostics/shallow_water_diagnostics.cpp
   src/diagnostics/vertical_column_diagnostics.cpp
+  src/diagnostics/dry_hydrostatic_diagnostics.cpp
   src/dynamics/shallow_water_state.cpp
   src/dynamics/dry_hydrostatic_state.cpp
   src/dynamics/dry_hydrostatic_flux.cpp
