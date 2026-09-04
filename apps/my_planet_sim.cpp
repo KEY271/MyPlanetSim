@@ -23,6 +23,7 @@
 #include "myplanetsim/diagnostics/reductions.hpp"
 #include "myplanetsim/diagnostics/vertical_column_diagnostics.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
+#include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
 #include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
 #include "myplanetsim/dynamics/shallow_water_driver.hpp"
 #include "myplanetsim/dynamics/vertical_column_driver.hpp"
@@ -666,6 +667,14 @@ int main(const int argc, const char* const argv[]) {
         }
         mps::write_run_metadata(metadata, mps::make_run_metadata(run_config),
                                 run_config);
+        if (run_config.orography.kind != mps::OrographyKind::kFlat) {
+          const auto sources = mps::dry_hydrostatic_sources(
+              driver.grid(), derived, run_config.planet);
+          const auto terrain = mps::diagnose_terrain_budgets(
+              driver.grid(), state, derived, sources,
+              driver.orography().surface_geopotential_m2_s2(), run_config.planet);
+          mps::write_terrain_diagnostics(metadata, terrain);
+        }
         const auto diagnostics = mps::diagnose_dry_hydrostatic_budgets(
             driver.grid(), state, derived, run_config.planet);
         machine_events->emit(
@@ -705,6 +714,14 @@ int main(const int argc, const char* const argv[]) {
       const auto diagnostics = mps::diagnose_dry_hydrostatic_budgets(
           driver.grid(), state, derived, config.planet);
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
+      if (config.orography.kind != mps::OrographyKind::kFlat) {
+        const auto sources =
+            mps::dry_hydrostatic_sources(driver.grid(), derived, config.planet);
+        const auto terrain = mps::diagnose_terrain_budgets(
+            driver.grid(), state, derived, sources,
+            driver.orography().surface_geopotential_m2_s2(), config.planet);
+        mps::write_terrain_diagnostics(std::cout, terrain);
+      }
       std::cout << "result.status = complete\nresult.time_s = " << state.time_s
                 << "\nresult.step = " << state.step
                 << "\ndiagnostics.dry_mass_kg = " << diagnostics.dry_mass_kg

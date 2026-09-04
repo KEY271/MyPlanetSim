@@ -1,7 +1,9 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
+#include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
 #include "support/test.hpp"
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 MPS_TEST_CASE("uniform hydrostatic fields have zero pressure source") {
   mps::CubedSphereGrid g(2, 2);
   mps::DryHydrostaticDerived d{.cells = g.cell_count(), .levels = 1};
@@ -67,5 +69,35 @@ MPS_TEST_CASE("sloping hybrid pressure-gradient cancellation converges") {
   MPS_CHECK(medium < 0.65 * coarse);
   MPS_CHECK(fine < 0.65 * medium);
   MPS_CHECK_NEAR(sloping_surface_cancellation_error(12, 4), medium, 1e-8 * medium);
+}
+
+MPS_TEST_CASE("terrain budgets and absolute pressure velocity are diagnostics") {
+  mps::CubedSphereGrid grid(4, 2);
+  mps::DryHydrostaticDerived derived{.cells = grid.cell_count(), .levels = 1};
+  derived.pressure_pa.assign(derived.cells, 50000);
+  derived.air_mass_kg_m2.assign(derived.cells, 1000);
+  derived.velocity_m_s.assign(derived.cells, {1, 0, 0});
+  derived.temperature_k.assign(derived.cells, 280);
+  derived.geopotential_m2_s2.resize(derived.cells);
+  std::vector<mps::Real> surface(derived.cells);
+  for (std::size_t cell = 0; cell < derived.cells; ++cell) {
+    surface[cell] = 10 * grid.cells()[cell].center.x;
+    derived.geopotential_m2_s2[cell] = surface[cell];
+  }
+  const mps::PlanetParameters planet{2, 0, 10, 287, 1004, 100000};
+  mps::DryHydrostaticState state;
+  state.surface_pressure_pa.assign(derived.cells, 100000);
+  const auto sources = mps::dry_hydrostatic_sources(grid, derived, planet);
+  const auto diagnostics =
+      mps::diagnose_terrain_budgets(grid, state, derived, sources, surface, planet);
+  MPS_CHECK(diagnostics.maximum_surface_height_m > 0);
+  MPS_CHECK(diagnostics.maximum_surface_slope > 0);
+  MPS_CHECK(std::isfinite(diagnostics.axial_torque_residual_n_m));
+  std::ostringstream output;
+  mps::write_terrain_diagnostics(output, diagnostics);
+  MPS_CHECK(output.str().find("terrain.pressure_work_w") != std::string::npos);
+  MPS_CHECK_NEAR(mps::absolute_pressure_velocity_pa_s(
+                     .5, 2, {3, 0, 0}, {4, 0, 0}, 5, 10),
+                 63, 0);
 }
 int main() { return mps::test::run_all(); }
