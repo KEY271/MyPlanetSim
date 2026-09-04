@@ -196,3 +196,14 @@ subsetting, remote execution, and a general analysis dashboard are separate feat
 - A no-topography baroclinic benchmark must use a genuinely flat-surface formulation.
   Phase 5 uses the Ullrich--Melvin--Jablonowski--Staniforth 2014 case; the smooth-topography
   Jablonowski--Williamson 2006 variant remains in Phase 6.
+
+## Implementation audit
+
+The Phase 7 entry gate re-read this decision against `DryHydrostaticDriver`. The first
+implementation took one forward Euler step per interval, limited it by the horizontal
+Rusanov CFL only, and used piecewise-constant face values. All three now follow the text
+above: the complete stage sequence is re-evaluated at each of the three SSP-RK3 stages, the
+step size additionally honours the Phase 4 vertical transport CFL and the surface-pressure
+bounds, and each level is reconstructed linearly with the Barth--Jespersen limiter. The
+tests and the registered unforced flat baseline are recorded in
+[Phase 5 validation](../validation/phase-5.md). The decision itself is unchanged.

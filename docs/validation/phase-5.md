@@ -24,6 +24,46 @@ convergence at production resolution remains a known validation gap. The referen
 explicit and intentionally has no implicit solver, terrain, physics, multi-tracer registry,
 or vertical mixing.
 
+## ADR 0006 implementation audit
+
+The Phase 7 entry gate requires the dry driver to match the
+[ADR 0006](../adr/0006-dry-hydrostatic-state-and-coupling.md) contract before any forcing
+is added. Three mismatches were found and closed on 2026-09-04.
+
+| ADR 0006 clause | Previous implementation | Now |
+|---|---|---|
+| Every SSP-RK3 stage performs the complete sequence | one forward Euler update per step | three stages, each re-evaluating the complete RHS from its own stage state, with tangent projection and invariant validation at every stage boundary |
+| One step size satisfies the horizontal CFL, the Phase 4 vertical transport CFL, surface-pressure bounds, and the requested maximum | horizontal CFL and requested maximum only | `DryHydrostaticRhs` also reports the per-column vertical stable step; the step is limited by the surface-pressure headroom and halved and retried when any stage leaves the configured pressure range or exceeds the stage CFL |
+| Each model level uses linear reconstruction and the Barth--Jespersen limiter | piecewise-constant face values | `dry_hydrostatic_reconstruction.cpp` reconstructs `M`, tangent `u`, `theta`, `q`, and `T` per level and honours `dry_hydrostatic.reconstruction` and `dry_hydrostatic.limiter` |
+
+`test_dry_hydrostatic_driver.cpp` fixes the first two: one test reproduces all three stages
+independently and requires `advance` to match it, and one requires a CFL-limited run to take
+more than one step, to land exactly on the requested end time, and to stay inside the
+pressure bounds.
+
+## Unforced flat baseline
+
+`test_dry_hydrostatic_baseline.cpp` (`phase5.dry_hydrostatic_baseline`, label
+`phase5_gate`) registers the reference values Phase 7 forced runs are compared against. The
+case is the flat UMJS14 steady preset at `N = 4`, `K = 8`, integrated to 600 s with a 10 s
+requested step.
+
+| Quantity | Registered bound on relative drift | Observed |
+|---|---:|---:|
+| Dry mass | 1e-13 | 2.4e-15 |
+| Potential-temperature mass | 1e-13 | 1.9e-15 |
+| Tracer mass | 1e-13 | 0 |
+| Total energy | 1e-6 | 5.4e-7 |
+| Absolute axial angular momentum | 2e-5 | 1.3e-5 |
+
+Energy and angular momentum are bounded rather than conserved, as ADR 0006 states for the
+Rusanov/least-squares reference scheme. Restart is exact: a run interrupted at 300 s,
+written and read back through the `dry_hydrostatic_cell_column_v1` checkpoint payload, and
+continued to 600 s reproduces the uninterrupted run bit for bit.
+
+These are CI-scale registrations. The quantitative 3D convergence study and the UMJS14
+published reference envelope remain the open Phase 5 gap above.
+
 ## Visualizer gate
 
 Passing this section alone is not a Phase 5 numerical validation claim; it gates only the

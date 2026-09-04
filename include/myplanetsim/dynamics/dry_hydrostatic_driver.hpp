@@ -10,6 +10,7 @@ struct DryHydrostaticRhs {
   std::vector<Real> surface_pressure_pa_s;
   DryHydrostaticTransportTendency tendency;
   Real horizontal_stable_time_step_s;
+  Real vertical_stable_time_step_s;
   Real maximum_continuity_residual_pa_s;
 };
 using DryHydrostaticObserver =

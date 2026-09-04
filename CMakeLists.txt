@@ -59,6 +59,7 @@ add_library(
   src/dynamics/dry_hydrostatic_flux.cpp
   src/dynamics/dry_hydrostatic_sources.cpp
   src/dynamics/dry_hydrostatic_coupling.cpp
+  src/dynamics/dry_hydrostatic_reconstruction.cpp
   src/dynamics/dry_hydrostatic_driver.cpp
   src/dynamics/dry_hydrostatic_benchmarks.cpp
   src/dynamics/surface_orography.cpp

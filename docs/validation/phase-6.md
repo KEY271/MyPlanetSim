@@ -45,6 +45,13 @@ ctest --preset asan-ubsan -L phase6_gate --output-on-failure
 | ASan/UBSan `phase6_gate` | 3/3 passed | 2.10 s |
 | `format-check` | passed | less than 1 s |
 
+The Phase 7 entry gate later changed the shared dry driver: complete-RHS re-evaluation at
+every SSP-RK3 stage, the vertical transport CFL and surface-pressure bounds in the step
+size, and linear reconstruction with the Barth--Jespersen limiter. The terrain gates were
+re-run unchanged afterwards on 2026-09-04 (Clang 57/57, and `phase5_gate` plus
+`phase6_gate` under GCC 15.2 and ASan/UBSan), so the terrain responsibilities below still
+hold. See [Phase 5 validation](phase-5.md) for the audit and the registered baseline.
+
 The three `phase6_gate` executables cover bounded orographic responses, JW06 analytic
 state/profile regression, and rigidly rotated DCMIP terrain norms. The full development
 suite additionally covers the exact flat path, a uniform geopotential offset, sloping
