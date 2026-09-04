@@ -1,8 +1,9 @@
 # Phase 8 実装計画 — 惑星設定、陸海 surface、軌道強制
 
-**状態:** bounded implementation 開始。Phase 5--7 の production gate と ADR 0008 の acceptance は
-未完了だが、2026-09-05 のユーザー判断により既知 gap を明記したまま予定コミット列を実装する。
-これは production validation の完了を意味せず、結果と未完了項目は Phase 8 検証報告へ残す。
+**状態:** bounded implementation 完了。Phase 5--7 の production gate と ADR 0008 の acceptance は
+未完了だが、2026-09-05 のユーザー判断により既知 gap を明記したまま予定コミット列を実装した。
+これは production validation の完了を意味せず、結果と未完了項目は
+[Phase 8 検証報告](validation/phase-8.md)に記録する。
 
 ## 1. 到達点と設計原則
 

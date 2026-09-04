@@ -21,6 +21,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果
 - [Phase 2 検証報告](docs/validation/phase-2.md): shallow-water 標準試験、保存量、方式比較の検証結果
 - [Phase 7 検証報告](docs/validation/phase-7.md): Held--Suarez forcing、online 統計、CI gate と保留中の production matrix
+- [Phase 8 検証報告](docs/validation/phase-8.md): 惑星・軌道、fractional surface、結合熱収支の bounded gate と production gap
 - [cubed-sphere panel ADR](docs/adr/0001-cubed-sphere-panel-conventions.md): panel、edge、向き、flux 符号規約
 - [shallow-water state ADR](docs/adr/0002-shallow-water-state-and-staggering.md): 予報変数、staggering、flux/source 分割
 - [水平離散化 ADR](docs/adr/0003-shallow-water-horizontal-discretization.md): 基準 Rusanov 法と compatible 候補の比較と採否
@@ -60,11 +61,18 @@ Held--Suarez 強制を実行します。
 ./build/dev/my_planet_sim --config configs/phase4_manufactured_transport.cfg
 ./build/dev/my_planet_sim --config configs/phase5_isothermal_rest.cfg
 ./build/dev/my_planet_sim --config configs/phase7_held_suarez_short.cfg
+./build/dev/my_planet_sim --config configs/phase8_earth_geography.cfg
 ```
 
 Held--Suarez run は `physics_diagnostics.csv` と `climate_statistics.csv` を
 `output.directory` に出力します。`phase7_held_suarez_short.cfg` は CI 用であり、1200 日の
 climate conformance を主張する preset ではありません。
+
+Phase 8 の surface energy balance run は `surface_state.csv` と
+`surface_diagnostics.csv` を追加で出力します。checked-in Earth surface product は
+結合経路を検証する解析的 CI fixture であり、NOAA ETOPO/GSHHG から生成した production
+Earth data ではありません。この境界と production matrix の保留項目は
+[Phase 8 検証報告](docs/validation/phase-8.md)に記録しています。
 
 Phase 0 の科学・ソフトウェア基盤、Phase 1 の cubed-sphere 幾何・球面受動
 輸送、Phase 2 の全球 shallow-water、および Phase 3 の C++ 制御付き Web 可視化
