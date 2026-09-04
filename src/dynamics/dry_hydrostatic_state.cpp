@@ -5,6 +5,12 @@
 
 namespace mps {
 namespace {
+// Second-order face reconstruction lets a mixing ratio that is physically zero pick up
+// a vanishingly small negative value from flux cancellation. Rejecting those is a false
+// alarm, so nonnegativity is checked to roundoff, the way tangency already is. A tracer
+// that is genuinely being driven negative fails this by many orders of magnitude.
+constexpr Real kTracerRoundoffTolerance = 1e-12;
+
 void require_shape(const DryHydrostaticState& state, const std::size_t levels) {
   const auto cells = state.surface_pressure_pa.size();
   const auto volume = cells * levels;
@@ -141,7 +147,7 @@ void validate_dry_hydrostatic_state(const DryHydrostaticState& state,
           !std::isfinite(d.potential_temperature_k[n]) ||
           !(d.potential_temperature_k[n] > 0.0) ||
           !std::isfinite(d.tracer_mixing_ratio[n]) ||
-          (nonnegative && d.tracer_mixing_ratio[n] < 0.0))
+          (nonnegative && d.tracer_mixing_ratio[n] < -kTracerRoundoffTolerance))
         throw std::runtime_error("dry hydrostatic cell-layer invariant failed");
     }
   }

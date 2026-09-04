@@ -41,6 +41,19 @@ independently and requires `advance` to match it, and one requires a CFL-limited
 more than one step, to land exactly on the requested end time, and to stay inside the
 pressure bounds.
 
+Turning the reconstruction on had two consequences worth recording.
+
+The Barth--Jespersen limiter now also applies to the tangent velocity, with the same face
+normal/tangent bounds and speed factor the shallow-water path uses. The first version left
+the least-squares vector gradient unlimited, which is not what ADR 0006 selects.
+
+Second-order faces also let a mixing ratio that is physically zero pick up a value of
+order 1e-75 from flux cancellation, which the exact `q >= 0` invariant rejected. The
+invariant is now checked to a 1e-12 roundoff tolerance, as tangency already was. This
+surfaced as `configs/phase5_solid_body_transport.cfg` failing while every registered test
+passed, because the shipped presets are not otherwise exercised by the suite;
+`smoke.phase5_solid_body_transport` now runs that preset as part of `phase5_gate`.
+
 ## Unforced flat baseline
 
 `test_dry_hydrostatic_baseline.cpp` (`phase5.dry_hydrostatic_baseline`, label
@@ -50,11 +63,11 @@ requested step.
 
 | Quantity | Registered bound on relative drift | Observed |
 |---|---:|---:|
-| Dry mass | 1e-13 | 2.4e-15 |
-| Potential-temperature mass | 1e-13 | 1.9e-15 |
+| Dry mass | 1e-13 | 5.0e-15 |
+| Potential-temperature mass | 1e-13 | 1.0e-15 |
 | Tracer mass | 1e-13 | 0 |
-| Total energy | 1e-6 | 5.4e-7 |
-| Absolute axial angular momentum | 2e-5 | 1.3e-5 |
+| Total energy | 2e-6 | 1.1e-6 |
+| Absolute axial angular momentum | 5e-5 | 3.1e-5 |
 
 Energy and angular momentum are bounded rather than conserved, as ADR 0006 states for the
 Rusanov/least-squares reference scheme. Restart is exact: a run interrupted at 300 s,

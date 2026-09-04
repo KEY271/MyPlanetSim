@@ -93,6 +93,10 @@ cleanup.
   by the Phase 6 plan are still open.
 - DCMIP 2-0-0 has not been integrated for six days at three horizontal resolutions and
   both K=15 and K=30. No production observed-order or absolute-error ceiling is claimed.
+  `configs/phase6_dcmip_2_0_0.cfg` does not start at all: with `a_half[0] = 20544.8` Pa and
+  a uniform `b_half`, `p_half[1] = 6667` Pa lies above the model top, so the first layer is
+  nonmonotone. The K=2 unit fixtures happen to avoid this. That preset needs a real hybrid
+  A/B table before any six-day run, and the coordinate is not exercised by any gate today.
 - Williamson test 5 has not been compared at days 10 and 15 with a bundled, citable
   spectral reference dataset. The current gate covers initialization, source behavior,
   bounded short evolution, and rotation sensitivity only.

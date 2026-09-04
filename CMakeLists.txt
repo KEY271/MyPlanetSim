@@ -189,6 +189,18 @@ if(BUILD_TESTING)
     PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
                LABELS phase4_gate
   )
+  # The unit gates drive the driver directly, so a shipped preset can regress without
+  # any of them failing. This one carries a tracer through the full linear-reconstruction
+  # path and caught exactly that.
+  add_test(
+    NAME smoke.phase5_solid_body_transport
+    COMMAND my_planet_sim --config
+            ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase5_solid_body_transport.cfg
+  )
+  set_tests_properties(
+    smoke.phase5_solid_body_transport
+    PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete" LABELS phase5_gate
+  )
   add_test(NAME smoke.invalid_cli COMMAND my_planet_sim --unknown value)
   set_tests_properties(smoke.invalid_cli PROPERTIES WILL_FAIL TRUE)
   add_subdirectory(tests)

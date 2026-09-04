@@ -30,6 +30,24 @@ struct ScalarReconstruction {
   return 1.0;
 }
 
+// Shrinks a velocity increment until the reconstructed face speed stays inside the
+// neighbourhood maximum, matching the shallow-water reconstruction.
+[[nodiscard]] Real speed_factor(const Vec3 center, const Vec3 increment,
+                                const Real maximum_speed) {
+  if (norm(center + increment) <= maximum_speed) return 1.0;
+  Real low = 0.0;
+  Real high = 1.0;
+  for (int iteration = 0; iteration < 54; ++iteration) {
+    const Real middle = 0.5 * (low + high);
+    if (norm(center + middle * increment) <= maximum_speed) {
+      low = middle;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
+}
+
 [[nodiscard]] ScalarReconstruction prepare_scalar(const CubedSphereGrid& grid,
                                                   const std::vector<Real>& values,
                                                   const LimiterKind limiter) {
@@ -66,6 +84,77 @@ struct ScalarReconstruction {
       logarithmic_displacement(grid.cells()[cell].center, edge.center, grid.radius_m());
   return values[cell] +
          prepared.factor[cell] * dot(prepared.gradient[cell], displacement);
+}
+
+struct VelocityReconstruction {
+  std::vector<TangentVectorGradient> gradient;
+  std::vector<Real> factor;
+};
+
+// Limits the reconstructed tangent velocity the same way the shallow-water path does:
+// the face normal and tangent components stay inside the neighbourhood range and the
+// face speed stays inside the neighbourhood maximum. Without this the unlimited
+// least-squares vector gradient overshoots at cubed-sphere seams.
+[[nodiscard]] VelocityReconstruction prepare_velocity(const CubedSphereGrid& grid,
+                                                      const std::vector<Vec3>& velocity,
+                                                      const LimiterKind limiter) {
+  VelocityReconstruction result{
+      .gradient = least_squares_vector_gradient(grid, velocity),
+      .factor = std::vector<Real>(velocity.size(), 1.0)};
+  if (limiter == LimiterKind::kNone) return result;
+  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
+    const auto cell_id = grid.cell_id(cell);
+    Real maximum_speed = norm(velocity[cell]);
+    for (const auto edge_id : grid.cell_edges(cell_id))
+      maximum_speed = std::max(
+          maximum_speed,
+          norm(velocity[grid.cell_index(grid.neighbor_across(edge_id, cell_id))]));
+    for (const auto edge_id : grid.cell_edges(cell_id)) {
+      const auto& edge = grid.edge(edge_id);
+      const auto basis = edge_tangent_basis(edge);
+      const Vec3 center_at_face = project_tangent(velocity[cell], edge.center);
+      const Vec3 increment =
+          reconstruct_tangent_vector(grid, cell, velocity[cell], edge.center,
+                                     result.gradient[cell]) -
+          center_at_face;
+      Real minimum_normal = dot(center_at_face, basis.normal);
+      Real maximum_normal = minimum_normal;
+      Real minimum_tangent = dot(center_at_face, basis.tangent);
+      Real maximum_tangent = minimum_tangent;
+      for (const auto neighbor_edge : grid.cell_edges(cell_id)) {
+        const auto neighbor =
+            grid.cell_index(grid.neighbor_across(neighbor_edge, cell_id));
+        const Vec3 at_face = project_tangent(velocity[neighbor], edge.center);
+        minimum_normal = std::min(minimum_normal, dot(at_face, basis.normal));
+        maximum_normal = std::max(maximum_normal, dot(at_face, basis.normal));
+        minimum_tangent = std::min(minimum_tangent, dot(at_face, basis.tangent));
+        maximum_tangent = std::max(maximum_tangent, dot(at_face, basis.tangent));
+      }
+      result.factor[cell] =
+          std::min(result.factor[cell], barth_factor(dot(center_at_face, basis.normal),
+                                                     dot(increment, basis.normal),
+                                                     minimum_normal, maximum_normal));
+      result.factor[cell] =
+          std::min(result.factor[cell], barth_factor(dot(center_at_face, basis.tangent),
+                                                     dot(increment, basis.tangent),
+                                                     minimum_tangent, maximum_tangent));
+      result.factor[cell] = std::min(
+          result.factor[cell], speed_factor(center_at_face, increment, maximum_speed));
+    }
+    result.factor[cell] = std::clamp(result.factor[cell], 0.0, 1.0);
+  }
+  return result;
+}
+
+[[nodiscard]] Vec3 reconstruct_velocity(const CubedSphereGrid& grid,
+                                        const std::size_t cell,
+                                        const EdgeGeometry& edge,
+                                        const std::vector<Vec3>& velocity,
+                                        const VelocityReconstruction& prepared) {
+  const Vec3 center_at_face = project_tangent(velocity[cell], edge.center);
+  const Vec3 unlimited = reconstruct_tangent_vector(
+      grid, cell, velocity[cell], edge.center, prepared.gradient[cell]);
+  return center_at_face + prepared.factor[cell] * (unlimited - center_at_face);
 }
 
 [[nodiscard]] std::vector<Real> level_scalar(const std::vector<Real>& volume,
@@ -146,12 +235,13 @@ DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(
     const auto theta_reconstruction = prepare_scalar(grid, theta, limiter);
     const auto tracer_reconstruction = prepare_scalar(grid, tracer, limiter);
     const auto temperature_reconstruction = prepare_scalar(grid, temperature, limiter);
-    const auto velocity_gradient = least_squares_vector_gradient(grid, velocity);
+    const auto velocity_reconstruction = prepare_velocity(grid, velocity, limiter);
     for (std::size_t cell = 0; cell < cells; ++cell) {
       if (mass_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
           theta_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
           tracer_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
-          temperature_reconstruction.factor[cell] < 1.0 - 1.0e-14)
+          temperature_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
+          velocity_reconstruction.factor[cell] < 1.0 - 1.0e-14)
         ++result.limiter_activations;
     }
     for (const auto& edge : grid.edges()) {
@@ -161,8 +251,8 @@ DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(
         return DryHydrostaticPrimitive{
             .air_mass_kg_m2 =
                 reconstruct_scalar(grid, cell, edge, mass, mass_reconstruction),
-            .velocity_m_s = reconstruct_tangent_vector(
-                grid, cell, velocity[cell], edge.center, velocity_gradient[cell]),
+            .velocity_m_s = reconstruct_velocity(grid, cell, edge, velocity,
+                                                 velocity_reconstruction),
             .potential_temperature_k =
                 reconstruct_scalar(grid, cell, edge, theta, theta_reconstruction),
             .tracer_mixing_ratio =

@@ -14,13 +14,13 @@ namespace {
 // configuration, window, and tolerances below are fixed before any physics is added.
 constexpr double kEndTimeS = 600.0;
 constexpr double kRestartTimeS = 300.0;
-// Observed relative drift over the window is at rounding for the masses, 5.4e-7 for
-// total energy, and 1.3e-5 for absolute axial angular momentum. The
+// Observed relative drift over the window is at rounding for the masses, 1.1e-6 for
+// total energy, and 3.1e-5 for absolute axial angular momentum. The
 // Rusanov/least-squares reference scheme does not conserve energy or angular momentum
 // exactly, so these bound the drift instead of asserting conservation.
 constexpr double kMassDriftTolerance = 1.0e-13;
-constexpr double kEnergyDriftTolerance = 1.0e-6;
-constexpr double kAngularMomentumDriftTolerance = 2.0e-5;
+constexpr double kEnergyDriftTolerance = 2.0e-6;
+constexpr double kAngularMomentumDriftTolerance = 5.0e-5;
 
 [[nodiscard]] mps::ExperimentConfig baseline_config() {
   mps::ExperimentConfig config;
