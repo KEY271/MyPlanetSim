@@ -46,4 +46,13 @@ MPS_TEST_CASE("linear bell has fixed support and test-only amplitude scaling") {
   MPS_CHECK_EQ(mps::linear_bell_surface_height_m({-1, 0, 0}), 0.0);
 }
 
+MPS_TEST_CASE("JW06 surface geopotential is smooth and zonally symmetric") {
+  const double latitude = 0.7;
+  const mps::Vec3 first{std::cos(latitude), 0, std::sin(latitude)};
+  const mps::Vec3 second{0, std::cos(latitude), std::sin(latitude)};
+  MPS_CHECK_NEAR(mps::jw06_surface_geopotential_m2_s2(first),
+                 mps::jw06_surface_geopotential_m2_s2(second), 1e-11);
+  MPS_CHECK(std::isfinite(mps::jw06_surface_geopotential_m2_s2({0, 0, 1})));
+}
+
 int main() { return mps::test::run_all(); }

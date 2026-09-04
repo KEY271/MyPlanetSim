@@ -1,8 +1,49 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_benchmarks.hpp"
 
 #include <cmath>
+#include <algorithm>
+#include <numbers>
 
 namespace mps {
+namespace {
+constexpr Real kJw06U0 = 35.0;
+constexpr Real kJw06Eta0 = 0.252;
+
+Real jw06_vertical_factor(const Real eta) {
+  const Real eta_v = (eta - kJw06Eta0) * 0.5 * std::numbers::pi_v<Real>;
+  return std::pow(std::max(0.0, std::cos(eta_v)), 1.5);
+}
+
+Real jw06_temperature(const Real eta, const Real latitude,
+                      const PlanetParameters& planet) {
+  constexpr Real reference_temperature = 288.0;
+  constexpr Real lapse_rate = 0.005;
+  constexpr Real tropopause_eta = 0.2;
+  constexpr Real delta_temperature = 4.8e5;
+  const Real mean =
+      reference_temperature *
+          std::pow(eta, planet.gas_constant_j_kg_k * lapse_rate /
+                            planet.gravity_m_s2) +
+      (eta < tropopause_eta
+           ? delta_temperature * std::pow(tropopause_eta - eta, 5)
+           : 0.0);
+  const Real eta_v = (eta - kJw06Eta0) * 0.5 * std::numbers::pi_v<Real>;
+  const Real cosine_eta = std::max(0.0, std::cos(eta_v));
+  const Real sine = std::sin(latitude);
+  const Real cosine = std::cos(latitude);
+  const Real wind_shape =
+      -2.0 * std::pow(sine, 6) * (cosine * cosine + 1.0 / 3.0) + 10.0 / 63.0;
+  const Real rotation_shape =
+      8.0 / 5.0 * std::pow(cosine, 3) * (sine * sine + 2.0 / 3.0) -
+      std::numbers::pi_v<Real> / 4.0;
+  const Real bracket =
+      2.0 * kJw06U0 * std::pow(cosine_eta, 1.5) * wind_shape +
+      planet.radius_m * planet.rotation_rate_rad_s * rotation_shape;
+  return mean + 0.75 * eta * std::numbers::pi_v<Real> * kJw06U0 /
+                    planet.gas_constant_j_kg_k * std::sin(eta_v) *
+                    std::sqrt(cosine_eta) * bracket;
+}
+}  // namespace
 
 DryHydrostaticState initialize_dry_hydrostatic_benchmark(
     const ExperimentConfig& config, const CubedSphereGrid& grid,
@@ -56,6 +97,28 @@ DryHydrostaticState initialize_dry_hydrostatic_benchmark(
       Vec3 velocity{};
       Real tracer = 0.0;
       switch (config.dry_hydrostatic.test_case) {
+        case DryHydrostaticTestCase::kJw06Steady:
+        case DryHydrostaticTestCase::kJw06Baroclinic: {
+          const Real eta = geometry.pressure_full_pa[level] /
+                           config.planet.reference_pressure_pa;
+          Real zonal = kJw06U0 * jw06_vertical_factor(eta) *
+                       std::pow(std::sin(2.0 * latitude), 2);
+          if (config.dry_hydrostatic.test_case ==
+              DryHydrostaticTestCase::kJw06Baroclinic) {
+            constexpr Real centre_longitude = std::numbers::pi_v<Real> / 9.0;
+            constexpr Real centre_latitude =
+                2.0 * std::numbers::pi_v<Real> / 9.0;
+            const Vec3 centre{std::cos(centre_latitude) *
+                                  std::cos(centre_longitude),
+                              std::cos(centre_latitude) *
+                                  std::sin(centre_longitude),
+                              std::sin(centre_latitude)};
+            const Real angular_distance = safe_angle(position, centre);
+            zonal += std::exp(-100.0 * angular_distance * angular_distance);
+          }
+          velocity = zonal * normalize(cross(Vec3{0, 0, 1}, position));
+          break;
+        }
         case DryHydrostaticTestCase::kLinearMountainWave:
           velocity = 10.0 * cross(Vec3{0, 0, 1}, position);
           break;
@@ -85,6 +148,13 @@ DryHydrostaticState initialize_dry_hydrostatic_benchmark(
           break;
       }
       Real temperature = config.vertical.initial_temperature_k;
+      if (config.dry_hydrostatic.test_case == DryHydrostaticTestCase::kJw06Steady ||
+          config.dry_hydrostatic.test_case ==
+              DryHydrostaticTestCase::kJw06Baroclinic) {
+        const Real eta = geometry.pressure_full_pa[level] /
+                         config.planet.reference_pressure_pa;
+        temperature = jw06_temperature(eta, latitude, config.planet);
+      }
       if (config.dry_hydrostatic.test_case ==
           DryHydrostaticTestCase::kDcmip200Rest) {
         constexpr Real lapse_rate_k_m = 0.0065;

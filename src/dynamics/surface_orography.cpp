@@ -67,6 +67,28 @@ Real linear_bell_surface_height_m(const Vec3 position, const Real peak_height_m)
   return peak_height_m * taper * taper;
 }
 
+Real jw06_surface_geopotential_m2_s2(const Vec3 position) {
+  if (!is_finite(position) || !(norm_squared(position) > 0.0))
+    throw std::invalid_argument("JW06 terrain position must be finite and nonzero");
+  constexpr Real u0 = 35.0;
+  constexpr Real eta0 = 0.252;
+  constexpr Real radius_m = 6.371229e6;
+  constexpr Real rotation_rate_rad_s = 7.29212e-5;
+  const Real latitude = std::asin(std::clamp(normalize(position).z, -1.0, 1.0));
+  const Real sine = std::sin(latitude);
+  const Real cosine = std::cos(latitude);
+  const Real eta_v = (1.0 - eta0) * 0.5 * std::numbers::pi_v<Real>;
+  const Real vertical = std::pow(std::cos(eta_v), 1.5);
+  const Real wind_shape =
+      -2.0 * std::pow(sine, 6) * (cosine * cosine + 1.0 / 3.0) + 10.0 / 63.0;
+  const Real rotation_shape =
+      8.0 / 5.0 * std::pow(cosine, 3) * (sine * sine + 2.0 / 3.0) -
+      std::numbers::pi_v<Real> / 4.0;
+  return u0 * vertical *
+         (u0 * vertical * wind_shape +
+          radius_m * rotation_rate_rad_s * rotation_shape);
+}
+
 SurfaceOrography make_surface_orography(const OrographyParameters& parameters,
                                         const CubedSphereGrid& grid,
                                         const Real gravity_m_s2) {
@@ -95,6 +117,13 @@ SurfaceOrography make_surface_orography(const OrographyParameters& parameters,
       geopotential[cell] = gravity_m_s2 *
                            linear_bell_surface_height_m(grid.cells()[cell].center);
     return SurfaceOrography(std::move(geopotential), "analytic:linear_bell");
+  }
+  if (parameters.kind == OrographyKind::kJw06) {
+    std::vector<Real> geopotential(grid.cell_count());
+    for (std::size_t cell = 0; cell < grid.cell_count(); ++cell)
+      geopotential[cell] =
+          jw06_surface_geopotential_m2_s2(grid.cells()[cell].center);
+    return SurfaceOrography(std::move(geopotential), "analytic:jw06");
   }
   throw std::invalid_argument("selected orography initializer is not implemented");
 }

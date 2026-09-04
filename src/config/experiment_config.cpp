@@ -431,6 +431,10 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
     else if (value == "linear_mountain_wave")
       config.dry_hydrostatic.test_case =
           DryHydrostaticTestCase::kLinearMountainWave;
+    else if (value == "jw06_steady")
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kJw06Steady;
+    else if (value == "jw06_baroclinic")
+      config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kJw06Baroclinic;
     else if (value == "umjs14_steady")
       config.dry_hydrostatic.test_case = DryHydrostaticTestCase::kUmjs14Steady;
     else if (value == "umjs14_baroclinic")
@@ -671,6 +675,12 @@ void ExperimentConfig::validate() const {
         (orography.kind == OrographyKind::kLinearBell))
       throw std::invalid_argument(
           "linear_mountain_wave requires linear_bell orography and vice versa");
+    const bool jw06_case =
+        dry_hydrostatic.test_case == DryHydrostaticTestCase::kJw06Steady ||
+        dry_hydrostatic.test_case == DryHydrostaticTestCase::kJw06Baroclinic;
+    if (jw06_case != (orography.kind == OrographyKind::kJw06))
+      throw std::invalid_argument(
+          "JW06 test cases require jw06 orography and vice versa");
   }
 
   if (orography.kind == OrographyKind::kFlat) {
@@ -990,6 +1000,10 @@ std::string_view dry_hydrostatic_test_case_name(
       return "dcmip_2_0_0_rest";
     case DryHydrostaticTestCase::kLinearMountainWave:
       return "linear_mountain_wave";
+    case DryHydrostaticTestCase::kJw06Steady:
+      return "jw06_steady";
+    case DryHydrostaticTestCase::kJw06Baroclinic:
+      return "jw06_baroclinic";
     case DryHydrostaticTestCase::kUmjs14Steady:
       return "umjs14_steady";
     case DryHydrostaticTestCase::kUmjs14Baroclinic:
