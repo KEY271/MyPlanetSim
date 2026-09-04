@@ -117,6 +117,21 @@ if(BUILD_TESTING)
     COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase4_isothermal.cfg
   )
   add_test(
+    NAME smoke.phase4_dry_adiabatic
+    COMMAND my_planet_sim --config
+            ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase4_dry_adiabatic.cfg
+  )
+  add_test(
+    NAME smoke.phase4_moving_surface_pressure
+    COMMAND my_planet_sim --config
+            ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase4_moving_surface_pressure.cfg
+  )
+  add_test(
+    NAME smoke.phase4_manufactured_transport
+    COMMAND my_planet_sim --config
+            ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase4_manufactured_transport.cfg
+  )
+  add_test(
     NAME smoke.phase1_deformational
     COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase1_deformational.cfg
   )
@@ -124,6 +139,15 @@ if(BUILD_TESTING)
     smoke.phase1_deformational
     PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
   )
+  add_test(
+    NAME phase4.csv_output
+    COMMAND
+      ${CMAKE_COMMAND} -DMPS_EXECUTABLE=$<TARGET_FILE:my_planet_sim>
+      -DMPS_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/configs/phase4_manufactured_transport.cfg
+      -DMPS_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR} -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase4_csv.cmake
+  )
+  set_tests_properties(phase4.csv_output PROPERTIES LABELS phase4_gate)
   set_tests_properties(
     smoke.phase1_transport
     PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
@@ -138,7 +162,11 @@ if(BUILD_TESTING)
   )
   set_tests_properties(
     smoke.phase4_vertical_column
+    smoke.phase4_dry_adiabatic
+    smoke.phase4_moving_surface_pressure
+    smoke.phase4_manufactured_transport
     PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
+               LABELS phase4_gate
   )
   add_test(NAME smoke.invalid_cli COMMAND my_planet_sim --unknown value)
   set_tests_properties(smoke.invalid_cli PROPERTIES WILL_FAIL TRUE)

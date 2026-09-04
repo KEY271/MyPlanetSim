@@ -16,6 +16,7 @@ struct VerticalColumnSample {
   VerticalColumnState state;
   VerticalMassFlux mass_flux;
   Real maximum_cfl;
+  VerticalColumnBudget budget;
 };
 
 struct VerticalColumnResult {
@@ -23,6 +24,8 @@ struct VerticalColumnResult {
   bool reached_end_time;
   Real maximum_cfl;
   std::vector<VerticalColumnSample> samples;
+  VerticalColumnBudget budget;
+  VerticalMassFlux mass_flux;
 };
 
 [[nodiscard]] AtmosphericHybridCoordinate make_vertical_coordinate(

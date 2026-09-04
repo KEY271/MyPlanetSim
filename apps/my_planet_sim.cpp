@@ -369,9 +369,27 @@ void write_vertical_column_result(
          << "result.step = " << result.state.step << '\n'
          << "diagnostics.dry_mass_kg_m2 = " << diagnostics.dry_mass_kg_m2 << '\n'
          << "diagnostics.mass_residual_kg_m2 = "
-         << diagnostics.dry_mass_kg_m2 - diagnostics.expected_dry_mass_kg_m2 << '\n'
+         << diagnostics.dry_mass_structural_residual_kg_m2 << '\n'
+         << "diagnostics.dry_mass_budget_residual_kg_m2 = "
+         << diagnostics.dry_mass_budget_residual_kg_m2 << '\n'
+         << "diagnostics.theta_mass_budget_residual_k_kg_m2 = "
+         << diagnostics.potential_temperature_mass_budget_residual_k_kg_m2 << '\n'
+         << "diagnostics.tracer_mass_budget_residual_kg_m2 = "
+         << diagnostics.tracer_mass_budget_residual_kg_m2 << '\n'
+         << "diagnostics.top_mass_flux_kg_m2_s = " << diagnostics.top_mass_flux_kg_m2_s
+         << '\n'
+         << "diagnostics.surface_mass_flux_kg_m2_s = "
+         << diagnostics.surface_mass_flux_kg_m2_s << '\n'
+         << "diagnostics.continuity_residual_pa_s = "
+         << diagnostics.continuity_residual_pa_s << '\n'
+         << "diagnostics.maximum_cfl = " << diagnostics.maximum_cfl << '\n'
+         << "diagnostics.hydrostatic_l1_residual_m2_s2 = "
+         << diagnostics.hydrostatic_l1_residual_m2_s2 << '\n'
+         << "diagnostics.hydrostatic_l2_residual_m2_s2 = "
+         << diagnostics.hydrostatic_l2_residual_m2_s2 << '\n'
          << "diagnostics.hydrostatic_linf_residual_m2_s2 = "
-         << diagnostics.hydrostatic_linf_residual_m2_s2 << '\n';
+         << diagnostics.hydrostatic_linf_residual_m2_s2 << '\n'
+         << "diagnostics.non_finite_count = " << diagnostics.non_finite_count << '\n';
 }
 
 void write_vertical_column_files(const mps::ExperimentConfig& config,
@@ -411,16 +429,43 @@ void write_vertical_column_files(const mps::ExperimentConfig& config,
   }
   std::ofstream diagnostics(directory / "column_diagnostics.csv", std::ios::trunc);
   if (!diagnostics) throw std::runtime_error("unable to open column diagnostics CSV");
-  diagnostics << "time_s,step,dry_mass_kg_m2,expected_dry_mass_kg_m2,theta_mass_k_kg_"
-                 "m2,tracer_mass_kg_m2,maximum_cfl\n";
+  diagnostics << "time_s,step,dry_mass_kg_m2,expected_dry_mass_kg_m2,"
+                 "dry_mass_structural_residual_kg_m2,dry_mass_budget_residual_kg_m2,"
+                 "theta_mass_k_kg_m2,theta_mass_budget_residual_k_kg_m2,"
+                 "tracer_mass_kg_m2,tracer_mass_budget_residual_kg_m2,"
+                 "minimum_delta_pressure_pa,maximum_delta_pressure_pa,"
+                 "minimum_air_mass_kg_m2,maximum_air_mass_kg_m2,minimum_theta_k,"
+                 "maximum_theta_k,minimum_temperature_k,maximum_temperature_k,"
+                 "minimum_tracer,maximum_tracer,top_mass_flux_kg_m2_s,"
+                 "surface_mass_flux_kg_m2_s,continuity_residual_pa_s,maximum_cfl,"
+                 "hydrostatic_l1_residual_m2_s2,hydrostatic_l2_residual_m2_s2,"
+                 "hydrostatic_linf_residual_m2_s2,non_finite_count\n";
   for (const auto& sample : result.samples) {
-    const auto values =
-        mps::diagnostics::diagnose_vertical_column(config, coordinate, sample.state);
+    const auto values = mps::diagnostics::diagnose_vertical_column(
+        config, coordinate, sample.state, sample.mass_flux, sample.maximum_cfl,
+        sample.budget);
     diagnostics << std::setprecision(std::numeric_limits<mps::Real>::max_digits10)
                 << sample.time_s << ',' << sample.step << ',' << values.dry_mass_kg_m2
                 << ',' << values.expected_dry_mass_kg_m2 << ','
+                << values.dry_mass_structural_residual_kg_m2 << ','
+                << values.dry_mass_budget_residual_kg_m2 << ','
                 << values.potential_temperature_mass_k_kg_m2 << ','
-                << values.tracer_mass_kg_m2 << ',' << sample.maximum_cfl << '\n';
+                << values.potential_temperature_mass_budget_residual_k_kg_m2 << ','
+                << values.tracer_mass_kg_m2 << ','
+                << values.tracer_mass_budget_residual_kg_m2 << ','
+                << values.minimum_delta_pressure_pa << ','
+                << values.maximum_delta_pressure_pa << ','
+                << values.minimum_air_mass_kg_m2 << ',' << values.maximum_air_mass_kg_m2
+                << ',' << values.minimum_theta_k << ',' << values.maximum_theta_k << ','
+                << values.minimum_temperature_k << ',' << values.maximum_temperature_k
+                << ',' << values.minimum_tracer << ',' << values.maximum_tracer << ','
+                << values.top_mass_flux_kg_m2_s << ','
+                << values.surface_mass_flux_kg_m2_s << ','
+                << values.continuity_residual_pa_s << ',' << values.maximum_cfl << ','
+                << values.hydrostatic_l1_residual_m2_s2 << ','
+                << values.hydrostatic_l2_residual_m2_s2 << ','
+                << values.hydrostatic_linf_residual_m2_s2 << ','
+                << values.non_finite_count << '\n';
   }
 }
 
@@ -519,8 +564,9 @@ int main(const int argc, const char* const argv[]) {
              .layout_id = std::string(mps::kVerticalColumnCheckpointLayout)});
       }
       write_vertical_column_files(config, coordinate, result);
-      const auto diagnostics =
-          mps::diagnostics::diagnose_vertical_column(config, coordinate, result.state);
+      const auto diagnostics = mps::diagnostics::diagnose_vertical_column(
+          config, coordinate, result.state, result.mass_flux, result.maximum_cfl,
+          result.budget);
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
       write_vertical_column_result(std::cout, result, diagnostics);
     } else {

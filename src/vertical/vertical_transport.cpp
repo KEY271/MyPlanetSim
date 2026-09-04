@@ -21,12 +21,16 @@ VerticalMassFlux diagnose_vertical_mass_flux(
   result.target_air_mass_tendency_kg_m2_s.resize(nz);
   result.interface_flux_kg_m2_s.assign(nz + 1, 0.0);
   Real sum = 0.0;
+  Real absolute_sum = 0.0;
   for (const Real tendency : horizontal_air_mass_tendency_kg_m2_s) {
     require_finite(tendency, "horizontal air-mass tendency");
     sum += tendency;
+    absolute_sum += std::abs(tendency);
   }
   result.surface_pressure_tendency_pa_s = gravity_m_s2 * sum;
   for (std::size_t k = 0; k < nz; ++k) {
+    require_finite(b_half[k], "hybrid B coefficient");
+    require_finite(b_half[k + 1], "hybrid B coefficient");
     result.target_air_mass_tendency_kg_m2_s[k] = (b_half[k + 1] - b_half[k]) *
                                                  result.surface_pressure_tendency_pa_s /
                                                  gravity_m_s2;
@@ -35,6 +39,15 @@ VerticalMassFlux diagnose_vertical_mass_flux(
                                            result.target_air_mass_tendency_kg_m2_s[k];
   }
   result.continuity_residual_pa_s = gravity_m_s2 * result.interface_flux_kg_m2_s.back();
+  const Real residual_scale =
+      std::max({1.0, std::abs(result.surface_pressure_tendency_pa_s),
+                gravity_m_s2 * absolute_sum});
+  const Real residual_tolerance =
+      64.0 * std::numeric_limits<Real>::epsilon() * residual_scale;
+  if (std::abs(result.continuity_residual_pa_s) > residual_tolerance) {
+    throw std::runtime_error(
+        "vertical mass-flux continuity residual exceeds tolerance");
+  }
   return result;
 }
 
@@ -49,10 +62,17 @@ Real vertical_stable_time_step(
     throw std::invalid_argument("vertical CFL shapes differ");
   }
   require_positive(cfl, "vertical CFL");
+  if (cfl > 1.0) {
+    throw std::invalid_argument("vertical CFL must not exceed one");
+  }
   require_positive(maximum_time_step_s, "maximum time step");
   Real result = maximum_time_step_s;
   for (std::size_t k = 0; k < nz; ++k) {
     require_positive(air_mass_kg_m2[k], "air mass");
+    require_finite(interface_flux_kg_m2_s[k], "vertical interface mass flux");
+    require_finite(interface_flux_kg_m2_s[k + 1], "vertical interface mass flux");
+    require_finite(horizontal_air_mass_tendency_kg_m2_s[k],
+                   "horizontal air-mass tendency");
     const Real outward = std::max(-interface_flux_kg_m2_s[k], 0.0) +
                          std::max(interface_flux_kg_m2_s[k + 1], 0.0) +
                          std::max(-horizontal_air_mass_tendency_kg_m2_s[k], 0.0);
@@ -62,6 +82,34 @@ Real vertical_stable_time_step(
   }
   if (!(result > 0.0) || !std::isfinite(result)) {
     throw std::runtime_error("vertical stable time step is invalid");
+  }
+  return result;
+}
+
+Real vertical_maximum_cfl(const std::vector<Real>& air_mass_kg_m2,
+                          const std::vector<Real>& interface_flux_kg_m2_s,
+                          const std::vector<Real>& horizontal_air_mass_tendency_kg_m2_s,
+                          const Real time_step_s) {
+  const std::size_t nz = air_mass_kg_m2.size();
+  if (nz == 0 || interface_flux_kg_m2_s.size() != nz + 1 ||
+      horizontal_air_mass_tendency_kg_m2_s.size() != nz) {
+    throw std::invalid_argument("vertical CFL shapes differ");
+  }
+  require_positive(time_step_s, "vertical CFL time step");
+  Real result = 0.0;
+  for (std::size_t k = 0; k < nz; ++k) {
+    require_positive(air_mass_kg_m2[k], "air mass");
+    require_finite(interface_flux_kg_m2_s[k], "vertical interface mass flux");
+    require_finite(interface_flux_kg_m2_s[k + 1], "vertical interface mass flux");
+    require_finite(horizontal_air_mass_tendency_kg_m2_s[k],
+                   "horizontal air-mass tendency");
+    const Real outward = std::max(-interface_flux_kg_m2_s[k], 0.0) +
+                         std::max(interface_flux_kg_m2_s[k + 1], 0.0) +
+                         std::max(-horizontal_air_mass_tendency_kg_m2_s[k], 0.0);
+    result = std::max(result, time_step_s * outward / air_mass_kg_m2[k]);
+  }
+  if (!std::isfinite(result)) {
+    throw std::runtime_error("vertical CFL is not finite");
   }
   return result;
 }
@@ -92,6 +140,7 @@ std::vector<Real> vertical_scalar_rhs(
   std::vector<Real> flux(nz + 1, 0.0);
   for (std::size_t interface = 1; interface < nz; ++interface) {
     const Real f = mass_flux.interface_flux_kg_m2_s[interface];
+    require_finite(f, "vertical interface mass flux");
     const std::size_t donor = f >= 0.0 ? interface - 1 : interface;
     Real face = scalar[donor];
     if (scheme == VerticalTransportScheme::kLinear && nz > 1) {

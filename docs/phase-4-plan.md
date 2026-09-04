@@ -1,6 +1,6 @@
 # Phase 4 実装計画 — 鉛直 1D と hybrid sigma-pressure
 
-**状態:** 設計済み・未実装。Phase 3 の完了状態を開始点とし、鉛直座標と column state の
+**状態:** 実装・検証済み。Phase 3 の完了状態を開始点とし、鉛直座標と column state の
 判断は [ADR 0005](adr/0005-hybrid-vertical-coordinate-and-column-state.md) に固定する。
 
 ## 1. 到達点
@@ -501,12 +501,12 @@ P4.07 -> P4.08 -> P4.09 -> P4.10 -> P4.11 -> P4.12 -> P4.13
 
 ## 13. 完了チェックリスト
 
-- [ ] `A/B`、full/half level、pressure/mass convention が ADR と code で一致する。
-- [ ] arbitrary valid `ps` で pressure が単調、layer mass が正、mass sum が閉じる。
-- [ ] isothermal と dry-adiabatic hydrostatic profile が解析式に一致する。
-- [ ] moving-`ps` で上下 boundary flux、continuity、constant scalar が整合する。
-- [ ] donor-cell/linear transport の conservation、boundedness、設計収束が確認できる。
-- [ ] C++ checkpoint/restart と profile/diagnostics CSV が通る。
-- [ ] Phase 0–3 C++ gate、GCC/Clang、ASan/UBSan、format が回帰しない。
-- [ ] `web/`、Phase 3 protocol、shallow-water UI に Phase 4 固有変更が入っていない。
-- [ ] Phase 4 検証報告が clean checkout から再生成できる。
+- [x] `A/B`、full/half level、pressure/mass convention が ADR と code で一致する。
+- [x] arbitrary valid `ps` で pressure が単調、layer mass が正、mass sum が閉じる。
+- [x] isothermal と dry-adiabatic hydrostatic profile が解析式に一致する。
+- [x] moving-`ps` で上下 boundary flux、continuity、constant scalar が整合する。
+- [x] donor-cell/linear transport の conservation、boundedness、設計収束が確認できる。
+- [x] C++ checkpoint/restart と profile/diagnostics CSV が通る。
+- [x] Phase 0–3 C++ gate、GCC/Clang、ASan/UBSan、format が回帰しない。
+- [x] `web/`、Phase 3 protocol、shallow-water UI に Phase 4 固有変更が入っていない。
+- [x] Phase 4 検証報告が clean checkout から再生成できる。

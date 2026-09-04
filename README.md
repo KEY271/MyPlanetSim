@@ -48,6 +48,7 @@ hybrid 鉛直 column を実行します。
 ```sh
 ./build/dev/my_planet_sim --config configs/phase2_williamson2.cfg
 ./build/dev/my_planet_sim --config configs/phase4_isothermal.cfg
+./build/dev/my_planet_sim --config configs/phase4_manufactured_transport.cfg
 ```
 
 Phase 0 の科学・ソフトウェア基盤、Phase 1 の cubed-sphere 幾何・球面受動

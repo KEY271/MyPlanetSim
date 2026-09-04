@@ -20,6 +20,15 @@ struct VerticalColumnState {
   std::vector<Real> tracer_mass_kg_m2;
 };
 
+struct VerticalColumnBudget {
+  Real initial_dry_mass_kg_m2 = 0.0;
+  Real initial_potential_temperature_mass_k_kg_m2 = 0.0;
+  Real initial_tracer_mass_kg_m2 = 0.0;
+  Real integrated_dry_mass_source_kg_m2 = 0.0;
+  Real integrated_potential_temperature_mass_source_k_kg_m2 = 0.0;
+  Real integrated_tracer_mass_source_kg_m2 = 0.0;
+};
+
 [[nodiscard]] std::vector<Real> flatten_vertical_column_state(
     const VerticalColumnState& state);
 [[nodiscard]] VerticalColumnState unflatten_vertical_column_state(
