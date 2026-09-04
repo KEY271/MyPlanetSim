@@ -756,20 +756,24 @@ mock E2Eも維持する。rendererは `SimulationClient` と直接結合せず `
 
 ## 12. 完了チェックリスト
 
-- [ ] UI/gateway/C++のprotocolと責務がADRで固定されている。
-- [ ] `web/` はC++なしでlint/test/build/offline previewできる。
-- [ ] live modeはloopback gatewayから設定済みnative C++ binaryだけを起動する。
-- [ ] browserからarbitrary command/path/environmentを指定できない。
-- [ ] 3D/2D clickからGaussian depth initial editを作成・取消できる。
-- [ ] C++ frame 0がedit後のauthoritative initial stateとして表示される。
-- [ ] 表示されるwaveはsynthetic animationではなくC++が積分したfieldである。
-- [ ] run/progress/cancel/fail/reconnectが一貫したstate machineに従う。
-- [ ] 3D球体と2D全球地図が同じfield/frame/cellを表示する。
-- [ ] panel seam/全cell gridを両viewで表示・非表示にできる。
-- [ ] mass policy、positivity、tangency、conservation gateが通る。
-- [ ] request、resolved config、edit、build metadata、diagnostics、framesをbundle化できる。
-- [ ] existing Phase 0–2 CLI/CSV/checkpoint/testが回帰しない。
+- [x] UI/gateway/C++のprotocolと責務がADRで固定されている。
+- [x] `web/` はC++なしでlint/test/build/offline previewできる。
+- [x] live modeはloopback gatewayから設定済みnative C++ binaryだけを起動する。
+- [x] browserからarbitrary command/path/environmentを指定できない。
+- [x] 3D/2D clickからGaussian depth initial editを作成・取消できる。
+- [x] C++ frame 0がedit後のauthoritative initial stateとして表示される。
+- [x] 表示されるwaveはsynthetic animationではなくC++が積分したfieldである。
+- [x] run/progress/cancel/fail/reconnectが一貫したstate machineに従う。
+- [x] 3D球体と2D全球地図が同じfield/frame/cellを表示する。
+- [x] panel seam/全cell gridを両viewで表示・非表示にできる。
+- [x] mass policy、positivity、tangency、conservation gateが通る。
+- [x] request、resolved config、edit、build metadata、diagnostics、framesをbundle化できる。
+- [x] existing Phase 0–2 CLI/CSV/checkpoint/testが回帰しない。
 - [ ] native live E2E、3 browser、security、`N=48/96` performance結果が報告されている。
+
+最終項目のうち native live E2E、security、performance は
+[Phase 3 検証報告](validation/phase-3.md)で確認済みである。3 browser matrix と
+live gateway をブラウザ entrypointへ接続する部分は既知 gap として次Phaseへ残す。
 
 ## 13. 技術資料
 

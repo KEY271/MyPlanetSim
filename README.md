@@ -47,8 +47,44 @@ cmake --build build/dev --target format-check
 ```
 
 Phase 0 の科学・ソフトウェア基盤、Phase 1 の cubed-sphere 幾何・球面受動
-輸送、Phase 2 の全球 shallow-water はローカル検証を完了しています。次の
-開発対象は Phase 3 の C++ 制御付き独立 Web 可視化 UI です。
+輸送、Phase 2 の全球 shallow-water、および Phase 3 の C++ 制御付き Web 可視化
+基盤はローカル検証を完了しています。Phase 3 の検証結果と既知 gap は
+[Phase 3 検証報告](docs/validation/phase-3.md)に記録しています。
+
+### Phase 3 Web UI と native gateway
+
+UI は C++ を必要としない mock/offline preview として起動できます。
+
+```sh
+cd web
+npm ci
+npm run build
+npm run dev --workspace @myplanetsim/ui
+```
+
+native simulator を local gateway から制御する場合は、gateway 起動時に binary と
+allowlist preset を固定します。起動時に表示される JSON の `port` と `token` を
+API request に使います。
+
+```sh
+MPS_SIMULATOR_BINARY="$PWD/../build/dev/my_planet_sim" \
+MPS_REST_PRESET="$PWD/../configs/phase3_rest_n4.cfg" \
+MPS_RUN_ROOT="$PWD/../.runs" \
+npm run start --workspace @myplanetsim/gateway
+```
+
+gateway API は loopback と Bearer token を要求します。run request を送信した後、
+`POST /api/v1/runs/{id}/cancel` で停止し、`GET /api/v1/runs/{id}/bundle` で request、
+control text、event log、diagnostics をまとめて取得できます。frame は
+`GET /api/v1/runs/{id}/frames/{sequence}` で `frame.ready` event 後に取得します。
+実際の small N=4 run、frame 0/後続 frame、cancel の再現は次で検証できます。
+
+```sh
+npm run test:live --workspace @myplanetsim/gateway
+```
+
+現在のブラウザ entrypoint は安全な offline/mock client を既定にしており、live gateway
+API との同一画面接続と Chromium/Firefox/WebKit の自動 matrix は次の拡張対象です。
 
 ## 将来のファイル構成
 
