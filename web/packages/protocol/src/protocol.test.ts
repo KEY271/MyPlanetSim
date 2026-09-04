@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ProtocolError, transitionRunState, validateRunRequest } from "./index";
 import { DeterministicMockSimulationClient as Mock, HttpSimulationClient } from "./client";
-import { addShallowWaterDerivedFields, decodeFrameV1, fieldRange, parseShallowWaterCsv } from "./visual";
+import { addShallowWaterDerivedFields, decodeFrameV1, decodeFrameV2, fieldRange, levelSlice, parseShallowWaterCsv, selectedColumn } from "./visual";
 import { cubedSphereCells, gridEdges, hitTest, mapToUnitSphere } from "./geometry";
 
 const request = {
@@ -13,6 +13,13 @@ const request = {
 };
 
 describe("protocol contracts", () => {
+  it("decodes FrameV2 in cell-major then level order", () => {
+    const fingerprint = new TextEncoder().encode("fp"); const cells = 6; const levels = 2;
+    const bytes = new ArrayBuffer(60 + fingerprint.length + 8 * (cells + 7 * cells * levels)); const view = new DataView(bytes);
+    new Uint8Array(bytes, 0, 8).set(new TextEncoder().encode("MPSFRAM2")); view.setUint32(8,2,true); view.setBigUint64(16,1n,true); view.setBigUint64(24,2n,true); view.setFloat64(32,3,true); view.setBigUint64(40,4n,true); view.setBigUint64(48,6n,true); view.setUint32(56,fingerprint.length,true); new Uint8Array(bytes,60,fingerprint.length).set(fingerprint);
+    let offset=62; for(let i=0;i<cells+7*cells*levels;i+=1){view.setFloat64(offset,i+1,true);offset+=8;}
+    const frame=decodeFrameV2(bytes,"fp"); expect(levelSlice(frame,"pressure",1)[2]).toBe(12); expect(selectedColumn(frame,"pressure",2).values[1]).toBe(12);
+  });
   it("validates a request and rejects a version mismatch", () => {
     expect(validateRunRequest(request)).toEqual(request);
     expect(() => validateRunRequest({ ...request, protocolVersion: 2 })).toThrow(ProtocolError);

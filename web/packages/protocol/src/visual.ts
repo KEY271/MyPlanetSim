@@ -29,6 +29,29 @@ export interface VisualDatasetV1 {
   readonly fields: readonly VisualFieldV1[];
 }
 
+export interface VisualFrameV2 {
+  readonly schemaVersion: 2; readonly cellsPerPanel: number; readonly levels: number;
+  readonly timeSeconds: number; readonly step: number; readonly configFingerprint: string;
+  readonly surfacePressurePa: Float64Array; readonly pressurePa: Float64Array;
+  readonly potentialTemperatureK: Float64Array; readonly temperatureK: Float64Array;
+  readonly windXMetersPerSecond: Float64Array; readonly windYMetersPerSecond: Float64Array;
+  readonly windZMetersPerSecond: Float64Array; readonly tracerMixingRatio: Float64Array;
+}
+export type FrameV2Field = "pressure" | "potential_temperature" | "temperature" | "tracer" | "wind_speed";
+
+export function decodeFrameV2(bytes: ArrayBuffer, expectedFingerprint?: string): VisualFrameV2 {
+  const view = new DataView(bytes);
+  if (view.byteLength < 60 || String.fromCharCode(...new Uint8Array(bytes.slice(0, 8))) !== "MPSFRAM2" || view.getUint32(8, true) !== 2 || view.getUint32(12, true) !== 0) fail("invalid FrameV2 header");
+  const n=Number(view.getBigUint64(16,true)),levels=Number(view.getBigUint64(24,true)),timeSeconds=finite(view.getFloat64(32,true)),step=Number(view.getBigUint64(40,true)),cells=Number(view.getBigUint64(48,true)),fingerprintLength=view.getUint32(56,true),payload=60+fingerprintLength,volume=cells*levels;
+  if(!Number.isInteger(n)||n<1||n>24||!Number.isInteger(levels)||levels<1||levels>30||cells!==6*n*n||fingerprintLength<1||payload+8*(cells+7*volume)!==view.byteLength)fail("invalid FrameV2 shape");
+  const configFingerprint=new TextDecoder().decode(new Uint8Array(bytes,60,fingerprintLength));if(expectedFingerprint!==undefined&&configFingerprint!==expectedFingerprint)fail("frame fingerprint mismatch");let cursor=payload;
+  const read=(length:number)=>{const values=new Float64Array(length);for(let i=0;i<length;i+=1){values[i]=finite(view.getFloat64(cursor,true));cursor+=8;}return values;};
+  return Object.freeze({schemaVersion:2 as const,cellsPerPanel:n,levels,timeSeconds,step,configFingerprint,surfacePressurePa:read(cells),pressurePa:read(volume),potentialTemperatureK:read(volume),temperatureK:read(volume),windXMetersPerSecond:read(volume),windYMetersPerSecond:read(volume),windZMetersPerSecond:read(volume),tracerMixingRatio:read(volume)});
+}
+export function decodeFrame(bytes:ArrayBuffer,expectedFingerprint?:string):VisualDatasetV1|VisualFrameV2{const magic=String.fromCharCode(...new Uint8Array(bytes.slice(0,8)));if(magic==="MPSFRAM1")return decodeFrameV1(bytes,expectedFingerprint);if(magic==="MPSFRAM2")return decodeFrameV2(bytes,expectedFingerprint);fail("unsupported frame magic");}
+export function levelSlice(frame:VisualFrameV2,field:FrameV2Field,level:number):Float64Array{if(!Number.isInteger(level)||level<0||level>=frame.levels)fail("level is out of range");const cells=6*frame.cellsPerPanel*frame.cellsPerPanel,values=new Float64Array(cells);const source=field==="pressure"?frame.pressurePa:field==="potential_temperature"?frame.potentialTemperatureK:field==="temperature"?frame.temperatureK:frame.tracerMixingRatio;for(let cell=0;cell<cells;cell+=1){const offset=cell*frame.levels+level;values[cell]=field==="wind_speed"?Math.hypot(frame.windXMetersPerSecond[offset],frame.windYMetersPerSecond[offset],frame.windZMetersPerSecond[offset]):source[offset];}return values;}
+export function selectedColumn(frame:VisualFrameV2,field:FrameV2Field,cell:number){const cells=6*frame.cellsPerPanel*frame.cellsPerPanel;if(!Number.isInteger(cell)||cell<0||cell>=cells)fail("cell is out of range");const values=new Float64Array(frame.levels),pressurePa=new Float64Array(frame.levels);for(let level=0;level<frame.levels;level+=1){values[level]=levelSlice(frame,field,level)[cell];pressurePa[level]=frame.pressurePa[cell*frame.levels+level];}return Object.freeze({pressurePa,values});}
+
 const panels = ["PX", "PY", "NX", "NY", "PZ", "NZ"] as const;
 const panelIndex = new Map<string, number>(panels.map((panel, index) => [panel, index]));
 
