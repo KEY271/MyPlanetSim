@@ -37,7 +37,34 @@ export interface VisualFrameV2 {
   readonly windXMetersPerSecond: Float64Array; readonly windYMetersPerSecond: Float64Array;
   readonly windZMetersPerSecond: Float64Array; readonly tracerMixingRatio: Float64Array;
 }
+
 export type FrameV2Field = "pressure" | "potential_temperature" | "temperature" | "tracer" | "wind_speed";
+export type FrameV2FieldId = FrameV2Field | "surface_pressure";
+
+export interface FrameV2FieldDescriptor {
+  readonly id: FrameV2FieldId;
+  readonly label: string;
+  readonly unit: string;
+  readonly kind: VisualFieldKind;
+  // A surface field has no model level, so the viewer disables the level selector and
+  // the column profile instead of inventing a vertical copy of a single value.
+  readonly volume: boolean;
+}
+
+export const frameV2Fields: readonly FrameV2FieldDescriptor[] = Object.freeze([
+  { id: "surface_pressure", label: "Surface pressure", unit: "Pa", kind: "scalar", volume: false },
+  { id: "pressure", label: "Pressure", unit: "Pa", kind: "scalar", volume: true },
+  { id: "potential_temperature", label: "Potential temperature", unit: "K", kind: "scalar", volume: true },
+  { id: "temperature", label: "Temperature", unit: "K", kind: "scalar", volume: true },
+  { id: "tracer", label: "Tracer", unit: "1", kind: "scalar", volume: true },
+  { id: "wind_speed", label: "Wind speed", unit: "m/s", kind: "derived", volume: true },
+].map((field) => Object.freeze(field)) as readonly FrameV2FieldDescriptor[]);
+
+export function frameV2Field(id: string): FrameV2FieldDescriptor {
+  const field = frameV2Fields.find((candidate) => candidate.id === id);
+  if (!field) fail(`unknown FrameV2 field ${id}`);
+  return field;
+}
 
 export function decodeFrameV2(bytes: ArrayBuffer, expectedFingerprint?: string): VisualFrameV2 {
   const view = new DataView(bytes);
@@ -49,8 +76,84 @@ export function decodeFrameV2(bytes: ArrayBuffer, expectedFingerprint?: string):
   return Object.freeze({schemaVersion:2 as const,cellsPerPanel:n,levels,timeSeconds,step,configFingerprint,surfacePressurePa:read(cells),pressurePa:read(volume),potentialTemperatureK:read(volume),temperatureK:read(volume),windXMetersPerSecond:read(volume),windYMetersPerSecond:read(volume),windZMetersPerSecond:read(volume),tracerMixingRatio:read(volume)});
 }
 export function decodeFrame(bytes:ArrayBuffer,expectedFingerprint?:string):VisualDatasetV1|VisualFrameV2{const magic=String.fromCharCode(...new Uint8Array(bytes.slice(0,8)));if(magic==="MPSFRAM1")return decodeFrameV1(bytes,expectedFingerprint);if(magic==="MPSFRAM2")return decodeFrameV2(bytes,expectedFingerprint);fail("unsupported frame magic");}
-export function levelSlice(frame:VisualFrameV2,field:FrameV2Field,level:number):Float64Array{if(!Number.isInteger(level)||level<0||level>=frame.levels)fail("level is out of range");const cells=6*frame.cellsPerPanel*frame.cellsPerPanel,values=new Float64Array(cells);const source=field==="pressure"?frame.pressurePa:field==="potential_temperature"?frame.potentialTemperatureK:field==="temperature"?frame.temperatureK:frame.tracerMixingRatio;for(let cell=0;cell<cells;cell+=1){const offset=cell*frame.levels+level;values[cell]=field==="wind_speed"?Math.hypot(frame.windXMetersPerSecond[offset],frame.windYMetersPerSecond[offset],frame.windZMetersPerSecond[offset]):source[offset];}return values;}
-export function selectedColumn(frame:VisualFrameV2,field:FrameV2Field,cell:number){const cells=6*frame.cellsPerPanel*frame.cellsPerPanel;if(!Number.isInteger(cell)||cell<0||cell>=cells)fail("cell is out of range");const values=new Float64Array(frame.levels),pressurePa=new Float64Array(frame.levels);for(let level=0;level<frame.levels;level+=1){values[level]=levelSlice(frame,field,level)[cell];pressurePa[level]=frame.pressurePa[cell*frame.levels+level];}return Object.freeze({pressurePa,values});}
+export function frameV2CellCount(frame: VisualFrameV2): number {
+  return 6 * frame.cellsPerPanel * frame.cellsPerPanel;
+}
+
+function volumeValue(frame: VisualFrameV2, field: FrameV2Field, offset: number): number {
+  switch (field) {
+    case "pressure": return frame.pressurePa[offset];
+    case "potential_temperature": return frame.potentialTemperatureK[offset];
+    case "temperature": return frame.temperatureK[offset];
+    case "tracer": return frame.tracerMixingRatio[offset];
+    case "wind_speed": return Math.hypot(frame.windXMetersPerSecond[offset],
+      frame.windYMetersPerSecond[offset], frame.windZMetersPerSecond[offset]);
+  }
+}
+
+export function levelSlice(frame: VisualFrameV2, field: FrameV2Field, level: number): Float64Array {
+  if (!Number.isInteger(level) || level < 0 || level >= frame.levels) fail("level is out of range");
+  const cells = frameV2CellCount(frame);
+  const values = new Float64Array(cells);
+  for (let cell = 0; cell < cells; cell += 1) {
+    values[cell] = volumeValue(frame, field, cell * frame.levels + level);
+  }
+  return values;
+}
+
+export interface FrameV2Column {
+  readonly pressurePa: Float64Array;
+  readonly values: Float64Array;
+}
+
+export function selectedColumn(frame: VisualFrameV2, field: FrameV2Field, cell: number): FrameV2Column {
+  if (!Number.isInteger(cell) || cell < 0 || cell >= frameV2CellCount(frame)) fail("cell is out of range");
+  const values = new Float64Array(frame.levels);
+  const pressurePa = new Float64Array(frame.levels);
+  for (let level = 0; level < frame.levels; level += 1) {
+    const offset = cell * frame.levels + level;
+    values[level] = volumeValue(frame, field, offset);
+    pressurePa[level] = frame.pressurePa[offset];
+  }
+  return Object.freeze({ pressurePa, values });
+}
+
+// The renderers only understand VisualDatasetV1, so a V2 level is adapted into a
+// single-field dataset. The grid identity is unchanged, which keeps the memoized geometry
+// caches in geometry.ts alive across field, level, and frame changes.
+export function frameV2LevelDataset(
+  frame: VisualFrameV2,
+  fieldId: FrameV2FieldId,
+  level: number,
+): VisualDatasetV1 {
+  const field = frameV2Field(fieldId);
+  const values = field.volume ? levelSlice(frame, fieldId as FrameV2Field, level) : frame.surfacePressurePa;
+  return dataset("live_run", frame.cellsPerPanel, frame.timeSeconds, frame.step,
+    frame.configFingerprint, [{ id: field.id, label: field.label, unit: field.unit,
+      kind: field.kind, provenance: "FrameV2", values }]);
+}
+
+export interface FrameV2Sample {
+  readonly value: number;
+  readonly pressurePa: number | null;
+}
+
+// The inspector reports the decoded C++ number for one cell without rescaling it, so a
+// reader can compare the view against the solver output directly.
+export function frameV2Sample(
+  frame: VisualFrameV2,
+  fieldId: FrameV2FieldId,
+  cell: number,
+  level: number,
+): FrameV2Sample {
+  const field = frameV2Field(fieldId);
+  if (!Number.isInteger(cell) || cell < 0 || cell >= frameV2CellCount(frame)) fail("cell is out of range");
+  if (!field.volume) return Object.freeze({ value: frame.surfacePressurePa[cell], pressurePa: null });
+  if (!Number.isInteger(level) || level < 0 || level >= frame.levels) fail("level is out of range");
+  const offset = cell * frame.levels + level;
+  return Object.freeze({ value: volumeValue(frame, fieldId as FrameV2Field, offset),
+    pressurePa: frame.pressurePa[offset] });
+}
 
 const panels = ["PX", "PY", "NX", "NY", "PZ", "NZ"] as const;
 const panelIndex = new Map<string, number>(panels.map((panel, index) => [panel, index]));

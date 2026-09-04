@@ -118,6 +118,8 @@ h1 { margin: 0; font-size: clamp(1.05rem, 2vw, 1.45rem); }
   background: #0b1218;
 }
 
+.view-grid.with-profile { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 22rem); }
+
 .view-panel + .view-panel { border-left: 1px solid #334653; }
 .view-panel h2 {
   z-index: 5;
@@ -161,8 +163,33 @@ h1 { margin: 0; font-size: clamp(1.05rem, 2vw, 1.45rem); }
   text-align: center;
 }
 
+.inspector { margin-top: 0.35rem; color: #cfdce6; font-size: 0.76rem; }
+.inspector p { margin: 0.1rem 0; font-variant-numeric: tabular-nums; }
+
+.column-profile-body {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding: 0.4rem;
+  overflow: hidden;
+}
+
+.column-profile svg { width: 100%; height: 100%; overflow: visible; }
+.column-profile .axis { stroke: #56707f; stroke-width: 1; }
+.column-profile .tick { fill: #9db0bd; font-size: 10px; }
+.column-profile .profile-line { stroke: #7bdff2; stroke-width: 2; }
+.column-profile .profile-point { fill: #7bdff2; cursor: pointer; }
+.column-profile .profile-point.selected { fill: #ffcf56; }
+.profile-status { margin: 0.25rem 0 0; color: #aebdca; font-size: 0.74rem; font-variant-numeric: tabular-nums; }
+
 @media (max-width: 52rem) {
   .title-row { align-items: flex-start; flex-wrap: wrap; }
   .message { width: 100%; margin-left: 0; }
   .top-panel { max-height: 48vh; }
+  .view-grid, .view-grid.with-profile { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); overflow: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .column-profile .profile-point { transition: none; }
 }

@@ -48,6 +48,7 @@ export type EventV1 =
       step: number;
       relativePath: string;
       byteLength: number;
+      frameSchemaVersion?: 1 | 2;
     })
   | (EventBaseV1 & { type: "diagnostics.sample"; timeSeconds: number; step: number; mass?: number; energy?: number; potentialEnstrophy?: number; axialAngularMomentum?: number; maximumCfl?: number })
   | (EventBaseV1 & { type: "run.completed" | "run.cancelled" })

@@ -8,10 +8,37 @@ import {
 } from "./index";
 import { cubedSphereCells, UnitVector } from "./geometry";
 
+export type ModelKind = "shallow_water" | "dry_hydrostatic";
+
+// Additive descriptor: `presets` and `supportedEdits` keep their Phase 3 meaning, and a
+// gateway that predates Phase 5 simply omits `presetDetails`.
+export interface PresetDescriptorV1 {
+  id: string;
+  modelKind: ModelKind;
+  frameSchemaVersion: 1 | 2;
+  levels: number | null;
+  supportedEdits: readonly string[];
+  maximumCellsPerPanel: number;
+}
+
 export interface CapabilitiesV1 {
   protocolVersion: 1;
   presets: readonly string[];
   supportedEdits: readonly ["gaussian_depth"];
+  presetDetails?: readonly PresetDescriptorV1[];
+}
+
+export const shallowWaterPresetDescriptor = (id: string): PresetDescriptorV1 => ({
+  id, modelKind: "shallow_water", frameSchemaVersion: 1, levels: null,
+  supportedEdits: ["gaussian_depth"], maximumCellsPerPanel: 96,
+});
+
+// A gateway may serve presets it never described. Rather than guessing a model kind, the
+// viewer treats an undescribed preset as the Phase 3 shallow-water contract it already
+// supports, and refuses to display any other unknown descriptor shape.
+export function presetDescriptors(capabilities: CapabilitiesV1): readonly PresetDescriptorV1[] {
+  const described = new Map((capabilities.presetDetails ?? []).map((preset) => [preset.id, preset]));
+  return capabilities.presets.map((id) => described.get(id) ?? shallowWaterPresetDescriptor(id));
 }
 
 export interface SimulationClient {
@@ -109,8 +136,11 @@ export class DeterministicMockSimulationClient implements SimulationClient {
   private readonly cancelled = new Set<string>();
   private nextRun = 1;
 
+  // The offline demo has no dry hydrostatic solver and must not fake one, so it only
+  // advertises the shallow-water preset; FrameV2 requires the native gateway.
   async capabilities(): Promise<CapabilitiesV1> {
-    return { protocolVersion: 1, presets: ["rest"], supportedEdits: ["gaussian_depth"] };
+    return { protocolVersion: 1, presets: ["rest"], supportedEdits: ["gaussian_depth"],
+      presetDetails: [shallowWaterPresetDescriptor("rest")] };
   }
 
   async submit(request: RunRequestV1): Promise<{ runId: string }> {

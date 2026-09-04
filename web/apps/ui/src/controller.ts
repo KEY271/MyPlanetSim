@@ -1,11 +1,11 @@
-import { addShallowWaterDerivedFields, decodeFrameV1, EventV1, ProtocolError, RunBundleV1, RunRequestV1, RunState, transitionRunState } from "@myplanetsim/protocol";
+import { addShallowWaterDerivedFields, decodeFrame, EventV1, ProtocolError, RunBundleV1, RunRequestV1, RunState, transitionRunState, VisualDatasetV1, VisualFrameV2 } from "@myplanetsim/protocol";
 import { SimulationClient } from "@myplanetsim/protocol/client";
 
 export interface ControllerSnapshot {
   readonly state: RunState;
   readonly runId: string | null;
   readonly events: readonly EventV1[];
-  readonly frames: readonly ReturnType<typeof decodeFrameV1>[];
+  readonly frames: readonly (VisualDatasetV1 | VisualFrameV2)[];
   readonly currentFrame: number;
   readonly error: string | null;
   readonly request: RunRequestV1 | null;
@@ -18,6 +18,7 @@ export class SimulationController {
 
   constructor(client: SimulationClient) { this.client = client; }
   get value() { return this.snapshot; }
+  capabilities() { return this.client.capabilities(); }
   subscribe(listener: (snapshot: ControllerSnapshot) => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   private update(next: Partial<ControllerSnapshot>) { this.snapshot = { ...this.snapshot, ...next }; for (const listener of this.listeners) listener(this.snapshot); }
 
@@ -37,8 +38,10 @@ export class SimulationController {
         if (nextState !== this.snapshot.state) this.update({ state: transitionRunState(this.snapshot.state, nextState) });
         this.update({ events: [...this.snapshot.events, event] });
         if (event.type === "frame.ready") {
-          const decoded = decodeFrameV1(await this.client.frame(runId, event.frameSequence));
-          const frame = addShallowWaterDerivedFields(decoded, this.snapshot.frames[0] ?? decoded);
+          const decoded = decodeFrame(await this.client.frame(runId, event.frameSequence));
+          const first = this.snapshot.frames[0];
+          const frame = decoded.schemaVersion === 1 ? addShallowWaterDerivedFields(decoded,
+            first?.schemaVersion === 1 ? first : decoded) : decoded;
           // Follow the newest frame only while the viewer is already at the end, so scrubbing
           // back through a streaming run is not overridden by every arriving frame.
           const following = this.snapshot.currentFrame >= this.snapshot.frames.length - 1;
