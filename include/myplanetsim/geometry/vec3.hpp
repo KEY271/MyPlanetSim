@@ -13,17 +13,12 @@ struct Vec3 {
   Real y = 0.0;
   Real z = 0.0;
 
-  [[nodiscard]] constexpr Real& operator[](const std::size_t index) {
-    if (index > 2) {
-      throw std::out_of_range("Vec3 component index is out of range");
-    }
+  [[nodiscard]] constexpr Real& operator[](const std::size_t index) noexcept {
     return index == 0 ? x : (index == 1 ? y : z);
   }
 
-  [[nodiscard]] constexpr const Real& operator[](const std::size_t index) const {
-    if (index > 2) {
-      throw std::out_of_range("Vec3 component index is out of range");
-    }
+  [[nodiscard]] constexpr const Real& operator[](
+      const std::size_t index) const noexcept {
     return index == 0 ? x : (index == 1 ? y : z);
   }
 };

@@ -50,8 +50,9 @@ void surface_energy_tendency(const CubedSphereGrid& grid,
     const Real area = grid.cells()[cell].area_m2;
     const Real absorbed = (1.0 - parameters.albedo) * orbit_state.stellar_flux_w_m2 *
                           cosine_solar_zenith(grid.cells()[cell].center, orbit_state);
+    const Real surface_temperature_squared = surface_temperature * surface_temperature;
     const Real outgoing = parameters.emissivity * kStefanBoltzmannWm2K4 *
-                          std::pow(surface_temperature, 4);
+                          surface_temperature_squared * surface_temperature_squared;
     const auto bottom =
         dry_hydrostatic_offset(cell, atmosphere.levels - 1, atmosphere.levels);
     const Real sensible = parameters.air_exchange_coefficient_w_m2_k *
@@ -85,8 +86,8 @@ void surface_energy_tendency(const CubedSphereGrid& grid,
         area * capacity * result.surface_temperature_k_s[cell];
 
     const Real longwave_relaxation = 4.0 * parameters.emissivity *
-                                     kStefanBoltzmannWm2K4 *
-                                     std::pow(surface_temperature, 3);
+                                     kStefanBoltzmannWm2K4 * surface_temperature *
+                                     surface_temperature * surface_temperature;
     if (longwave_relaxation > 0.0)
       result.stable_time_step_s = std::min(
           result.stable_time_step_s, parameters.cfl * capacity / longwave_relaxation);

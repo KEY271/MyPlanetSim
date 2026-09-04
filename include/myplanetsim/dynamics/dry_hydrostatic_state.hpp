@@ -31,6 +31,8 @@ struct DryHydrostaticDerived {
   std::size_t cells = 0;
   std::size_t levels = 0;
   std::vector<Real> pressure_pa;
+  std::vector<Real> exner_half;
+  std::vector<Real> exner_full;
   std::vector<Real> air_mass_kg_m2;
   std::vector<Vec3> velocity_m_s;
   std::vector<Real> potential_temperature_k;

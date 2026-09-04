@@ -114,6 +114,20 @@ target_link_libraries(
   PRIVATE myplanetsim_core myplanetsim_warnings myplanetsim_sanitizers
 )
 
+add_executable(benchmark_dry_core tools/benchmark_dry_core.cpp)
+target_compile_definitions(
+  benchmark_dry_core
+  PRIVATE
+    MPS_DRY_CORE_BENCHMARK_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/configs/phase7_held_suarez.cfg"
+)
+target_link_libraries(
+  benchmark_dry_core
+  PRIVATE myplanetsim_core myplanetsim_warnings myplanetsim_sanitizers
+)
+set_target_properties(
+  benchmark_dry_core PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools"
+)
+
 include(CTest)
 if(BUILD_TESTING)
   add_test(NAME smoke.help COMMAND my_planet_sim --help)

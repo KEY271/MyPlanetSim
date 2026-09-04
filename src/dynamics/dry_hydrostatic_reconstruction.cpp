@@ -25,18 +25,13 @@ struct ScalarReconstruction {
 // neighbourhood maximum, matching the shallow-water reconstruction.
 [[nodiscard]] Real speed_factor(const Vec3 center, const Vec3 increment,
                                 const Real maximum_speed) {
-  if (norm(center + increment) <= maximum_speed) return 1.0;
-  Real low = 0.0;
-  Real high = 1.0;
-  for (int iteration = 0; iteration < 54; ++iteration) {
-    const Real middle = 0.5 * (low + high);
-    if (norm(center + middle * increment) <= maximum_speed) {
-      low = middle;
-    } else {
-      high = middle;
-    }
-  }
-  return low;
+  const Real maximum_squared = maximum_speed * maximum_speed;
+  if (norm_squared(center + increment) <= maximum_squared) return 1.0;
+  const Real a = norm_squared(increment);
+  const Real b = 2.0 * dot(center, increment);
+  const Real c = norm_squared(center) - maximum_squared;
+  const Real discriminant = std::max(0.0, b * b - 4.0 * a * c);
+  return std::clamp((-b + std::sqrt(discriminant)) / (2.0 * a), 0.0, 1.0);
 }
 
 [[nodiscard]] ScalarReconstruction prepare_scalar(const CubedSphereGrid& grid,

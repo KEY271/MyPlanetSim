@@ -131,6 +131,8 @@ void diagnose_dry_hydrostatic_state(
     throw std::invalid_argument("dry diagnostic theta workspace shape mismatch");
   const auto volume = out.cells * out.levels;
   out.pressure_pa.resize(volume);
+  out.exner_half.resize(out.cells * (out.levels + 1));
+  out.exner_full.resize(volume);
   out.air_mass_kg_m2.resize(volume);
   out.velocity_m_s.resize(volume);
   out.potential_temperature_k.resize(volume);
@@ -141,10 +143,14 @@ void diagnose_dry_hydrostatic_state(
     coordinate.geometry(state.surface_pressure_pa[c], planet.gravity_m_s2,
                         planet.gas_constant_j_kg_k, planet.heat_capacity_cp_j_kg_k,
                         planet.reference_pressure_pa, geometry);
+    std::copy(
+        geometry.exner_half.begin(), geometry.exner_half.end(),
+        out.exner_half.begin() + static_cast<std::ptrdiff_t>(c * (out.levels + 1)));
     for (std::size_t k = 0; k < out.levels; ++k) {
       const auto n = dry_hydrostatic_offset(c, k, out.levels);
       const auto mass = geometry.air_mass_kg_m2[k];
       out.pressure_pa[n] = geometry.pressure_full_pa[k];
+      out.exner_full[n] = geometry.exner_full[k];
       out.air_mass_kg_m2[n] = mass;
       out.velocity_m_s[n] = state.horizontal_momentum_mass_kg_m_s[n] / mass;
       theta[k] = state.potential_temperature_mass_k_kg_m2[n] / mass;
