@@ -111,6 +111,43 @@ diagnostics.interval_steps = 2
 output.directory = output
 )";
 
+constexpr std::string_view kValidDryHydrostaticConfig = R"(
+experiment.kind = dry_hydrostatic
+planet.radius_m = 6371220
+planet.rotation_rate_rad_s = 7.292115e-5
+planet.gravity_m_s2 = 9.80616
+planet.gas_constant_j_kg_k = 287
+planet.heat_capacity_cp_j_kg_k = 1004
+planet.reference_pressure_pa = 100000
+run.start_time_s = 0
+run.end_time_s = 10
+run.time_step_s = 1
+run.random_seed = 7
+grid.cells_per_panel = 4
+vertical.levels = 2
+vertical.a_half_pa = 1000,500,0
+vertical.b_half = 0,0.5,1
+vertical.surface_pressure_pa = 100000
+vertical.minimum_surface_pressure_pa = 90000
+vertical.maximum_surface_pressure_pa = 110000
+vertical.minimum_pressure_thickness_pa = 100
+vertical.surface_geopotential_m2_s2 = 0
+vertical.initial_temperature_k = 280
+vertical.initial_potential_temperature_k = 300
+vertical.temperature_floor_k = 100
+vertical.transport_scheme = linear
+vertical.limiter = minmod
+vertical.cfl = 0.5
+dry_hydrostatic.test_case = isothermal_rest
+dry_hydrostatic.reconstruction = linear
+dry_hydrostatic.limiter = barth_jespersen
+dry_hydrostatic.cfl = 0.45
+dry_hydrostatic.diffusion_kind = none
+dry_hydrostatic.diffusion_coefficient = 0
+diagnostics.interval_steps = 2
+output.directory = output
+)";
+
 [[nodiscard]] mps::ExperimentConfig parse(const std::string_view text) {
   std::istringstream input{std::string(text)};
   return mps::parse_experiment_config(input);
@@ -259,6 +296,23 @@ MPS_TEST_CASE("vertical-column configuration has a strict canonical round trip")
       std::runtime_error);
   MPS_CHECK_THROWS_AS(
       parse(std::string(kValidVerticalConfig) + "vertical.a_half_pa = 1,,0\n"),
+      std::runtime_error);
+}
+
+MPS_TEST_CASE("dry-hydrostatic configuration reuses vertical schema strictly") {
+  const auto first = parse(kValidDryHydrostaticConfig);
+  MPS_CHECK(first.kind == mps::ExperimentKind::kDryHydrostatic);
+  MPS_CHECK_EQ(first.grid.cells_per_panel, 4);
+  MPS_CHECK(first.dry_hydrostatic.test_case ==
+            mps::DryHydrostaticTestCase::kIsothermalRest);
+  std::ostringstream output;
+  mps::write_experiment_config(output, first);
+  const auto second = parse(output.str());
+  MPS_CHECK_EQ(second.vertical.levels, 2);
+  MPS_CHECK_NEAR(second.dry_hydrostatic.cfl, 0.45, 0.0);
+  MPS_CHECK_THROWS_AS(
+      parse(std::string(kValidDryHydrostaticConfig) +
+            "vertical.forcing_amplitude = 0\n"),
       std::runtime_error);
 }
 

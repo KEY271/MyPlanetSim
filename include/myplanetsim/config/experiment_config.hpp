@@ -24,7 +24,13 @@ struct OdeParameters {
   Real decay_rate_s_1;
 };
 
-enum class ExperimentKind { kOde, kSphereTransport, kShallowWater, kVerticalColumn };
+enum class ExperimentKind {
+  kOde,
+  kSphereTransport,
+  kShallowWater,
+  kVerticalColumn,
+  kDryHydrostatic
+};
 enum class TransportScheme { kUpwind, kLinear };
 enum class LimiterKind { kNone, kBarthJespersen };
 enum class TransportTestCase { kSolidBody, kDeformational, kDivergent };
@@ -53,6 +59,15 @@ enum class VerticalTestCase {
 };
 enum class VerticalTransportScheme { kDonorCell, kLinear };
 enum class VerticalLimiterKind { kNone, kMinmod };
+enum class DryHydrostaticTestCase {
+  kIsothermalRest,
+  kSolidBodyTransport,
+  kDcmipDeformational,
+  kDcmipHadley,
+  kLinearWave,
+  kUmjs14Steady,
+  kUmjs14Baroclinic
+};
 
 struct GridParameters {
   Index cells_per_panel = 0;
@@ -105,6 +120,15 @@ struct VerticalColumnParameters {
   Real forcing_amplitude = 0.0;
 };
 
+struct DryHydrostaticParameters {
+  DryHydrostaticTestCase test_case = DryHydrostaticTestCase::kIsothermalRest;
+  ReconstructionKind reconstruction = ReconstructionKind::kLinear;
+  LimiterKind limiter = LimiterKind::kBarthJespersen;
+  Real cfl = 0.45;
+  DiffusionKind diffusion_kind = DiffusionKind::kNone;
+  Real diffusion_coefficient = 0.0;
+};
+
 struct DiagnosticsParameters {
   std::uint64_t interval_steps = 1;
 };
@@ -118,6 +142,7 @@ struct ExperimentConfig {
   TransportParameters transport{};
   ShallowWaterParameters shallow_water{};
   VerticalColumnParameters vertical{};
+  DryHydrostaticParameters dry_hydrostatic{};
   DiagnosticsParameters diagnostics{};
   std::string output_directory;
 
@@ -144,6 +169,8 @@ struct ExperimentConfig {
     VerticalTransportScheme scheme) noexcept;
 [[nodiscard]] std::string_view vertical_limiter_name(
     VerticalLimiterKind limiter) noexcept;
+[[nodiscard]] std::string_view dry_hydrostatic_test_case_name(
+    DryHydrostaticTestCase test_case) noexcept;
 
 [[nodiscard]] ExperimentConfig parse_experiment_config(std::istream& input);
 [[nodiscard]] ExperimentConfig load_experiment_config(
