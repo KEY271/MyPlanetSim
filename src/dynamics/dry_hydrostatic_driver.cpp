@@ -6,9 +6,11 @@
 #include <stdexcept>
 
 #include "myplanetsim/dynamics/dry_hydrostatic_benchmarks.hpp"
+#include "myplanetsim/dynamics/dry_hydrostatic_diffusion.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_flux.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_reconstruction.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
+#include "myplanetsim/dynamics/shallow_water_diffusion.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
 #include "myplanetsim/physics/planetary_newtonian.hpp"
 #include "myplanetsim/physics/surface_energy_balance.hpp"
@@ -227,6 +229,24 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
     coupled.tendency.momentum[n] = coupled.tendency.momentum[n] +
                                    sources.pressure_gradient_kg_m_s2[n] +
                                    sources.coriolis_kg_m_s2[n];
+  Real diffusion_rate = 0.0;
+  if (config_.dry_hydrostatic.diffusion_kind != DiffusionKind::kNone) {
+    const auto diffusion = dry_hydrostatic_diffusion_tendency(
+        grid_, d, config_.dry_hydrostatic.diffusion_kind,
+        config_.dry_hydrostatic.diffusion_coefficient);
+    for (std::size_t n = 0; n < C * K; ++n) {
+      coupled.tendency.momentum[n] =
+          coupled.tendency.momentum[n] + diffusion.momentum[n];
+      coupled.tendency.potential_temperature_mass[n] +=
+          diffusion.potential_temperature_mass[n];
+      coupled.tendency.tracer_mass[n] += diffusion.tracer_mass[n];
+    }
+    diffusion_rate = diffusion.kinetic_energy_rate_w;
+    dt = std::min(
+        dt, stable_diffusion_time_step(grid_, config_.dry_hydrostatic.diffusion_kind,
+                                       config_.dry_hydrostatic.diffusion_coefficient,
+                                       config_.run.time_step_s));
+  }
   HeldSuarezDiagnostics physics_diagnostics{};
   SurfaceEnergyDiagnostics surface_diagnostics{};
   std::vector<Real> surface_temperature_rate;
@@ -278,7 +298,8 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
           .maximum_continuity_residual_pa_s = coupled.maximum_continuity_residual_pa_s,
           .physics_diagnostics = physics_diagnostics,
           .surface_temperature_k_s = std::move(surface_temperature_rate),
-          .surface_diagnostics = surface_diagnostics};
+          .surface_diagnostics = surface_diagnostics,
+          .diffusion_kinetic_energy_rate_w = diffusion_rate};
 }
 void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                                    const DryHydrostaticObserver& obs,
@@ -380,15 +401,18 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       }
       project_and_validate(next);
       s = std::move(next);
-      observe(s,
-              {.thermal_energy_contribution_j =
-                   dt * (rhs1.physics_diagnostics.thermal_energy_rate_w / 6.0 +
-                         rhs2.physics_diagnostics.thermal_energy_rate_w / 6.0 +
-                         2.0 * rhs3.physics_diagnostics.thermal_energy_rate_w / 3.0),
-               .rayleigh_drag_energy_contribution_j =
-                   dt * (rhs1.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
-                         rhs2.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
-                         2.0 * rhs3.physics_diagnostics.rayleigh_drag_work_w / 3.0)});
+      observe(s, {.thermal_energy_contribution_j =
+                      dt * (rhs1.physics_diagnostics.thermal_energy_rate_w / 6.0 +
+                            rhs2.physics_diagnostics.thermal_energy_rate_w / 6.0 +
+                            2.0 * rhs3.physics_diagnostics.thermal_energy_rate_w / 3.0),
+                  .rayleigh_drag_energy_contribution_j =
+                      dt * (rhs1.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
+                            rhs2.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
+                            2.0 * rhs3.physics_diagnostics.rayleigh_drag_work_w / 3.0),
+                  .diffusion_energy_contribution_j =
+                      dt * (rhs1.diffusion_kinetic_energy_rate_w / 6.0 +
+                            rhs2.diffusion_kinetic_energy_rate_w / 6.0 +
+                            2.0 * rhs3.diffusion_kinetic_energy_rate_w / 3.0)});
       break;
     }
   }

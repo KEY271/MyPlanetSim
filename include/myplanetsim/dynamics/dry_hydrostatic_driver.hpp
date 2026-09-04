@@ -19,6 +19,9 @@ struct DryHydrostaticRhs {
   HeldSuarezDiagnostics physics_diagnostics{};
   std::vector<Real> surface_temperature_k_s;
   SurfaceEnergyDiagnostics surface_diagnostics{};
+  // Explicit horizontal diffusion, kept out of the advection, pressure-gradient,
+  // Coriolis, and vertical-transport terms so its dissipation is attributable.
+  Real diffusion_kinetic_energy_rate_w = 0.0;
 };
 
 struct DryHydrostaticStepDiagnostics {
@@ -26,6 +29,7 @@ struct DryHydrostaticStepDiagnostics {
   Real thermal_energy_contribution_j = 0.0;
   Real rayleigh_drag_energy_contribution_j = 0.0;
   SurfaceEnergyDiagnostics surface_rates{};
+  Real diffusion_energy_contribution_j = 0.0;
 };
 using DryHydrostaticObserver =
     std::function<void(const DryHydrostaticState&, const DryHydrostaticDerived&,
