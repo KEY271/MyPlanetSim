@@ -245,6 +245,31 @@ CubedSphereGrid::CubedSphereGrid(const Index cells_per_panel, const Real radius_
           cache.pressure_geometry_correction_m +
           static_cast<Real>(sign) * edge_geometry.length_m * cached_edge.normal;
     }
+
+    Real a00 = 0.0;
+    Real a01 = 0.0;
+    Real a11 = 0.0;
+    for (const auto& edge : cache.edges) {
+      const Real x = edge.neighbor_coordinates_m.alpha;
+      const Real y = edge.neighbor_coordinates_m.beta;
+      const Real weight = 1.0 / std::max(x * x + y * y, 1.0e-300);
+      a00 += weight * x * x;
+      a01 += weight * x * y;
+      a11 += weight * y * y;
+    }
+    const Real determinant = a00 * a11 - a01 * a01;
+    if (!(determinant > 1.0e-12 * a00 * a11)) {
+      throw std::runtime_error("least-squares grid stencil is rank deficient");
+    }
+    for (auto& edge : cache.edges) {
+      const Real x = edge.neighbor_coordinates_m.alpha;
+      const Real y = edge.neighbor_coordinates_m.beta;
+      const Real weight = 1.0 / std::max(x * x + y * y, 1.0e-300);
+      edge.least_squares_weight_m_inverse = {
+          .alpha = (a11 * weight * x - a01 * weight * y) / determinant,
+          .beta = (a00 * weight * y - a01 * weight * x) / determinant,
+      };
+    }
   }
 }
 

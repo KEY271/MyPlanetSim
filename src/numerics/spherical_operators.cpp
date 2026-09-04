@@ -87,29 +87,14 @@ std::vector<Vec3> least_squares_gradient(const CubedSphereGrid& grid,
   std::vector<Vec3> gradients(grid.cell_count());
   for (std::size_t index = 0; index < grid.cell_count(); ++index) {
     const auto& cached_cell = grid.cell_cache()[index];
-    Real a00 = 0.0;
-    Real a01 = 0.0;
-    Real a11 = 0.0;
-    Real b0 = 0.0;
-    Real b1 = 0.0;
+    TangentComponents components{};
     for (const auto& cached_edge : cached_cell.edges) {
-      const Real x = cached_edge.neighbor_coordinates_m.alpha;
-      const Real y = cached_edge.neighbor_coordinates_m.beta;
       const Real difference = cell_values[cached_edge.neighbor] - cell_values[index];
-      const Real weight = 1.0 / std::max(x * x + y * y, 1.0e-300);
-      a00 += weight * x * x;
-      a01 += weight * x * y;
-      a11 += weight * y * y;
-      b0 += weight * x * difference;
-      b1 += weight * y * difference;
+      components.alpha += cached_edge.least_squares_weight_m_inverse.alpha * difference;
+      components.beta += cached_edge.least_squares_weight_m_inverse.beta * difference;
     }
-    const Real determinant = a00 * a11 - a01 * a01;
-    if (!(determinant > 1.0e-12 * a00 * a11)) {
-      throw std::runtime_error("least-squares gradient stencil is rank deficient");
-    }
-    const Real gx = (a11 * b0 - a01 * b1) / determinant;
-    const Real gy = (a00 * b1 - a01 * b0) / determinant;
-    gradients[index] = gx * cached_cell.basis.alpha + gy * cached_cell.basis.beta;
+    gradients[index] = components.alpha * cached_cell.basis.alpha +
+                       components.beta * cached_cell.basis.beta;
   }
   return gradients;
 }
@@ -168,35 +153,22 @@ std::vector<TangentVectorGradient> least_squares_vector_gradient(
   for (std::size_t index = 0; index < grid.cell_count(); ++index) {
     const auto& cell = grid.cells()[index];
     const auto& cached_cell = grid.cell_cache()[index];
-    Real a00 = 0.0;
-    Real a01 = 0.0;
-    Real a11 = 0.0;
-    Vec3 b0{};
-    Vec3 b1{};
+    TangentVectorGradient gradient{};
     for (const auto& cached_edge : cached_cell.edges) {
       const std::size_t neighbor = cached_edge.neighbor;
-      const Real x = cached_edge.neighbor_coordinates_m.alpha;
-      const Real y = cached_edge.neighbor_coordinates_m.beta;
       const Vec3 transported = parallel_transport(
           project_tangent(cell_vectors[neighbor], grid.cells()[neighbor].center),
           grid.cells()[neighbor].center, cell.center);
       const Vec3 difference =
           transported - project_tangent(cell_vectors[index], cell.center);
-      const Real weight = 1.0 / std::max(x * x + y * y, 1.0e-300);
-      a00 += weight * x * x;
-      a01 += weight * x * y;
-      a11 += weight * y * y;
-      b0 = b0 + weight * x * difference;
-      b1 = b1 + weight * y * difference;
+      gradient.alpha_derivative =
+          gradient.alpha_derivative +
+          cached_edge.least_squares_weight_m_inverse.alpha * difference;
+      gradient.beta_derivative =
+          gradient.beta_derivative +
+          cached_edge.least_squares_weight_m_inverse.beta * difference;
     }
-    const Real determinant = a00 * a11 - a01 * a01;
-    if (!(determinant > 1.0e-12 * a00 * a11)) {
-      throw std::runtime_error("vector gradient stencil is rank deficient");
-    }
-    gradients[index] = {
-        .alpha_derivative = (a11 * b0 - a01 * b1) / determinant,
-        .beta_derivative = (a00 * b1 - a01 * b0) / determinant,
-    };
+    gradients[index] = gradient;
   }
   return gradients;
 }

@@ -17,6 +17,7 @@ struct CachedCellEdgeGeometry {
   Vec3 normalized_face_displacement_m;
   TangentComponents neighbor_coordinates_m;
   TangentComponents face_coordinates_m;
+  TangentComponents least_squares_weight_m_inverse;
 };
 
 struct CachedCellGeometry {

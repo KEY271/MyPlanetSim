@@ -5,6 +5,36 @@
 #include "myplanetsim/numerics/spherical_operators.hpp"
 #include "support/test.hpp"
 
+namespace {
+
+[[nodiscard]] mps::Vec3 direct_scalar_gradient(const mps::CubedSphereGrid& grid,
+                                               const std::vector<double>& values,
+                                               const std::size_t cell) {
+  const auto& cached = grid.cell_cache()[cell];
+  double a00 = 0.0;
+  double a01 = 0.0;
+  double a11 = 0.0;
+  double b0 = 0.0;
+  double b1 = 0.0;
+  for (const auto& edge : cached.edges) {
+    const double x = edge.neighbor_coordinates_m.alpha;
+    const double y = edge.neighbor_coordinates_m.beta;
+    const double weight = 1.0 / std::max(x * x + y * y, 1.0e-300);
+    const double difference = values[edge.neighbor] - values[cell];
+    a00 += weight * x * x;
+    a01 += weight * x * y;
+    a11 += weight * y * y;
+    b0 += weight * x * difference;
+    b1 += weight * y * difference;
+  }
+  const double determinant = a00 * a11 - a01 * a01;
+  const double alpha = (a11 * b0 - a01 * b1) / determinant;
+  const double beta = (a00 * b1 - a01 * b0) / determinant;
+  return alpha * cached.basis.alpha + beta * cached.basis.beta;
+}
+
+}  // namespace
+
 MPS_TEST_CASE("unique edge scatter cancels globally") {
   const mps::CubedSphereGrid grid(8, 2.0);
   std::vector<double> flux(grid.edge_count());
@@ -50,6 +80,25 @@ MPS_TEST_CASE("manufactured gradient error decreases with resolution") {
     MPS_CHECK(error < previous);
     previous = error;
   }
+}
+
+MPS_TEST_CASE("precomputed least squares weights match the direct solve") {
+  const mps::CubedSphereGrid grid(9, 3.0);
+  std::vector<double> field(grid.cell_count());
+  for (std::size_t cell = 0; cell < field.size(); ++cell) {
+    const auto center = grid.cells()[cell].center;
+    field[cell] = std::sin(1.3 * center.x) + 0.25 * center.y * center.z;
+  }
+
+  const auto gradient = mps::least_squares_gradient(grid, field);
+  double maximum_error = 0.0;
+  double maximum_reference = 0.0;
+  for (std::size_t cell = 0; cell < field.size(); ++cell) {
+    const auto reference = direct_scalar_gradient(grid, field, cell);
+    maximum_error = std::max(maximum_error, mps::norm(gradient[cell] - reference));
+    maximum_reference = std::max(maximum_reference, mps::norm(reference));
+  }
+  MPS_CHECK(maximum_error <= 1.0e-12 * maximum_reference);
 }
 
 int main() { return mps::test::run_all(); }
