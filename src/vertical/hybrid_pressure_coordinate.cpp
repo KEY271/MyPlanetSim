@@ -22,6 +22,51 @@ namespace {
 
 }  // namespace
 
+HybridPressureCoefficients uniform_sigma_coefficients(const Real top_pressure_pa,
+                                                      const Index levels) {
+  require_positive(top_pressure_pa, "hybrid model top pressure");
+  if (levels < 1) {
+    throw std::invalid_argument("hybrid coefficient level count must be positive");
+  }
+  const auto count = static_cast<std::size_t>(levels) + 1;
+  HybridPressureCoefficients coefficients;
+  coefficients.a_half_pa.reserve(count);
+  coefficients.b_half.reserve(count);
+  for (std::size_t k = 0; k < count; ++k) {
+    const Real sigma = static_cast<Real>(k) / static_cast<Real>(levels);
+    coefficients.a_half_pa.push_back(top_pressure_pa * (1.0 - sigma));
+    coefficients.b_half.push_back(sigma);
+  }
+  // The endpoints are the ADR 0005 contract, so they are set exactly rather than left
+  // to the rounding of the ramp.
+  coefficients.a_half_pa.front() = top_pressure_pa;
+  coefficients.a_half_pa.back() = 0.0;
+  coefficients.b_half.front() = 0.0;
+  coefficients.b_half.back() = 1.0;
+  return coefficients;
+}
+
+bool is_uniform_sigma(const std::span<const Real> a_half_pa,
+                      const std::span<const Real> b_half) {
+  if (a_half_pa.size() < 2 || a_half_pa.size() != b_half.size()) {
+    return false;
+  }
+  const auto levels = static_cast<Index>(a_half_pa.size() - 1);
+  const Real top_pressure_pa = a_half_pa.front();
+  if (!(top_pressure_pa > 0.0)) {
+    return false;
+  }
+  const auto expected = uniform_sigma_coefficients(top_pressure_pa, levels);
+  for (std::size_t k = 0; k < a_half_pa.size(); ++k) {
+    // Scale-aware: A is compared against the model top, B against unity.
+    if (std::abs(a_half_pa[k] - expected.a_half_pa[k]) > 1.0e-9 * top_pressure_pa ||
+        std::abs(b_half[k] - expected.b_half[k]) > 1.0e-9) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void HybridPressureCoefficients::validate(
     const Real minimum_surface_pressure_pa, const Real maximum_surface_pressure_pa,
     const Real minimum_pressure_thickness_pa) const {

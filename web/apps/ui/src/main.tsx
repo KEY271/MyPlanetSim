@@ -97,8 +97,11 @@ function App() {
   }, [amplitude, dryFrame, editable, massPolicy, preset.id, sigma]);
   const selectPreset = (presetId: string) => {
     const next = presets.find((candidate) => candidate.id === presetId) ?? shallowWaterPresetDescriptor(presetId);
+    // A preset without a column must carry no levels at all, and one with a column starts
+    // from its own default rather than from whatever the previous preset used.
     setDraft((current) => ({ ...current, presetId, edits: [],
-      cellsPerPanel: Math.min(current.cellsPerPanel, next.maximumCellsPerPanel) }));
+      cellsPerPanel: Math.min(current.cellsPerPanel, next.maximumCellsPerPanel),
+      levels: next.levels ?? undefined }));
     setMessage(next.modelKind === "dry_hydrostatic"
       ? `${presetId} runs the dry hydrostatic core; clicking a cell selects a column.`
       : `${presetId} runs the shallow-water core; clicking a cell adds an edit.`);
@@ -125,6 +128,7 @@ function App() {
         {dryFrame ? <label>Model level (0 = top) <input aria-label="Model level" type="range" min="0" max={dryFrame.levels - 1} step="1" value={activeLevel} disabled={!dryField?.volume} onChange={(event) => setLevel(Number(event.target.value))} /></label> : null}
         <label>Grid <select value={gridMode} onChange={(event) => setGridMode(event.target.value as typeof gridMode)}><option value="off">Off</option><option value="panel_seams">Panel seams</option><option value="all_cells">All cells</option></select></label>
         <label>N (cells/face) <select value={draft.cellsPerPanel} onChange={(event) => setDraft((current) => ({ ...current, cellsPerPanel: Number(event.target.value) }))}>{gridSizes.filter((value) => value <= preset.maximumCellsPerPanel).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        {preset.levels === null ? null : <label>K (vertical resolution) <input aria-label="K vertical resolution" type="number" min="1" step="1" max={preset.maximumLevels ?? preset.levels} value={draft.levels ?? preset.levels} onChange={(event) => setDraft((current) => ({ ...current, levels: Number(event.target.value) }))} /></label>}
         <label>End time (s) <input type="number" min="0.000001" max="31536000" value={draft.endTimeSeconds} onChange={(event) => setDraft((current) => ({ ...current, endTimeSeconds: Number(event.target.value) }))} /></label>
         <label>Simulation Δt max (s) <input type="number" min="0.000001" max="86400" value={draft.maximumTimeStepSeconds} onChange={(event) => setDraft((current) => ({ ...current, maximumTimeStepSeconds: Number(event.target.value) }))} /></label>
         <label>Display every (steps) <input type="number" min="1" max="1000000" step="1" value={draft.frameIntervalSteps} onChange={(event) => setDraft((current) => ({ ...current, frameIntervalSteps: Number(event.target.value) }))} /></label>

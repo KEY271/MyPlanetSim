@@ -15,6 +15,8 @@ inline constexpr std::uint64_t kControlProtocolVersion = 1;
 inline constexpr std::uint64_t kControlMaxEditCount = 64;
 inline constexpr std::uint64_t kControlMaxCellsPerPanel = 96;
 inline constexpr std::uint64_t kControlMaxPublishedFrames = 512;
+// ADR 0007 bounds an interactive vertical resolution override to the FrameV2 allowlist.
+inline constexpr std::uint64_t kControlMaxLevels = 30;
 
 enum class InitialConditionEditKind { kGaussianDepth };
 enum class MassPolicy { kPreserveGlobal, kAllowChange };
@@ -31,6 +33,10 @@ struct ControlRequestV1 {
   std::uint64_t format_version = kControlProtocolVersion;
   std::string run_id;
   std::uint64_t cells_per_panel = 0;
+  // 0 keeps the configured hybrid coordinate; a nonzero value re-resolves a uniform
+  // sigma preset per ADR 0007. The key is optional so requests written before it stay
+  // valid.
+  std::uint64_t levels = 0;
   Real end_time_s = 0.0;
   Real maximum_time_step_s = 0.0;
   std::uint64_t frame_interval_steps = 0;

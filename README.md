@@ -123,6 +123,13 @@ potential temperature/temperature/tracer/wind speed の field selector、選択 
 対数 pressure profile、選択 cell の inspector を表示します。level slice は 2D map と 3D globe が
 共有し、cell click は edit ではなく column selection になります。
 
+鉛直解像度 `K` は N と同様に run ごとに指定できます（`K (vertical resolution)`）。
+[ADR 0007](docs/adr/0007-interactive-vertical-resolution-override.md) により、preset が
+uniform sigma の hybrid 座標を使っている場合に限り、preset の model top を保ったまま
+`A_pa[k] = p_top*(1-k/K)`, `B[k] = k/K` を再生成します。stretched な座標を持つ preset は
+黙って平坦化されず拒否されます。K を変えた run は fingerprint が変わる別 configuration です。
+UI の `Model level` slider は表示する層を選ぶ view 設定で、`K` は run 設定です。
+
 tokenを指定しない場合は安全なoffline/mock clientを使用します。offline/mock client は
 shallow-water preset のみを提供し、dry hydrostatic は native gateway を必要とします。Chromium/Firefox/WebKitの
 自動matrixは次の拡張対象です。

@@ -109,4 +109,43 @@ MPS_TEST_CASE("control request rejects unsafe or out of range values") {
   MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
 }
 
+MPS_TEST_CASE("control.levels is optional, bounded, and round trips") {
+  const auto replace = [](std::string text, const std::string_view old_value,
+                          const std::string_view new_value) {
+    const auto position = text.find(old_value);
+    if (position != std::string::npos) {
+      text.replace(position, old_value.size(), new_value);
+    }
+    return text;
+  };
+  // Absent means "keep the configured coordinate", so every request written before
+  // ADR 0007 keeps its exact meaning and its exact serialized text.
+  const auto without = parse(kRequest);
+  MPS_CHECK_EQ(without.levels, 0U);
+  std::ostringstream text;
+  mps::write_control_request(text, without);
+  MPS_CHECK(text.str().find("control.levels") == std::string::npos);
+
+  auto overridden = std::string(kRequest);
+  overridden = replace(overridden, "control.cells_per_panel = 8",
+                       "control.cells_per_panel = 8\ncontrol.levels = 16");
+  const auto first = parse(overridden);
+  MPS_CHECK_EQ(first.levels, 16U);
+  std::ostringstream written;
+  mps::write_control_request(written, first);
+  MPS_CHECK_EQ(parse(written.str()).levels, 16U);
+
+  for (const auto value : {"31", "1000"}) {
+    MPS_CHECK_THROWS_AS(parse(replace(overridden, "control.levels = 16",
+                                      std::string("control.levels = ") + value)),
+                        std::invalid_argument);
+  }
+  MPS_CHECK_EQ(
+      parse(replace(overridden, "control.levels = 16", "control.levels = 30")).levels,
+      30U);
+  MPS_CHECK_EQ(
+      parse(replace(overridden, "control.levels = 16", "control.levels = 1")).levels,
+      1U);
+}
+
 int main() { return mps::test::run_all(); }

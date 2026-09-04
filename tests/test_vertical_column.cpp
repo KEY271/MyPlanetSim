@@ -373,4 +373,42 @@ MPS_TEST_CASE("vertical checkpoint round trips and rejects invalid restart time"
   MPS_CHECK_THROWS_AS(mps::run_vertical_column(config, invalid), std::invalid_argument);
 }
 
+MPS_TEST_CASE("uniform sigma coefficients are the only refinable coordinate family") {
+  // ADR 0007: the ramp preserves the declared model top and satisfies the ADR 0005
+  // endpoints exactly, not merely to within the rounding of the interior formula.
+  const auto eight = mps::uniform_sigma_coefficients(1000.0, 8);
+  MPS_CHECK_EQ(eight.a_half_pa.size(), 9U);
+  MPS_CHECK_EQ(eight.a_half_pa.front(), 1000.0);
+  MPS_CHECK_EQ(eight.a_half_pa.back(), 0.0);
+  MPS_CHECK_EQ(eight.b_half.front(), 0.0);
+  MPS_CHECK_EQ(eight.b_half.back(), 1.0);
+  MPS_CHECK_EQ(eight.a_half_pa[1], 875.0);
+  MPS_CHECK_EQ(eight.b_half[1], 0.125);
+  // The shipped visualizer preset is exactly this ramp, so refining it reproduces the
+  // preset when the requested level count equals the configured one.
+  MPS_CHECK(mps::is_uniform_sigma(eight.a_half_pa, eight.b_half));
+  const auto thirty = mps::uniform_sigma_coefficients(1000.0, 30);
+  MPS_CHECK_EQ(thirty.a_half_pa.size(), 31U);
+  MPS_CHECK(mps::is_uniform_sigma(thirty.a_half_pa, thirty.b_half));
+  mps::HybridPressureCoefficients{thirty.a_half_pa, thirty.b_half}.validate(
+      80000.0, 120000.0, 100.0);
+
+  // A stretched coordinate is rejected as refinable even though it is a valid
+  // coordinate.
+  const std::vector<mps::Real> stretched_a{1000.0, 900.0, 500.0, 0.0};
+  const std::vector<mps::Real> stretched_b{0.0, 0.1, 0.5, 1.0};
+  MPS_CHECK(!mps::is_uniform_sigma(stretched_a, stretched_b));
+  const std::vector<mps::Real> nudged_a{1000.0, 875.0, 750.0, 625.0, 500.0,
+                                        375.0,  250.0, 125.0, 0.0};
+  std::vector<mps::Real> nudged_b{0.0,   0.125, 0.25,  0.375, 0.5,
+                                  0.625, 0.75,  0.875, 1.0};
+  nudged_b[4] += 1.0e-6;
+  MPS_CHECK(!mps::is_uniform_sigma(nudged_a, nudged_b));
+  MPS_CHECK(!mps::is_uniform_sigma(std::vector<mps::Real>{1000.0},
+                                   std::vector<mps::Real>{0.0}));
+  MPS_CHECK_THROWS_AS(mps::uniform_sigma_coefficients(0.0, 8), std::invalid_argument);
+  MPS_CHECK_THROWS_AS(mps::uniform_sigma_coefficients(1000.0, 0),
+                      std::invalid_argument);
+}
+
 int main() { return mps::test::run_all(); }

@@ -10,6 +10,8 @@ const maxBodyBytes = 64 * 1024;
 // below the requested maximum, so the budget is enforced again while the run streams events.
 export const maxPublishedFrames = 512;
 export const maxPublishedBytes = 256 * 1024 * 1024;
+// Mirrors kControlMaxLevels in the C++ control contract and the FrameV2 allowlist.
+export const maxInteractiveLevels = 30;
 
 export function estimatedFrameCount(run) {
   return Math.floor(Math.ceil(run.endTimeSeconds / run.maximumTimeStepSeconds) / run.frameIntervalSteps) + 2;
@@ -24,15 +26,22 @@ function finite(value) { return typeof value === "number" && Number.isFinite(val
 // and interactive N limit.
 export function presetDescriptor(preset, id) {
   const described = typeof preset === "string" ? { path: preset } : preset;
-  return { id, modelKind: "shallow_water", frameSchemaVersion: 1, levels: null,
+  const descriptor = { id, modelKind: "shallow_water", frameSchemaVersion: 1, levels: null,
     supportedEdits: ["gaussian_depth"], maximumCellsPerPanel: 96, ...described };
+  // ADR 0007: a dry preset may be re-resolved vertically. `levels` stays the preset default
+  // and `maximumLevels` bounds what a request may ask for.
+  if (descriptor.modelKind === "dry_hydrostatic" && descriptor.maximumLevels === undefined) {
+    descriptor.maximumLevels = maxInteractiveLevels;
+  }
+  return descriptor;
 }
 
 // FrameV2 stores surface pressure plus seven volume fields as little-endian float64, so the
-// published size of one frame is exact and can be checked before the run starts.
-export function frameBytes(details, cellsPerPanel) {
+// published size of one frame is exact and can be checked before the run starts. A run that
+// overrides the vertical resolution is sized by the levels it asked for.
+export function frameBytes(details, cellsPerPanel, levels = details.levels) {
   const cells = 6 * cellsPerPanel ** 2;
-  return details.frameSchemaVersion === 2 ? 8 * cells * (1 + 7 * details.levels) : 32 * cells;
+  return details.frameSchemaVersion === 2 ? 8 * cells * (1 + 7 * levels) : 32 * cells;
 }
 
 export function validateRunRequest(value, presets) {
@@ -50,7 +59,16 @@ export function validateRunRequest(value, presets) {
   if (initialCondition.edits.length !== 0 && !details.supportedEdits.includes("gaussian_depth")) {
     throw protocolError(`${details.modelKind} presets do not support initial edits`);
   }
-  if (estimatedFrameCount(run) * frameBytes(details, grid.cellsPerPanel) > maxPublishedBytes) {
+  // A vertical resolution override only exists for a preset that declares levels; a
+  // shallow-water preset has no column to re-resolve.
+  if (grid.levels !== undefined) {
+    if (details.levels === null) throw protocolError(`${details.modelKind} presets have no vertical levels to override`);
+    if (!Number.isInteger(grid.levels) || grid.levels < 1 || grid.levels > details.maximumLevels) {
+      throw protocolError(`levels must be an integer in [1, ${details.maximumLevels}]`);
+    }
+  }
+  const levels = grid.levels ?? details.levels;
+  if (estimatedFrameCount(run) * frameBytes(details, grid.cellsPerPanel, levels) > maxPublishedBytes) {
     throw protocolError("the run would exceed the published byte budget");
   }
   for (const edit of initialCondition.edits) {
@@ -67,6 +85,7 @@ export function controlRequestText(request, runId) {
     "control.format_version = 1",
     `control.run_id = ${runId}`,
     `control.cells_per_panel = ${request.grid.cellsPerPanel}`,
+    ...(request.grid.levels === undefined ? [] : [`control.levels = ${request.grid.levels}`]),
     `control.end_time_s = ${request.run.endTimeSeconds}`,
     `control.maximum_time_step_s = ${request.run.maximumTimeStepSeconds}`,
     `control.frame_interval_steps = ${request.run.frameIntervalSteps}`,

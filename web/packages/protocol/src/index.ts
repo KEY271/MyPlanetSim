@@ -14,7 +14,9 @@ export interface GaussianDepthEditV1 {
 export interface RunRequestV1 {
   protocolVersion: typeof protocolVersion;
   presetId: string;
-  grid: { cellsPerPanel: number };
+  // `levels` is the optional ADR 0007 vertical resolution override. It applies only to a
+  // preset that declares levels; omitting it keeps the preset's own coordinate.
+  grid: { cellsPerPanel: number; levels?: number };
   run: {
     endTimeSeconds: number;
     maximumTimeStepSeconds: number;
@@ -91,6 +93,9 @@ function require(condition: boolean, message: string): asserts condition {
 // so the run budget is bounded before the native process is started.
 export const maxPublishedFrames = 512;
 
+// Mirrors kControlMaxLevels in the C++ control contract and the FrameV2 header bound.
+export const maxInteractiveLevels = 30;
+
 export function estimatedFrameCount(run: RunRequestV1["run"]): number {
   const steps = Math.ceil(run.endTimeSeconds / run.maximumTimeStepSeconds);
   return Math.floor(steps / run.frameIntervalSteps) + 2;
@@ -105,6 +110,11 @@ export function validateRunRequest(value: unknown): RunRequestV1 {
   const grid = object.grid as Record<string, unknown>;
   require(Number.isInteger(grid.cellsPerPanel) && (grid.cellsPerPanel as number) >= 1 &&
     (grid.cellsPerPanel as number) <= 96, "cellsPerPanel is outside the supported range");
+  // The gateway checks `levels` against the selected preset; here it is only bounded to the
+  // interactive range the frame contract can carry.
+  require(grid.levels === undefined || (Number.isInteger(grid.levels) &&
+    (grid.levels as number) >= 1 && (grid.levels as number) <= maxInteractiveLevels),
+    "levels is outside the supported range");
   const run = object.run as Record<string, unknown>;
   require(finite(run.endTimeSeconds) && run.endTimeSeconds > 0 && run.endTimeSeconds <= 31536000,
     "endTimeSeconds is outside the supported range");

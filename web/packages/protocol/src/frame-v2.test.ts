@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ProtocolError } from "./index";
+import { ProtocolError, validateRunRequest } from "./index";
 import { presetDescriptors, shallowWaterPresetDescriptor } from "./client";
 import { decodeFrame, decodeFrameV1, decodeFrameV2, frameV2CellCount, frameV2Field, frameV2Fields, FrameV2FieldId, frameV2LevelDataset, frameV2Sample, levelSlice, selectedColumn, VisualFrameV2 } from "./visual";
 
@@ -189,8 +189,21 @@ describe("preset descriptors", () => {
     expect(descriptors[0].frameSchemaVersion).toBe(1);
   });
 
+  it("bounds an optional vertical resolution override", () => {
+    const dry = { protocolVersion: 1 as const, presetId: "dry", run: { endTimeSeconds: 10, maximumTimeStepSeconds: 1, frameIntervalSteps: 1 }, initialCondition: { edits: [] } };
+    // Omitting levels keeps the preset coordinate; the browser bound is only the range the
+    // FrameV2 header and the C++ control contract can carry.
+    expect(validateRunRequest({ ...dry, grid: { cellsPerPanel: 4 } })).toBeTruthy();
+    expect(validateRunRequest({ ...dry, grid: { cellsPerPanel: 4, levels: 1 } })).toBeTruthy();
+    expect(validateRunRequest({ ...dry, grid: { cellsPerPanel: 4, levels: 30 } })).toBeTruthy();
+    for (const levels of [0, 31, 2.5, -1, "8", null]) {
+      expect(() => validateRunRequest({ ...dry, grid: { cellsPerPanel: 4, levels } }))
+        .toThrow(/levels is outside the supported range/);
+    }
+  });
+
   it("returns described presets in the advertised order and ignores extras", () => {
-    const dry = { id: "dry", modelKind: "dry_hydrostatic" as const, frameSchemaVersion: 2 as const, levels: 8, supportedEdits: [], maximumCellsPerPanel: 24 };
+    const dry = { id: "dry", modelKind: "dry_hydrostatic" as const, frameSchemaVersion: 2 as const, levels: 8, maximumLevels: 30, supportedEdits: [], maximumCellsPerPanel: 24 };
     const descriptors = presetDescriptors({
       protocolVersion: 1, presets: ["rest", "dry"], supportedEdits: ["gaussian_depth"],
       presetDetails: [dry, { ...dry, id: "unlisted" }],

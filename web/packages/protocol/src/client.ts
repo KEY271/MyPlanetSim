@@ -16,7 +16,10 @@ export interface PresetDescriptorV1 {
   id: string;
   modelKind: ModelKind;
   frameSchemaVersion: 1 | 2;
+  // The preset's own level count, and the largest a run may ask for under ADR 0007. Both
+  // are null for a model with no column.
   levels: number | null;
+  maximumLevels?: number;
   supportedEdits: readonly string[];
   maximumCellsPerPanel: number;
 }

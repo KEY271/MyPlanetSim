@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <vector>
 
 #include "myplanetsim/core/types.hpp"
@@ -13,6 +14,17 @@ struct HybridPressureCoefficients {
   void validate(Real minimum_surface_pressure_pa, Real maximum_surface_pressure_pa,
                 Real minimum_pressure_thickness_pa) const;
 };
+
+// The uniform sigma ramp of ADR 0007: the only coordinate family an interactive control
+// request may re-resolve. It preserves the model top the preset declared and satisfies
+// the ADR 0005 endpoints by construction.
+[[nodiscard]] HybridPressureCoefficients uniform_sigma_coefficients(
+    Real top_pressure_pa, Index levels);
+
+// True when the given coefficients are the uniform sigma ramp at their own level count,
+// so refining them stays inside the family the preset already chose.
+[[nodiscard]] bool is_uniform_sigma(std::span<const Real> a_half_pa,
+                                    std::span<const Real> b_half);
 
 struct HybridPressureGeometry {
   std::vector<Real> pressure_half_pa;

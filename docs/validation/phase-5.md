@@ -38,6 +38,18 @@ npm run typecheck && npm run lint && npm run test && npm run build
 npm run test:live --workspace @myplanetsim/gateway
 ```
 
+### Vertical resolution override
+
+[ADR 0007](../adr/0007-interactive-vertical-resolution-override.md) lets a control request
+carry `control.levels`. Absent or `0` keeps the configured coordinate, so every request
+written before it is unchanged. A nonzero value regenerates the uniform sigma ramp from the
+preset's own model top, and is accepted only when the preset already uses that ramp.
+`test_vertical_column.cpp` gates the generated endpoints, the exact interior values, and
+rejection of a stretched or slightly nudged coordinate. `test_dry_hydrostatic_io.cpp` gates
+that no override leaves the coordinate byte-identical, that requesting the preset's own `K`
+is the identity down to the configuration fingerprint, that a refined `K` changes the
+fingerprint, and that a stretched preset is refused rather than flattened.
+
 ### Native publication
 
 `experiment.kind = dry_hydrostatic` accepts `--control-request` and `--event-stream ndjson`.
@@ -83,12 +95,16 @@ bundle regressions are unchanged.
 ### Live end to end
 
 `web/apps/gateway/test/live.test.js` runs the native binary against
-`configs/phase5_visualizer_rest_n4.cfg` at `N = 4`, `K = 8`. It checks the advertised
+`configs/phase5_visualizer_rest_n4.cfg` at `N = 4`, `K = 8`, and again at `K = 20` through
+the ADR 0007 override. It checks the advertised
 preset descriptor, rejection of a `gaussian_depth` edit, `run.completed` with every frame
 announced as schema 2, the exact frame byte length, frame 0 matching the initialized state
 before integration (uniform 100000 Pa surface pressure, pressure increasing downward,
 288 K, zero wind), a later frame advancing time and step, and a cancelled run whose
-announced frames are all still servable at their announced length. The shallow-water
+announced frames are all still servable at their announced length. The refined run is
+checked for `K = 20` in the frame header, the matching byte length, a downward-increasing
+generated coordinate, a configuration fingerprint distinct from the preset's, and rejection
+of `K = 0` and `K = 31` before the solver is started. The shallow-water
 FrameV1 live run and cancel in the same file are unchanged.
 
 ### Known gaps

@@ -37,6 +37,37 @@ test("an undescribed preset keeps the shallow-water contract", () => {
   assert.deepEqual(presetDescriptor("preset.cfg", "rest"),
     { id: "rest", path: "preset.cfg", modelKind: "shallow_water", frameSchemaVersion: 1, levels: null, supportedEdits: ["gaussian_depth"], maximumCellsPerPanel: 96 });
   assert.equal(presetDescriptor(dryPreset, "dry").modelKind, "dry_hydrostatic");
+  // A shallow-water preset has no column, so it advertises no vertical override bound.
+  assert.equal(presetDescriptor("preset.cfg", "rest").maximumLevels, undefined);
+  assert.equal(presetDescriptor(dryPreset, "dry").maximumLevels, 30);
+  assert.equal(presetDescriptor({ ...dryPreset, maximumLevels: 12 }, "dry").maximumLevels, 12);
+});
+
+test("a vertical resolution override is bounded and only offered where there is a column", () => {
+  const presets = new Map([["dry", dryPreset], ["rest", "preset.cfg"]]);
+  const dry = { ...request, presetId: "dry", initialCondition: { edits: [] } };
+  // Omitting levels keeps the preset coordinate, and the preset's own value is accepted.
+  assert.ok(validateRunRequest(dry, presets));
+  assert.ok(validateRunRequest({ ...dry, grid: { cellsPerPanel: 4, levels: 8 } }, presets));
+  assert.ok(validateRunRequest({ ...dry, grid: { cellsPerPanel: 4, levels: 30 } }, presets));
+  for (const levels of [0, -1, 31, 2.5, "8", null]) {
+    assert.throws(() => validateRunRequest({ ...dry, grid: { cellsPerPanel: 4, levels } }, presets), /levels must be an integer/);
+  }
+  assert.throws(() => validateRunRequest({ ...request, grid: { cellsPerPanel: 4, levels: 8 } }, presets),
+    /shallow_water presets have no vertical levels/);
+  // A preset may advertise a tighter bound than the interactive maximum.
+  const tight = new Map([["dry", { ...dryPreset, maximumLevels: 12 }]]);
+  assert.ok(validateRunRequest({ ...dry, grid: { cellsPerPanel: 4, levels: 12 } }, tight));
+  assert.throws(() => validateRunRequest({ ...dry, grid: { cellsPerPanel: 4, levels: 13 } }, tight), /\[1, 12\]/);
+});
+
+test("the control request carries the vertical override only when it is set", () => {
+  assert.doesNotMatch(controlRequestText(request, "run-1"), /control\.levels/);
+  const text = controlRequestText({ ...request, presetId: "dry", grid: { cellsPerPanel: 4, levels: 16 } }, "run-1");
+  assert.match(text, /control\.levels = 16/);
+  // The override must sit between the horizontal resolution and the run window, matching
+  // the key order the C++ parser reports on a duplicate or unknown key.
+  assert.match(text, /control\.cells_per_panel = 4\ncontrol\.levels = 16\ncontrol\.end_time_s/);
 });
 
 test("capabilities describe every preset without leaking its configuration path", async () => {
@@ -49,7 +80,7 @@ test("capabilities describe every preset without leaking its configuration path"
   const capabilities = await response.json();
   assert.deepEqual(capabilities.presets, ["rest", "dry"]);
   assert.deepEqual(capabilities.presetDetails.map((value) => value.id), ["rest", "dry"]);
-  assert.deepEqual(capabilities.presetDetails[1], { id: "dry", modelKind: "dry_hydrostatic", frameSchemaVersion: 2, levels: 8, supportedEdits: [], maximumCellsPerPanel: 24 });
+  assert.deepEqual(capabilities.presetDetails[1], { id: "dry", modelKind: "dry_hydrostatic", frameSchemaVersion: 2, levels: 8, maximumLevels: 30, supportedEdits: [], maximumCellsPerPanel: 24 });
   assert.equal(capabilities.presetDetails[0].frameSchemaVersion, 1);
   assert.equal(JSON.stringify(capabilities).includes(root), false);
   await gateway.shutdown();
@@ -60,6 +91,13 @@ test("the published byte budget is exact and bounds the run before it starts", (
   assert.equal(frameBytes(presetDescriptor(dryPreset, "dry"), 24), 8 * 3456 * (1 + 7 * 8));
   assert.equal(frameBytes(presetDescriptor({ ...dryPreset, levels: 30 }, "dry"), 24), 5833728);
   assert.equal(frameBytes(presetDescriptor("preset.cfg", "rest"), 4), 32 * 96);
+  // A run that overrides the vertical resolution is sized by what it asked for, not by the
+  // preset default, otherwise the budget would under-count a refined column.
+  assert.equal(frameBytes(presetDescriptor(dryPreset, "dry"), 4, 30), 8 * 96 * (1 + 7 * 30));
+  const overridden = new Map([["dry", dryPreset]]);
+  const wide = { ...request, presetId: "dry", grid: { cellsPerPanel: 24, levels: 30 }, run: { endTimeSeconds: 60, maximumTimeStepSeconds: 1, frameIntervalSteps: 1 } };
+  assert.throws(() => validateRunRequest(wide, overridden), /byte budget/);
+  assert.ok(validateRunRequest({ ...wide, grid: { cellsPerPanel: 24, levels: 8 } }, overridden));
   const presets = new Map([["dry", { ...dryPreset, levels: 30 }]]);
   const withinBudget = { ...request, presetId: "dry", grid: { cellsPerPanel: 24 }, run: { endTimeSeconds: 40, maximumTimeStepSeconds: 1, frameIntervalSteps: 1 } };
   assert.ok(validateRunRequest(withinBudget, presets));

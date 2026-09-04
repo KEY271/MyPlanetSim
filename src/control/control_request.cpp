@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "myplanetsim/core/validation.hpp"
+#include "myplanetsim/vertical/hybrid_pressure_coordinate.hpp"
 
 namespace mps {
 namespace {
@@ -67,6 +68,8 @@ void assign_value(ControlRequestV1& request, const std::string_view key,
     request.run_id = std::string(value);
   } else if (key == "control.cells_per_panel") {
     request.cells_per_panel = parse_uint(value, line, key);
+  } else if (key == "control.levels") {
+    request.levels = parse_uint(value, line, key);
   } else if (key == "control.end_time_s") {
     request.end_time_s = parse_real(value, line, key);
   } else if (key == "control.maximum_time_step_s") {
@@ -165,6 +168,9 @@ void validate_control_request(const ControlRequestV1& request) {
   if (request.cells_per_panel == 0 ||
       request.cells_per_panel > kControlMaxCellsPerPanel) {
     throw std::invalid_argument("control.cells_per_panel must be in [1, 96]");
+  }
+  if (request.levels > kControlMaxLevels) {
+    throw std::invalid_argument("control.levels must be 0 or in [1, 30]");
   }
   require_finite(request.end_time_s, "control.end_time_s");
   if (!(request.end_time_s > 0.0 && request.end_time_s <= 31536000.0)) {
@@ -284,8 +290,13 @@ void write_control_request(std::ostream& output, const ControlRequestV1& request
   output << std::setprecision(std::numeric_limits<Real>::max_digits10)
          << "control.format_version = " << request.format_version << '\n'
          << "control.run_id = " << request.run_id << '\n'
-         << "control.cells_per_panel = " << request.cells_per_panel << '\n'
-         << "control.end_time_s = " << request.end_time_s << '\n'
+         << "control.cells_per_panel = " << request.cells_per_panel << '\n';
+  // Written only when the run overrides the vertical resolution, so a shallow-water
+  // request keeps exactly the text it had before ADR 0007.
+  if (request.levels != 0) {
+    output << "control.levels = " << request.levels << '\n';
+  }
+  output << "control.end_time_s = " << request.end_time_s << '\n'
          << "control.maximum_time_step_s = " << request.maximum_time_step_s << '\n'
          << "control.frame_interval_steps = " << request.frame_interval_steps << '\n'
          << "control.frame_directory = " << request.frame_directory.generic_string()
@@ -313,6 +324,19 @@ ExperimentConfig apply_control_request(const ExperimentConfig& config,
   validate_control_request(request);
   ExperimentConfig resolved = config;
   resolved.grid.cells_per_panel = static_cast<Index>(request.cells_per_panel);
+  if (request.levels != 0) {
+    // ADR 0007: only a preset that already uses the uniform sigma ramp may be
+    // re-resolved, so a designed coordinate cannot be flattened by a control request.
+    if (!is_uniform_sigma(config.vertical.a_half_pa, config.vertical.b_half)) {
+      throw std::invalid_argument(
+          "control.levels requires a preset with a uniform sigma hybrid coordinate");
+    }
+    auto coefficients = uniform_sigma_coefficients(config.vertical.a_half_pa.front(),
+                                                   static_cast<Index>(request.levels));
+    resolved.vertical.levels = static_cast<Index>(request.levels);
+    resolved.vertical.a_half_pa = std::move(coefficients.a_half_pa);
+    resolved.vertical.b_half = std::move(coefficients.b_half);
+  }
   resolved.run.end_time_s = request.end_time_s;
   resolved.run.time_step_s = request.maximum_time_step_s;
   resolved.diagnostics.interval_steps = request.frame_interval_steps;
