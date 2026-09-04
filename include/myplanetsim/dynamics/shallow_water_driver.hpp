@@ -6,8 +6,8 @@
 #include <vector>
 
 #include "myplanetsim/config/experiment_config.hpp"
-#include "myplanetsim/diagnostics/shallow_water_diagnostics.hpp"
 #include "myplanetsim/control/control_request.hpp"
+#include "myplanetsim/diagnostics/shallow_water_diagnostics.hpp"
 
 namespace mps {
 

@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { addShallowWaterDerivedFields, diagnosticEvents, parseShallowWaterCsv, UnitVector, cubedSphereCells } from "@myplanetsim/protocol";
-import { DeterministicMockSimulationClient } from "@myplanetsim/protocol/client";
+import { DeterministicMockSimulationClient, HttpSimulationClient } from "@myplanetsim/protocol/client";
 import { Globe3D } from "./Globe3D";
 import { Map2D } from "./Map2D";
 import { appendEdit, clearEdits, createGaussianEdit, DraftRun, toRunRequest, undoEdit } from "./editor";
@@ -14,9 +14,19 @@ function demoDataset() {
   return addShallowWaterDerivedFields(parseShallowWaterCsv(rows.join("\n"), 2));
 }
 
+const startupParameters = new URLSearchParams(window.location.hash.slice(1));
+const startupToken = startupParameters.get("token");
+const startupGateway = startupParameters.get("gateway");
+if (startupToken) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+
 function App() {
   const dataset = useMemo(demoDataset, []);
-  const controller = useMemo(() => new SimulationController(new DeterministicMockSimulationClient()), []);
+  const controller = useMemo(() => {
+    const client = startupToken
+      ? new HttpSimulationClient(startupGateway ?? window.location.origin, startupToken)
+      : new DeterministicMockSimulationClient();
+    return new SimulationController(client);
+  }, []);
   const [run, setRun] = useState(controller.value);
   const [playing, setPlaying] = useState(false);
   useEffect(() => { const unsubscribe = controller.subscribe(setRun); return () => { unsubscribe(); }; }, [controller]);

@@ -84,27 +84,43 @@ export function createGatewayServer(options) {
   const server = createServer(async (request, response) => {
     try {
       if (!allowedHost(request.headers.host) || !allowedOrigin(request.headers.origin)) return json(response, 403, { error: "forbidden" });
+      if (request.headers.origin) {
+        response.setHeader("access-control-allow-origin", request.headers.origin);
+        response.setHeader("vary", "Origin");
+        response.setHeader("access-control-allow-headers", "authorization, content-type, x-after-sequence");
+        response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+      }
+      if (request.method === "OPTIONS") { response.statusCode = 204; response.end(); return; }
       if (request.headers.authorization !== `Bearer ${token}`) return json(response, 401, { error: "unauthorized" });
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       if (request.method === "GET" && url.pathname === "/api/v1/capabilities") return json(response, 200, { protocolVersion, presets: [...presets.keys()], supportedEdits: ["gaussian_depth"] });
       if (request.method === "POST" && url.pathname === "/api/v1/runs") {
         if (activeRun) return json(response, 409, { error: "run_in_progress" });
         const requestValue = validateRunRequest(await body(request), presets);
-        const runId = randomBytes(16).toString("hex");
-        await mkdir(runRoot, { recursive: true });
-        const directory = await mkdtemp(join(runRoot, "run-"));
-        await mkdir(join(directory, "frames"));
-        const configPath = resolve(presets.get(requestValue.presetId));
-        const controlPath = join(directory, "control.request");
-        await writeFile(controlPath, controlRequestText(requestValue, runId), "utf8");
-        const child = spawn(binary, ["--config", configPath, "--control-request", controlPath, "--event-stream", "ndjson"], { cwd: directory, shell: false, stdio: ["ignore", "pipe", "pipe"] });
-        const run = { runId, directory, status: "running", child, request: requestValue, controlRequest: controlRequestText(requestValue, runId), events: [], stderr: "", pending: "", waiters: new Set(), lastSequence: -1, cancellationRequested: false };
-        runs.set(runId, run); activeRun = true;
+        if (activeRun) return json(response, 409, { error: "run_in_progress" });
+        activeRun = true;
+        let run;
+        try {
+          const runId = randomBytes(16).toString("hex");
+          await mkdir(runRoot, { recursive: true });
+          const directory = await mkdtemp(join(runRoot, "run-"));
+          await mkdir(join(directory, "frames"));
+          const configPath = resolve(presets.get(requestValue.presetId));
+          const controlPath = join(directory, "control.request");
+          await writeFile(controlPath, controlRequestText(requestValue, runId), "utf8");
+          const child = spawn(binary, ["--config", configPath, "--control-request", controlPath, "--event-stream", "ndjson"], { cwd: directory, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+          run = { runId, directory, status: "running", child, request: requestValue, controlRequest: controlRequestText(requestValue, runId), events: [], stderr: "", pending: "", waiters: new Set(), lastSequence: -1, cancellationRequested: false };
+          runs.set(runId, run);
+        } catch (error) {
+          activeRun = false;
+          throw error;
+        }
+        const { child, runId } = run;
         const publish = (event) => {
           if (!event || event.protocolVersion !== protocolVersion || event.runId !== runId || !Number.isInteger(event.sequence) || event.sequence <= run.lastSequence) throw protocolError("event sequence is invalid");
           run.lastSequence = event.sequence; run.events.push(event);
-          for (const waiter of run.waiters) waiter(event); run.waiters.clear();
           if (event.type === "run.completed" || event.type === "run.cancelled" || event.type === "run.failed") { run.status = event.type === "run.completed" ? "completed" : event.type === "run.cancelled" ? "cancelled" : "failed"; run.terminal = true; }
+          for (const waiter of run.waiters) waiter(event);
         };
         child.stdout?.on("data", (chunk) => {
           run.pending += `${chunk}`;
@@ -112,6 +128,7 @@ export function createGatewayServer(options) {
           for (const line of lines) if (line.trim()) { try { publish(JSON.parse(line)); } catch { run.status = "failed"; run.protocolError = true; child.kill?.("SIGTERM"); } }
         });
         child.on("close", (code, signal) => { if (!run.terminal) run.status = run.cancellationRequested ? "cancelled" : code === 0 ? "completed" : "failed"; run.exitCode = code; run.signal = signal; run.terminal = true; activeRun = false; if (run.forceTimer) clearTimeout(run.forceTimer); for (const waiter of run.waiters) waiter(); run.waiters.clear(); });
+        child.on("error", (error) => { run.stderr = `${run.stderr}${error.message}`.slice(-64 * 1024); run.status = "failed"; run.terminal = true; activeRun = false; for (const waiter of run.waiters) waiter(); run.waiters.clear(); });
         child.stderr?.on("data", (chunk) => { run.stderr = `${run.stderr}${chunk}`.slice(-64 * 1024); });
         return json(response, 202, { protocolVersion, runId, status: "running" });
       }

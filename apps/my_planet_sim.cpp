@@ -1,6 +1,6 @@
+#include <atomic>
 #include <charconv>
 #include <chrono>
-#include <atomic>
 #include <csignal>
 #include <cstdint>
 #include <exception>
@@ -139,9 +139,8 @@ struct MachineEventWriter {
   std::uint64_t sequence = 0;
 
   void emit(const std::string_view type, const std::string_view fields = {}) {
-    std::cout << "{\"protocolVersion\":1,\"runId\":\""
-              << json_escape(run_id) << "\",\"sequence\":" << sequence++
-              << ",\"type\":\"" << type << '"';
+    std::cout << "{\"protocolVersion\":1,\"runId\":\"" << json_escape(run_id)
+              << "\",\"sequence\":" << sequence++ << ",\"type\":\"" << type << '"';
     if (!fields.empty()) {
       std::cout << ',' << fields;
     }
@@ -173,11 +172,10 @@ void write_machine_frame(const mps::ShallowWaterState& state, void* context) {
                         state);
   frame.events->emit(
       "frame.ready",
-      "\"frameSequence\":" + std::to_string(sequence) +
-          ",\"timeSeconds\":" + std::to_string(state.time_s) +
-          ",\"step\":" + std::to_string(state.step) +
-          ",\"relativePath\":\"" + json_escape(filename) + "\",\"byteLength\":" +
-          std::to_string(std::filesystem::file_size(path)));
+      "\"frameSequence\":" + std::to_string(sequence) + ",\"timeSeconds\":" +
+          std::to_string(state.time_s) + ",\"step\":" + std::to_string(state.step) +
+          ",\"relativePath\":\"" + json_escape(filename) +
+          "\",\"byteLength\":" + std::to_string(std::filesystem::file_size(path)));
 }
 
 void print_control_description() {
@@ -441,12 +439,12 @@ int main(const int argc, const char* const argv[]) {
       mps::ExperimentConfig run_config = config;
       std::optional<mps::ControlRequestV1> control_request;
       if (command_line.control_request_path.has_value()) {
-        if (command_line.restart_path.has_value() || command_line.checkpoint_path.has_value()) {
+        if (command_line.restart_path.has_value() ||
+            command_line.checkpoint_path.has_value()) {
           throw std::invalid_argument(
               "machine control mode does not accept checkpoint or restart options");
         }
-        control_request =
-            mps::load_control_request(*command_line.control_request_path);
+        control_request = mps::load_control_request(*command_line.control_request_path);
         run_config = mps::apply_control_request(config, *control_request);
         machine_events = std::make_unique<MachineEventWriter>();
         machine_events->run_id = control_request->run_id;
@@ -469,9 +467,9 @@ int main(const int argc, const char* const argv[]) {
       const auto start = std::chrono::steady_clock::now();
       const auto result = mps::run_shallow_water(
           run_config, std::move(initial_state), command_line.stop_after_step,
-          control_request.has_value()
-              ? std::span<const mps::InitialConditionEditV1>(control_request->initial_edits)
-              : std::span<const mps::InitialConditionEditV1>{},
+          control_request.has_value() ? std::span<const mps::InitialConditionEditV1>(
+                                            control_request->initial_edits)
+                                      : std::span<const mps::InitialConditionEditV1>{},
           hooks);
       const mps::Real wall_time_s =
           std::chrono::duration<mps::Real>(std::chrono::steady_clock::now() - start)
@@ -496,14 +494,14 @@ int main(const int argc, const char* const argv[]) {
         if (!metadata) {
           throw std::runtime_error("unable to open machine run metadata");
         }
-        mps::write_run_metadata(metadata, mps::make_run_metadata(run_config), run_config);
+        mps::write_run_metadata(metadata, mps::make_run_metadata(run_config),
+                                run_config);
         const auto& diagnostics = result.final_diagnostics;
-        machine_events->emit(
-            "diagnostics.sample",
-            "\"timeSeconds\":" + std::to_string(result.state.time_s) +
-                ",\"step\":" + std::to_string(result.state.step) +
-                ",\"mass\":" + std::to_string(diagnostics.mass) +
-                ",\"energy\":" + std::to_string(diagnostics.energy));
+        machine_events->emit("diagnostics.sample",
+                             "\"timeSeconds\":" + std::to_string(result.state.time_s) +
+                                 ",\"step\":" + std::to_string(result.state.step) +
+                                 ",\"mass\":" + std::to_string(diagnostics.mass) +
+                                 ",\"energy\":" + std::to_string(diagnostics.energy));
         if (g_cancel_requested.load() && !result.reached_end_time) {
           machine_events->emit("run.cancelled");
         } else if (result.reached_end_time) {
@@ -512,7 +510,8 @@ int main(const int argc, const char* const argv[]) {
           machine_events->emit("run.cancelled");
         }
       } else {
-        mps::write_run_metadata(std::cout, mps::make_run_metadata(run_config), run_config);
+        mps::write_run_metadata(std::cout, mps::make_run_metadata(run_config),
+                                run_config);
         write_shallow_water_result(std::cout, result, wall_time_s, grid.cell_count());
         write_shallow_water_errors(std::cout, run_config, grid, result);
       }
@@ -522,7 +521,7 @@ int main(const int argc, const char* const argv[]) {
     if (machine_events != nullptr) {
       try {
         machine_events->emit("run.failed", "\"code\":\"native_error\",\"message\":\"" +
-                             json_escape(error.what()) + "\"");
+                                               json_escape(error.what()) + "\"");
       } catch (...) {
       }
     }

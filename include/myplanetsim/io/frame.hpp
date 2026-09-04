@@ -24,8 +24,7 @@ struct FrameV1 {
 };
 
 void write_frame_file(const std::filesystem::path& path,
-                      const FrameV1Metadata& metadata,
-                      const ShallowWaterState& state);
+                      const FrameV1Metadata& metadata, const ShallowWaterState& state);
 [[nodiscard]] FrameV1 read_frame_file(
     const std::filesystem::path& path,
     std::string_view expected_config_fingerprint = {});

@@ -27,11 +27,14 @@ export function Globe3D({ dataset, fieldId, gridMode, onPick, pendingOrigin }: G
     const grid = new THREE.LineSegments(createGridGeometry(dataset.grid.cellsPerPanel, gridMode),
       new THREE.LineBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.55 }));
     grid.scale.setScalar(1.002);
-    scene.add(surface, grid);
+    const globe = new THREE.Group();
+    globe.add(surface, grid);
+    scene.add(globe);
     const marker = pendingOrigin ? new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 8), new THREE.MeshBasicMaterial({ color: "#ffcf56" })) : null;
-    if (marker && pendingOrigin) { marker.position.set(...pendingOrigin).multiplyScalar(1.03); scene.add(marker); }
+    if (marker && pendingOrigin) { marker.position.set(...pendingOrigin).multiplyScalar(1.03); globe.add(marker); }
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
+    let pointerActive = false;
     let dragging = false;
     let previousX = 0;
     let previousY = 0;
@@ -43,18 +46,19 @@ export function Globe3D({ dataset, fieldId, gridMode, onPick, pendingOrigin }: G
       renderer.setSize(bounds.width, bounds.height, false);
     };
     const pointerDown = (event: PointerEvent) => {
+      pointerActive = true;
       dragging = false;
       previousX = event.clientX;
       previousY = event.clientY;
       (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
     };
     const pointerMove = (event: PointerEvent) => {
+      if (!pointerActive) return;
       const dx = event.clientX - previousX;
       const dy = event.clientY - previousY;
       if (Math.abs(dx) + Math.abs(dy) > 1) dragging = true;
-      surface.rotation.y += dx * 0.01;
-      surface.rotation.x += dy * 0.01;
-      grid.rotation.copy(surface.rotation);
+      globe.rotation.y += dx * 0.01;
+      globe.rotation.x += dy * 0.01;
       previousX = event.clientX;
       previousY = event.clientY;
     };
@@ -70,11 +74,14 @@ export function Globe3D({ dataset, fieldId, gridMode, onPick, pendingOrigin }: G
         const intersection = raycaster.intersectObject(surface)[0];
         onPick?.(pickedCellFromFace(intersection?.faceIndex ?? null));
       }
+      pointerActive = false;
     };
+    const pointerCancel = () => { pointerActive = false; dragging = false; };
     const element = renderer.domElement;
     element.addEventListener("pointerdown", pointerDown);
     element.addEventListener("pointermove", pointerMove);
     element.addEventListener("pointerup", pointerUp);
+    element.addEventListener("pointercancel", pointerCancel);
     element.addEventListener("wheel", wheel, { passive: true });
     const observer = new ResizeObserver(resize);
     observer.observe(host.current);
@@ -88,6 +95,7 @@ export function Globe3D({ dataset, fieldId, gridMode, onPick, pendingOrigin }: G
       element.removeEventListener("pointerdown", pointerDown);
       element.removeEventListener("pointermove", pointerMove);
       element.removeEventListener("pointerup", pointerUp);
+      element.removeEventListener("pointercancel", pointerCancel);
       element.removeEventListener("wheel", wheel);
       surface.geometry.dispose();
       (surface.material as THREE.Material).dispose();

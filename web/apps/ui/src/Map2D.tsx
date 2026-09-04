@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { UnitVector, VisualDatasetV1, cubedSphereCells, gridEdges } from "@myplanetsim/protocol";
-import { drawWrappedSegment, inverseProject, projectUnit } from "./projection";
+import { geoPath } from "d3-geo";
+import { UnitVector, VisualDatasetV1, cubedSphereCells, gridEdges, panelNames } from "@myplanetsim/protocol";
+import { drawWrappedSegment, equirectangularProjection, geoCellPolygon, pickMapCell, projectUnit } from "./projection";
 
 interface Map2DProps {
   readonly dataset: VisualDatasetV1;
@@ -28,9 +29,9 @@ export function Map2D({ dataset, fieldId, gridMode, onPick, pendingOrigin }: Map
       overlayContext.clearRect(0, 0, width, height);
       const cells = cubedSphereCells(dataset.grid.cellsPerPanel);
       const minimum = Math.min(...field.values); const range = Math.max(...field.values) - minimum || 1;
+      const cellPath = geoPath(equirectangularProjection(width, height, view.zoom, view.pan), baseContext);
       for (let index = 0; index < cells.length; index += 1) {
-        const polygon = cells[index].corners.map((corner) => projectUnit(corner, width, height, view.zoom, view.pan));
-        baseContext.beginPath(); baseContext.moveTo(...polygon[0]); for (const point of polygon.slice(1)) baseContext.lineTo(...point); baseContext.closePath();
+        baseContext.beginPath(); cellPath(geoCellPolygon(cells[index].corners));
         baseContext.fillStyle = `hsl(${237 - 237 * (field.values[index] - minimum) / range} 80% 50%)`; baseContext.fill();
       }
       if (gridMode !== "off") {
@@ -42,7 +43,7 @@ export function Map2D({ dataset, fieldId, gridMode, onPick, pendingOrigin }: Map
     };
     const resize = () => {
       const bounds = host.current?.getBoundingClientRect(); if (!bounds) return;
-      for (const canvas of canvases) { const ratio = Math.min(window.devicePixelRatio, 2); canvas.width = Math.max(1, Math.round(bounds.width * ratio)); canvas.height = Math.max(1, Math.round(bounds.height * ratio)); canvas.style.width = `${bounds.width}px`; canvas.style.height = `${bounds.height}px`; }
+      for (const canvas of canvases) { const ratio = Math.min(window.devicePixelRatio, 2); canvas.width = Math.max(1, Math.round(bounds.width * ratio)); canvas.height = Math.max(1, Math.round(bounds.height * ratio)); canvas.style.width = `${bounds.width}px`; canvas.style.height = `${bounds.height}px`; canvas.getContext("2d")?.setTransform(ratio, 0, 0, ratio, 0, 0); }
       draw(bounds.width, bounds.height);
     };
     const observer = new ResizeObserver(resize); observer.observe(host.current); resize();
@@ -53,7 +54,7 @@ export function Map2D({ dataset, fieldId, gridMode, onPick, pendingOrigin }: Map
     let dragging = false; let moved = false; let last: [number, number] = [0, 0];
     const down = (event: PointerEvent) => { dragging = true; moved = false; last = [event.clientX, event.clientY]; element.setPointerCapture(event.pointerId); };
     const move = (event: PointerEvent) => { if (!dragging) return; const dx = event.clientX - last[0]; const dy = event.clientY - last[1]; if (Math.abs(dx) + Math.abs(dy) > 2) moved = true; setView((current) => ({ ...current, pan: [current.pan[0] + dx, current.pan[1] + dy] })); last = [event.clientX, event.clientY]; };
-    const up = (event: PointerEvent) => { if (!moved) { const bounds = element.getBoundingClientRect(); const point = inverseProject(event.clientX - bounds.left, event.clientY - bounds.top, bounds.width, bounds.height, view.zoom, view.pan); const cells = cubedSphereCells(dataset.grid.cellsPerPanel); const picked = cells.findIndex((cell) => cell.center[0] * point[0] + cell.center[1] * point[1] + cell.center[2] * point[2] > 0.999); onPick?.(picked >= 0 ? picked : null); } dragging = false; };
+    const up = (event: PointerEvent) => { if (!moved) { const bounds = element.getBoundingClientRect(); const picked = pickMapCell(event.clientX - bounds.left, event.clientY - bounds.top, bounds.width, bounds.height, dataset.grid.cellsPerPanel, view.zoom, view.pan); const panel = panelNames.indexOf(picked.panel); onPick?.(panel * dataset.grid.cellsPerPanel ** 2 + picked.j * dataset.grid.cellsPerPanel + picked.i); } dragging = false; };
     const wheel = (event: WheelEvent) => setView((current) => ({ ...current, zoom: Math.max(1, Math.min(8, current.zoom * (event.deltaY < 0 ? 1.1 : 0.9))) }));
     element.addEventListener("pointerdown", down); element.addEventListener("pointermove", move); element.addEventListener("pointerup", up); element.addEventListener("wheel", wheel, { passive: true });
     return () => { element.removeEventListener("pointerdown", down); element.removeEventListener("pointermove", move); element.removeEventListener("pointerup", up); element.removeEventListener("wheel", wheel); };

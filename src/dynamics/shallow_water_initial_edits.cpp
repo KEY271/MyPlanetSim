@@ -25,11 +25,13 @@ void validate_initial_condition_edit(const InitialConditionEditV1& edit) {
   }
   require_finite(edit.amplitude_m, "initial edit amplitude_m");
   if (std::abs(edit.amplitude_m) > 1.0e6) {
-    throw std::invalid_argument("initial edit amplitude_m is outside the supported range");
+    throw std::invalid_argument(
+        "initial edit amplitude_m is outside the supported range");
   }
   require_finite(edit.sigma_rad, "initial edit sigma_rad");
   if (!(edit.sigma_rad > 1.0e-6 && edit.sigma_rad <= std::numbers::pi_v<Real>)) {
-    throw std::invalid_argument("initial edit sigma_rad is outside the supported range");
+    throw std::invalid_argument(
+        "initial edit sigma_rad is outside the supported range");
   }
 }
 
@@ -44,11 +46,12 @@ InitialConditionEditDiagnostics apply_initial_condition_edits(
     std::vector<Real> perturbation(grid.cell_count());
     Real weighted_mean = 0.0;
     for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
-      const Real cosine = std::clamp(dot(edit.center_unit, grid.cells()[cell].center), -1.0, 1.0);
+      const Real cosine =
+          std::clamp(dot(edit.center_unit, grid.cells()[cell].center), -1.0, 1.0);
       const Real distance = std::acos(cosine);
-      perturbation[cell] = edit.amplitude_m *
-                           std::exp(-(distance * distance) /
-                                     (2.0 * edit.sigma_rad * edit.sigma_rad));
+      perturbation[cell] =
+          edit.amplitude_m *
+          std::exp(-(distance * distance) / (2.0 * edit.sigma_rad * edit.sigma_rad));
       weighted_mean += grid.cells()[cell].area_m2 * perturbation[cell];
     }
     if (edit.mass_policy == MassPolicy::kPreserveGlobal) {
@@ -63,7 +66,8 @@ InitialConditionEditDiagnostics apply_initial_condition_edits(
     }
     validate_shallow_water_state(grid, state, depth_floor_m);
   }
-  const auto [minimum, maximum] = std::minmax_element(state.depth.begin(), state.depth.end());
+  const auto [minimum, maximum] =
+      std::minmax_element(state.depth.begin(), state.depth.end());
   return {.added_volume_m3 = total_added_volume,
           .minimum_depth_m = *minimum,
           .maximum_depth_m = *maximum};

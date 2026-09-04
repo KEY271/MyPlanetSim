@@ -773,7 +773,8 @@ mock E2Eも維持する。rendererは `SimulationClient` と直接結合せず `
 
 最終項目のうち native live E2E、security、performance は
 [Phase 3 検証報告](validation/phase-3.md)で確認済みである。3 browser matrix と
-live gateway をブラウザ entrypointへ接続する部分は既知 gap として次Phaseへ残す。
+gatewayからbuilt UIを直接配信する部分は既知 gap として次Phaseへ残す。browser entrypointは
+URL fragmentでloopback gatewayとsession tokenを受け取るlive modeに対応している。
 
 ## 13. 技術資料
 

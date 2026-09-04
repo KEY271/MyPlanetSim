@@ -9,5 +9,7 @@ describe("simulation controller", () => {
     expect(controller.value.state).toBe("completed");
     expect(controller.value.frames).toHaveLength(1);
     expect(controller.value.frames[0].sourceKind).toBe("live_run");
+    expect([...controller.value.frames[0].fields.find((field) => field.id === "depth_anomaly_m")!.values])
+      .toEqual([0, 0, 0, 0, 0, 0]);
   });
 });

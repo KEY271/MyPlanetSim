@@ -23,7 +23,27 @@ export interface SimulationClient {
 }
 
 export class HttpSimulationClient implements SimulationClient {
-  constructor(private readonly baseUrl: string, private readonly fetcher: typeof fetch = fetch) {}
+  private readonly baseUrl: string;
+
+  constructor(
+    baseUrl: string,
+    private readonly sessionToken: string,
+    private readonly fetcher: typeof fetch = fetch,
+  ) {
+    if (!sessionToken) throw new ProtocolError("missing_token", "a gateway session token is required");
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== "http:" ||
+        (parsed.hostname !== "127.0.0.1" && parsed.hostname !== "localhost" && parsed.hostname !== "[::1]")) {
+      throw new ProtocolError("invalid_gateway", "the gateway URL must use HTTP on a loopback host");
+    }
+    this.baseUrl = parsed.href.replace(/\/$/, "");
+  }
+
+  private headers(values: HeadersInit = {}): Headers {
+    const headers = new Headers(values);
+    headers.set("authorization", `Bearer ${this.sessionToken}`);
+    return headers;
+  }
 
   async capabilities(): Promise<CapabilitiesV1> {
     return this.json<CapabilitiesV1>("/api/v1/capabilities", { method: "GET" });
@@ -33,14 +53,14 @@ export class HttpSimulationClient implements SimulationClient {
     validateRunRequest(request);
     return this.json("/api/v1/runs", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: this.headers({ "content-type": "application/json" }),
       body: JSON.stringify(request),
     });
   }
 
   async *events(runId: string, afterSequence = -1): AsyncIterable<EventV1> {
     const response = await this.fetcher(`${this.baseUrl}/api/v1/runs/${encodeURIComponent(runId)}/events`, {
-      headers: { accept: "application/x-ndjson", "x-after-sequence": String(afterSequence) },
+      headers: this.headers({ accept: "application/x-ndjson", "x-after-sequence": String(afterSequence) }),
     });
     if (!response.ok || !response.body) throw new ProtocolError("http_error", `event stream failed: ${response.status}`);
     const reader = response.body.getReader();
@@ -61,13 +81,13 @@ export class HttpSimulationClient implements SimulationClient {
 
   async cancel(runId: string): Promise<void> {
     const response = await this.fetcher(`${this.baseUrl}/api/v1/runs/${encodeURIComponent(runId)}/cancel`, {
-      method: "POST",
+      method: "POST", headers: this.headers(),
     });
     if (!response.ok) throw new ProtocolError("http_error", `cancel failed: ${response.status}`);
   }
 
   async frame(runId: string, sequence: number): Promise<ArrayBuffer> {
-    const response = await this.fetcher(`${this.baseUrl}/api/v1/runs/${encodeURIComponent(runId)}/frames/${sequence}`);
+    const response = await this.fetcher(`${this.baseUrl}/api/v1/runs/${encodeURIComponent(runId)}/frames/${sequence}`, { headers: this.headers() });
     if (!response.ok) throw new ProtocolError("http_error", `frame failed: ${response.status}`);
     return response.arrayBuffer();
   }
@@ -77,7 +97,7 @@ export class HttpSimulationClient implements SimulationClient {
   }
 
   private async json<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await this.fetcher(`${this.baseUrl}${path}`, init);
+    const response = await this.fetcher(`${this.baseUrl}${path}`, { ...init, headers: this.headers(init.headers) });
     if (!response.ok) throw new ProtocolError("http_error", `request failed: ${response.status}`);
     return (await response.json()) as T;
   }

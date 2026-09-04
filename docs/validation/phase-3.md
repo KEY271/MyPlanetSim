@@ -22,8 +22,8 @@ npm run build
 npm run test:live --workspace @myplanetsim/gateway
 ```
 
-The C++ suite completed 37/37 tests. The Web workspace completed TypeScript lint,
-gateway tests (3/3), UI tests (6/6), protocol tests (5/5), and the Vite production build.
+The C++ suite completed 37/37 test executables. The Web workspace completed TypeScript lint,
+gateway tests (5/5), UI tests (8/8), protocol tests (6/6), and the Vite production build.
 The optional native live test completed 1/1 test in about 0.25 s.
 
 ## Scientific and protocol gates
@@ -38,6 +38,10 @@ The optional native live test completed 1/1 test in about 0.25 s.
   observer scheduling. Existing Phase 0–2 tests remain in the 37-test regression suite.
 - The request, translated control text, event log, diagnostics, and frame references are
   returned by the bundle endpoint.
+- Regression tests keep a connected NDJSON response subscribed through multiple events and
+  verify that concurrent submissions cannot start more than one native process.
+- Edited runs retain diagnostics for the post-edit, pre-integration state, and live depth
+  anomaly fields use authoritative frame zero as their baseline.
 
 ## Security and resource boundaries
 
@@ -59,9 +63,8 @@ messaging and a browser runner are not committed in this phase.
 
 ## Known gaps
 
-The current browser entrypoint deliberately uses the deterministic mock client by default.
-The gateway API and `HttpSimulationClient` contract are present, but the built UI does not yet
-serve from the gateway or automatically receive its session token. Vite proxy wiring and a
-Chromium/Firefox/WebKit offline/live matrix therefore remain follow-up work. The native
-gateway live gate is still independent of that UI wiring and verifies the scientific control
-path end to end.
+The browser entrypoint uses the deterministic mock client by default and selects the authenticated
+`HttpSimulationClient` when a loopback gateway and session token are supplied in the URL fragment.
+The fragment is removed after client construction. Serving the built UI directly from the gateway
+and a Chromium/Firefox/WebKit offline/live matrix remain follow-up work. The native gateway live
+gate verifies the scientific control path independently of the browser runner.

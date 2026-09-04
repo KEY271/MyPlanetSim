@@ -37,7 +37,8 @@ export class SimulationController {
         if (nextState !== this.snapshot.state) this.update({ state: transitionRunState(this.snapshot.state, nextState) });
         this.update({ events: [...this.snapshot.events, event] });
         if (event.type === "frame.ready") {
-          const frame = addShallowWaterDerivedFields(decodeFrameV1(await this.client.frame(runId, event.frameSequence)));
+          const decoded = decodeFrameV1(await this.client.frame(runId, event.frameSequence));
+          const frame = addShallowWaterDerivedFields(decoded, this.snapshot.frames[0] ?? decoded);
           this.update({ frames: [...this.snapshot.frames, frame], currentFrame: this.snapshot.frames.length });
         }
         if (event.type === "run.failed") throw new ProtocolError(event.code, event.message);

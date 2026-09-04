@@ -1,7 +1,7 @@
 #include "myplanetsim/io/frame.hpp"
 
-#include <array>
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -32,7 +32,7 @@ void append_u64(std::vector<unsigned char>& bytes, const std::uint64_t value) {
 }
 
 [[nodiscard]] std::uint32_t read_u32(const std::vector<unsigned char>& bytes,
-                                      std::size_t& offset) {
+                                     std::size_t& offset) {
   if (offset + 4 > bytes.size()) {
     throw std::runtime_error("frame is truncated");
   }
@@ -44,7 +44,7 @@ void append_u64(std::vector<unsigned char>& bytes, const std::uint64_t value) {
 }
 
 [[nodiscard]] std::uint64_t read_u64(const std::vector<unsigned char>& bytes,
-                                      std::size_t& offset) {
+                                     std::size_t& offset) {
   if (offset + 8 > bytes.size()) {
     throw std::runtime_error("frame is truncated");
   }
@@ -59,7 +59,8 @@ void append_real(std::vector<unsigned char>& bytes, const Real value) {
   append_u64(bytes, std::bit_cast<std::uint64_t>(value));
 }
 
-[[nodiscard]] Real read_real(const std::vector<unsigned char>& bytes, std::size_t& offset) {
+[[nodiscard]] Real read_real(const std::vector<unsigned char>& bytes,
+                             std::size_t& offset) {
   return std::bit_cast<Real>(read_u64(bytes, offset));
 }
 
@@ -75,7 +76,8 @@ void append_real(std::vector<unsigned char>& bytes, const Real value) {
   std::vector<unsigned char> bytes(static_cast<std::size_t>(size));
   input.seekg(0);
   if (!bytes.empty()) {
-    input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    input.read(reinterpret_cast<char*>(bytes.data()),
+               static_cast<std::streamsize>(bytes.size()));
   }
   if (!input) {
     throw std::runtime_error("failed while reading frame");
@@ -85,8 +87,8 @@ void append_real(std::vector<unsigned char>& bytes, const Real value) {
 
 }  // namespace
 
-void write_frame_file(const std::filesystem::path& path, const FrameV1Metadata& metadata,
-                      const ShallowWaterState& state) {
+void write_frame_file(const std::filesystem::path& path,
+                      const FrameV1Metadata& metadata, const ShallowWaterState& state) {
   if (metadata.schema_version != kVersion || metadata.cells_per_panel <= 0 ||
       metadata.cells_per_panel > 1024 || metadata.config_fingerprint.empty() ||
       metadata.config_fingerprint.size() > 128) {
@@ -126,7 +128,8 @@ void write_frame_file(const std::filesystem::path& path, const FrameV1Metadata& 
   temporary_path += ".tmp";
   std::ofstream output(temporary_path, std::ios::binary | std::ios::trunc);
   if (!output) {
-    throw std::runtime_error("unable to open temporary frame: " + temporary_path.string());
+    throw std::runtime_error("unable to open temporary frame: " +
+                             temporary_path.string());
   }
   output.write(reinterpret_cast<const char*>(bytes.data()),
                static_cast<std::streamsize>(bytes.size()));
@@ -164,11 +167,13 @@ FrameV1 read_frame_file(const std::filesystem::path& path,
   const std::string fingerprint(reinterpret_cast<const char*>(bytes.data() + offset),
                                 fingerprint_size);
   offset += fingerprint_size;
-  if (!expected_config_fingerprint.empty() && fingerprint != expected_config_fingerprint) {
+  if (!expected_config_fingerprint.empty() &&
+      fingerprint != expected_config_fingerprint) {
     throw std::runtime_error("frame configuration fingerprint mismatch");
   }
   const auto expected_cells = 6 * cells_per_panel * cells_per_panel;
-  if (cell_count != expected_cells || cell_count > std::numeric_limits<std::size_t>::max() / 4) {
+  if (cell_count != expected_cells ||
+      cell_count > std::numeric_limits<std::size_t>::max() / 4) {
     throw std::runtime_error("FrameV1 cell count does not match shape");
   }
   const auto value_count = static_cast<std::size_t>(4 * cell_count);

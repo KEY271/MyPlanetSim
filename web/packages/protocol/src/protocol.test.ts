@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ProtocolError, transitionRunState, validateRunRequest } from "./index";
-import { DeterministicMockSimulationClient as Mock } from "./client";
+import { DeterministicMockSimulationClient as Mock, HttpSimulationClient } from "./client";
 import { addShallowWaterDerivedFields, fieldRange, parseShallowWaterCsv } from "./visual";
 import { cubedSphereCells, gridEdges, hitTest, mapToUnitSphere } from "./geometry";
 
@@ -29,6 +29,20 @@ describe("protocol contracts", () => {
     const events = [];
     for await (const event of client.events(runId)) events.push(event.type);
     expect(events).toEqual(["run.accepted", "run.started", "frame.ready", "run.cancelled"]);
+  });
+
+  it("authenticates HTTP gateway requests with the session token", async () => {
+    const requests: RequestInit[] = [];
+    const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(init ?? {});
+      return new Response(JSON.stringify({ protocolVersion: 1, presets: ["rest"], supportedEdits: ["gaussian_depth"] }),
+        { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    const client = new HttpSimulationClient("http://127.0.0.1:3000", "session-token", fetcher);
+    await client.capabilities();
+    expect(new Headers(requests[0].headers).get("authorization")).toBe("Bearer session-token");
+    expect(() => new HttpSimulationClient("https://example.com", "session-token", fetcher))
+      .toThrow(ProtocolError);
   });
 
   it("normalizes shuffled shallow-water CSV rows and derives speed", () => {

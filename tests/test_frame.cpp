@@ -17,8 +17,8 @@ namespace {
                                .momentum = std::vector<mps::Vec3>(grid.cell_count())};
   for (std::size_t index = 0; index < grid.cell_count(); ++index) {
     value.depth[index] = 2.0 + static_cast<mps::Real>(index);
-    value.momentum[index] = mps::project_tangent(
-        {1.0, -2.0, 3.0}, grid.cells()[index].center);
+    value.momentum[index] =
+        mps::project_tangent({1.0, -2.0, 3.0}, grid.cells()[index].center);
   }
   return value;
 }
@@ -33,10 +33,11 @@ MPS_TEST_CASE("FrameV1 round trips binary state bitwise") {
   const mps::CubedSphereGrid grid(2, 1.0);
   const auto original = state(grid);
   const auto output = path();
-  mps::write_frame_file(output, {.cells_per_panel = 2,
-                                  .time_s = original.time_s,
-                                  .step = original.step,
-                                  .config_fingerprint = "0123456789abcdef"},
+  mps::write_frame_file(output,
+                        {.cells_per_panel = 2,
+                         .time_s = original.time_s,
+                         .step = original.step,
+                         .config_fingerprint = "0123456789abcdef"},
                         original);
   const auto restored = mps::read_frame_file(output, "0123456789abcdef");
   MPS_CHECK_EQ(restored.metadata.cells_per_panel, 2);
@@ -53,10 +54,11 @@ MPS_TEST_CASE("FrameV1 round trips binary state bitwise") {
 MPS_TEST_CASE("FrameV1 rejects truncation and wrong fingerprint") {
   const mps::CubedSphereGrid grid(1, 1.0);
   const auto output = path();
-  mps::write_frame_file(output, {.cells_per_panel = 1,
-                                  .time_s = 0.0,
-                                  .step = 0,
-                                  .config_fingerprint = "fingerprint"},
+  mps::write_frame_file(output,
+                        {.cells_per_panel = 1,
+                         .time_s = 0.0,
+                         .step = 0,
+                         .config_fingerprint = "fingerprint"},
                         state(grid));
   MPS_CHECK_THROWS_AS(mps::read_frame_file(output, "other"), std::runtime_error);
   const auto truncated = output.string() + ".truncated";

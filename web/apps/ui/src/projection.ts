@@ -1,4 +1,4 @@
-import { geoEquirectangular } from "d3-geo";
+import { geoArea, geoEquirectangular } from "d3-geo";
 import { hitTest, UnitVector } from "@myplanetsim/protocol";
 
 export function equirectangularProjection(width: number, height: number, zoom = 1, pan: readonly [number, number] = [0, 0]) {
@@ -6,11 +6,25 @@ export function equirectangularProjection(width: number, height: number, zoom = 
 }
 
 export function projectUnit(value: UnitVector, width: number, height: number, zoom = 1, pan: readonly [number, number] = [0, 0]): [number, number] {
-  const longitude = Math.atan2(value[1], value[0]) * 180 / Math.PI;
-  const latitude = Math.asin(Math.max(-1, Math.min(1, value[2]))) * 180 / Math.PI;
+  const [longitude, latitude] = unitToLongitudeLatitude(value);
   const projected = equirectangularProjection(width, height, zoom, pan)([longitude, latitude]);
   if (!projected) throw new Error("projection failed");
   return [projected[0], projected[1]];
+}
+
+export function unitToLongitudeLatitude(value: UnitVector): [number, number] {
+  return [Math.atan2(value[1], value[0]) * 180 / Math.PI,
+    Math.asin(Math.max(-1, Math.min(1, value[2]))) * 180 / Math.PI];
+}
+
+export function geoCellPolygon(corners: readonly UnitVector[]) {
+  let ring = corners.map(unitToLongitudeLatitude);
+  let polygon = { type: "Polygon" as const, coordinates: [[...ring, ring[0]]] };
+  if (geoArea(polygon) > 2 * Math.PI) {
+    ring = [...ring].reverse();
+    polygon = { type: "Polygon", coordinates: [[...ring, ring[0]]] };
+  }
+  return polygon;
 }
 
 export function inverseProject(x: number, y: number, width: number, height: number, zoom = 1, pan: readonly [number, number] = [0, 0]): UnitVector {

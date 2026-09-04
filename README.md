@@ -83,8 +83,16 @@ control text、event log、diagnostics をまとめて取得できます。frame
 npm run test:live --workspace @myplanetsim/gateway
 ```
 
-現在のブラウザ entrypoint は安全な offline/mock client を既定にしており、live gateway
-API との同一画面接続と Chromium/Firefox/WebKit の自動 matrix は次の拡張対象です。
+ブラウザ UI を live gateway へ接続するには、別terminalでUIを起動し、gateway起動時に
+表示された `port` と `token` をURL fragmentへ指定します。fragmentはclient生成後にURLから
+除去され、tokenはgateway以外へ送信されません。
+
+```text
+http://localhost:5173/#token=<token>&gateway=http%3A%2F%2F127.0.0.1%3A<port>
+```
+
+tokenを指定しない場合は安全なoffline/mock clientを使用します。Chromium/Firefox/WebKitの
+自動matrixは次の拡張対象です。
 
 ## 将来のファイル構成
 

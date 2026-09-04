@@ -180,6 +180,9 @@ ShallowWaterResult run_shallow_water(
     (void)edit_diagnostics;
   }
   validate_shallow_water_state(grid, state, config.shallow_water.depth_floor_m);
+  const auto initial_diagnostics = diagnostics::diagnose_shallow_water(
+      grid, initial_edits.empty() ? reference : state, config.planet.gravity_m_s2,
+      omega);
   if (state.time_s < config.run.start_time_s || state.time_s > config.run.end_time_s) {
     throw std::invalid_argument("shallow-water restart time is outside configured run");
   }
@@ -202,7 +205,8 @@ ShallowWaterResult run_shallow_water(
   notify_frame(state);
   while (state.time_s < config.run.end_time_s &&
          (!stop_after_step.has_value() || state.step < *stop_after_step)) {
-    if (hooks.is_cancelled != nullptr && hooks.is_cancelled(hooks.cancellation_context)) {
+    if (hooks.is_cancelled != nullptr &&
+        hooks.is_cancelled(hooks.cancellation_context)) {
       break;
     }
     Real time_step = stable_shallow_water_time_step(
@@ -233,8 +237,6 @@ ShallowWaterResult run_shallow_water(
       notify_frame(state);
     }
   }
-  const auto initial_diagnostics = diagnostics::diagnose_shallow_water(
-      grid, initial_edits.empty() ? reference : state, config.planet.gravity_m_s2, omega);
   const auto final_diagnostics = diagnostics::diagnose_shallow_water(
       grid, state, config.planet.gravity_m_s2, omega);
   const bool reached_end_time = state.time_s == config.run.end_time_s;

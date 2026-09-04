@@ -82,13 +82,13 @@ MPS_TEST_CASE("control request rejects unsafe or out of range values") {
     return text;
   };
   auto invalid = std::string(kRequest);
-  invalid = replace(invalid, "control.format_version = 1",
-                    "control.format_version = 2");
+  invalid =
+      replace(invalid, "control.format_version = 1", "control.format_version = 2");
   MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
 
-  invalid = replace(std::string(kRequest),
-                    "control.frame_directory = runs/run_01/frames",
-                    "control.frame_directory = ../escape");
+  invalid =
+      replace(std::string(kRequest), "control.frame_directory = runs/run_01/frames",
+              "control.frame_directory = ../escape");
   MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
 
   invalid = replace(std::string(kRequest), "control.maximum_time_step_s = 2.5",
