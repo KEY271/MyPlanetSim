@@ -39,6 +39,10 @@ mps_add_test(unit.dry_hydrostatic_coupling test_dry_hydrostatic_coupling.cpp)
 mps_add_test(unit.dry_hydrostatic_driver test_dry_hydrostatic_driver.cpp)
 mps_add_test(unit.dry_hydrostatic_diffusion test_dry_hydrostatic_diffusion.cpp)
 mps_add_test(unit.time_step_normalization test_time_step_normalization.cpp)
+mps_add_test(smoke.presets test_preset_smoke.cpp)
+target_compile_definitions(
+  smoke.presets PRIVATE MPS_CONFIG_DIRECTORY="${CMAKE_SOURCE_DIR}/configs"
+)
 mps_add_test(unit.held_suarez test_held_suarez.cpp)
 mps_add_test(unit.planetary_newtonian test_planetary_newtonian.cpp)
 mps_add_test(unit.surface_energy_balance test_surface_energy_balance.cpp)
