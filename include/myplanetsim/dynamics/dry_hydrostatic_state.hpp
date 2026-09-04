@@ -49,6 +49,10 @@ struct DryHydrostaticDerived {
 [[nodiscard]] DryHydrostaticDerived diagnose_dry_hydrostatic_state(
     const DryHydrostaticState& state, const AtmosphericHybridCoordinate& coordinate,
     const PlanetParameters& planet);
+[[nodiscard]] DryHydrostaticDerived diagnose_dry_hydrostatic_state(
+    const DryHydrostaticState& state, const AtmosphericHybridCoordinate& coordinate,
+    const PlanetParameters& planet,
+    std::span<const Real> surface_geopotential_m2_s2);
 void validate_dry_hydrostatic_state(const DryHydrostaticState& state,
                                     const DryHydrostaticDerived& derived,
                                     std::span<const Vec3> cell_centres,

@@ -4,6 +4,7 @@
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_coupling.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
+#include "myplanetsim/dynamics/surface_orography.hpp"
 namespace mps {
 struct DryHydrostaticRhs {
   std::vector<Real> surface_pressure_pa_s;
@@ -24,10 +25,14 @@ class DryHydrostaticDriver {
                const DryHydrostaticObserver& observer = {},
                const DryHydrostaticCancel& cancel = {}) const;
   [[nodiscard]] const CubedSphereGrid& grid() const noexcept { return grid_; }
+  [[nodiscard]] const SurfaceOrography& orography() const noexcept {
+    return orography_;
+  }
 
  private:
   ExperimentConfig config_;
   CubedSphereGrid grid_;
   AtmosphericHybridCoordinate coordinate_;
+  SurfaceOrography orography_;
 };
 }  // namespace mps

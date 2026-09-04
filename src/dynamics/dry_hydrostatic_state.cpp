@@ -67,7 +67,17 @@ DryHydrostaticState unflatten_dry_hydrostatic_state(const Real time_s,
 DryHydrostaticDerived diagnose_dry_hydrostatic_state(
     const DryHydrostaticState& state, const AtmosphericHybridCoordinate& coordinate,
     const PlanetParameters& planet) {
+  return diagnose_dry_hydrostatic_state(state, coordinate, planet, {});
+}
+
+DryHydrostaticDerived diagnose_dry_hydrostatic_state(
+    const DryHydrostaticState& state, const AtmosphericHybridCoordinate& coordinate,
+    const PlanetParameters& planet,
+    const std::span<const Real> surface_geopotential_m2_s2) {
   require_shape(state, coordinate.levels());
+  if (!surface_geopotential_m2_s2.empty() &&
+      surface_geopotential_m2_s2.size() != state.surface_pressure_pa.size())
+    throw std::invalid_argument("surface orography shape does not match state");
   DryHydrostaticDerived out{.cells = state.surface_pressure_pa.size(),
                             .levels = coordinate.levels()};
   const auto volume = out.cells * out.levels;
@@ -94,8 +104,12 @@ DryHydrostaticDerived diagnose_dry_hydrostatic_state(
       out.tracer_mixing_ratio[n] = state.tracer_mass_kg_m2[n] / mass;
       out.temperature_k[n] = theta[k] * geometry.exner_full[k];
     }
+    const Real surface_geopotential =
+        surface_geopotential_m2_s2.empty() ? 0.0
+                                           : surface_geopotential_m2_s2[c];
     const auto hydro = integrate_hydrostatic_column(
-        geometry, theta, planet.heat_capacity_cp_j_kg_k, planet.gravity_m_s2, 0.0);
+        geometry, theta, planet.heat_capacity_cp_j_kg_k, planet.gravity_m_s2,
+        surface_geopotential);
     for (std::size_t k = 0; k < out.levels; ++k)
       out.geopotential_m2_s2[dry_hydrostatic_offset(c, k, out.levels)] =
           hydro.geopotential_full_m2_s2[k];
