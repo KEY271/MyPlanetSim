@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdtemp, writeFile } from "node:fs/promises";
 import { EventEmitter } from "node:events";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -265,5 +265,47 @@ test("gateway reserves its single run slot before asynchronous startup", async (
   assert.deepEqual((await Promise.all([first.response, second.response])).sort(), [202, 409]);
   assert.equal(children.length, 1);
   children[0].emit("close", 0, null);
+  await gateway.shutdown();
+});
+
+test("gateway retains only the most recently used terminal run and removes its directory", async () => {
+  const root = await mkdtemp(join(tmpdir(), "myplanetsim-gateway-"));
+  const preset = join(root, "preset.cfg"); await writeFile(preset, "fixture");
+  const children = [];
+  const gateway = createGatewayServer({ binary: "/configured/simulator", presets: { rest: preset }, runRoot: root, sessionToken: "token", maxRetainedRuns: 1, spawn: () => {
+    const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.kill = () => true; children.push(child); return child;
+  } });
+  await new Promise((resolve) => gateway.server.listen(0, "127.0.0.1", resolve));
+  const port = gateway.server.address().port;
+  const start = async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/runs`, { method: "POST", headers: { authorization: "Bearer token", "content-type": "application/json" }, body: JSON.stringify(request) });
+    return (await response.json()).runId;
+  };
+  const firstId = await start(); const firstDirectory = gateway.runs.get(firstId).directory;
+  children[0].emit("close", 0, null);
+  const secondId = await start(); children[1].emit("close", 0, null);
+  await gateway.flushRetention();
+  assert.equal(gateway.runs.has(firstId), false);
+  assert.equal(gateway.runs.has(secondId), true);
+  await assert.rejects(access(firstDirectory));
+  await gateway.shutdown();
+});
+
+test("a late close from a failed run cannot release a newer active run", async () => {
+  const root = await mkdtemp(join(tmpdir(), "myplanetsim-gateway-"));
+  const preset = join(root, "preset.cfg"); await writeFile(preset, "fixture");
+  const children = [];
+  const gateway = createGatewayServer({ binary: "/configured/simulator", presets: { rest: preset }, runRoot: root, sessionToken: "token", spawn: () => {
+    const child = new EventEmitter(); child.stdout = null; child.stderr = null; child.kill = () => true; children.push(child); return child;
+  } });
+  await new Promise((resolve) => gateway.server.listen(0, "127.0.0.1", resolve));
+  const port = gateway.server.address().port;
+  const start = () => fetch(`http://127.0.0.1:${port}/api/v1/runs`, { method: "POST", headers: { authorization: "Bearer token", "content-type": "application/json" }, body: JSON.stringify(request) });
+  assert.equal((await start()).status, 202);
+  children[0].emit("error", new Error("spawn failed"));
+  assert.equal((await start()).status, 202);
+  children[0].emit("close", 1, null);
+  assert.equal((await start()).status, 409);
+  children[1].emit("close", 0, null);
   await gateway.shutdown();
 });

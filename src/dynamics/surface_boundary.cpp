@@ -13,6 +13,7 @@
 #include <ranges>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 #include "myplanetsim/core/validation.hpp"
@@ -45,6 +46,8 @@ struct EarthSourceGrid {
     throw std::runtime_error("Earth surface CSV header is invalid");
   std::vector<Real> longitude_order;
   std::vector<Real> latitude_order;
+  std::unordered_set<Real> longitudes;
+  std::unordered_set<Real> latitudes;
   std::map<std::pair<Real, Real>, std::pair<Real, Real>> records;
   while (std::getline(input, line)) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
@@ -69,10 +72,8 @@ struct EarthSourceGrid {
     if (!records.emplace(std::pair{longitude, latitude}, std::pair{height, fraction})
              .second)
       throw std::runtime_error("Earth surface CSV contains a duplicate cell");
-    if (std::ranges::find(longitude_order, longitude) == longitude_order.end())
-      longitude_order.push_back(longitude);
-    if (std::ranges::find(latitude_order, latitude) == latitude_order.end())
-      latitude_order.push_back(latitude);
+    if (longitudes.insert(longitude).second) longitude_order.push_back(longitude);
+    if (latitudes.insert(latitude).second) latitude_order.push_back(latitude);
   }
   if (input.bad() || longitude_order.size() < 2 || latitude_order.size() < 2 ||
       !std::ranges::is_sorted(longitude_order) ||

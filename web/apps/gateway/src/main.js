@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { spawn as defaultSpawn } from "node:child_process";
 import { basename, join, resolve } from "node:path";
 
@@ -11,6 +11,7 @@ const maxBodyBytes = 64 * 1024;
 // below the requested maximum, so the budget is enforced again while the run streams events.
 export const maxPublishedFrames = 512;
 export const maxPublishedBytes = 256 * 1024 * 1024;
+export const maxRetainedRuns = 8;
 // Mirrors kControlMaxLevels in the C++ control contract and the FrameV2 allowlist.
 export const maxInteractiveLevels = 30;
 
@@ -139,7 +140,27 @@ export function createGatewayServer(options) {
   const token = options.sessionToken ?? randomBytes(32).toString("hex");
   const spawn = options.spawn ?? defaultSpawn;
   const runs = new Map();
-  let activeRun = false;
+  const retainedRunLimit = options.maxRetainedRuns ?? maxRetainedRuns;
+  if (!Number.isInteger(retainedRunLimit) || retainedRunLimit < 0) {
+    throw new Error("maxRetainedRuns must be a non-negative integer");
+  }
+  let activeRunId = null;
+  let accessOrder = 0;
+  let cleanupQueue = Promise.resolve();
+  const touch = (run) => { run.lastAccessOrder = accessOrder++; };
+  const scheduleRetention = () => {
+    cleanupQueue = cleanupQueue.then(async () => {
+      const terminal = [...runs.values()].filter((run) => run.terminal)
+        .sort((left, right) => left.lastAccessOrder - right.lastAccessOrder);
+      while (terminal.length > retainedRunLimit) {
+        const victim = terminal.shift();
+        runs.delete(victim.runId);
+        victim.events.length = 0; victim.stderr = ""; victim.pending = "";
+        victim.waiters.clear(); victim.child = null;
+        await rm(victim.directory, { recursive: true, force: true });
+      }
+    });
+  };
   const server = createServer(async (request, response) => {
     try {
       if (!allowedHost(request.headers.host) || !allowedOrigin(request.headers.origin)) return json(response, 403, { error: "forbidden" });
@@ -154,13 +175,13 @@ export function createGatewayServer(options) {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       if (request.method === "GET" && url.pathname === "/api/v1/capabilities") return json(response, 200, { protocolVersion, presets: [...presets.keys()], supportedEdits: ["gaussian_depth"], presetDetails });
       if (request.method === "POST" && url.pathname === "/api/v1/runs") {
-        if (activeRun) return json(response, 409, { error: "run_in_progress" });
+        if (activeRunId !== null) return json(response, 409, { error: "run_in_progress" });
         const requestValue = validateRunRequest(await body(request), presets);
-        if (activeRun) return json(response, 409, { error: "run_in_progress" });
-        activeRun = true;
+        if (activeRunId !== null) return json(response, 409, { error: "run_in_progress" });
         let run;
+        const runId = randomBytes(16).toString("hex");
+        activeRunId = runId;
         try {
-          const runId = randomBytes(16).toString("hex");
           await mkdir(runRoot, { recursive: true });
           const directory = await mkdtemp(join(runRoot, "run-"));
           await mkdir(join(directory, "frames"));
@@ -169,12 +190,13 @@ export function createGatewayServer(options) {
           await writeFile(controlPath, controlRequestText(requestValue, runId), "utf8");
           const child = spawn(binary, ["--config", configPath, "--control-request", controlPath, "--event-stream", "ndjson"], { cwd: directory, shell: false, stdio: ["ignore", "pipe", "pipe"] });
           run = { runId, directory, status: "running", child, request: requestValue, controlRequest: controlRequestText(requestValue, runId), events: [], stderr: "", pending: "", waiters: new Set(), lastSequence: -1, cancellationRequested: false };
+          touch(run);
           runs.set(runId, run);
         } catch (error) {
-          activeRun = false;
+          if (activeRunId === runId) activeRunId = null;
           throw error;
         }
-        const { child, runId } = run;
+        const { child } = run;
         const publish = (event) => {
           if (!event || event.protocolVersion !== protocolVersion || event.runId !== runId || !Number.isInteger(event.sequence) || event.sequence <= run.lastSequence) throw protocolError("event sequence is invalid");
           run.lastSequence = event.sequence; run.events.push(event);
@@ -197,19 +219,19 @@ export function createGatewayServer(options) {
           const lines = run.pending.split("\n"); run.pending = lines.pop() ?? "";
           for (const line of lines) if (line.trim()) { try { publish(JSON.parse(line)); } catch { run.status = "failed"; run.protocolError = true; child.kill?.("SIGTERM"); } }
         });
-        child.on("close", (code, signal) => { if (!run.terminal) run.status = run.cancellationRequested ? "cancelled" : code === 0 ? "completed" : "failed"; run.exitCode = code; run.signal = signal; run.terminal = true; activeRun = false; if (run.forceTimer) clearTimeout(run.forceTimer); for (const waiter of run.waiters) waiter(); run.waiters.clear(); });
-        child.on("error", (error) => { run.stderr = `${run.stderr}${error.message}`.slice(-64 * 1024); run.status = "failed"; run.terminal = true; activeRun = false; for (const waiter of run.waiters) waiter(); run.waiters.clear(); });
+        child.on("close", (code, signal) => { if (!run.terminal) run.status = run.cancellationRequested ? "cancelled" : code === 0 ? "completed" : "failed"; run.exitCode = code; run.signal = signal; run.terminal = true; if (activeRunId === runId) activeRunId = null; if (run.forceTimer) clearTimeout(run.forceTimer); for (const waiter of run.waiters) waiter(); run.waiters.clear(); touch(run); scheduleRetention(); });
+        child.on("error", (error) => { run.stderr = `${run.stderr}${error.message}`.slice(-64 * 1024); run.status = "failed"; run.terminal = true; if (activeRunId === runId) activeRunId = null; for (const waiter of run.waiters) waiter(); run.waiters.clear(); touch(run); scheduleRetention(); });
         child.stderr?.on("data", (chunk) => { run.stderr = `${run.stderr}${chunk}`.slice(-64 * 1024); });
         return json(response, 202, { protocolVersion, runId, status: "running" });
       }
       const match = url.pathname.match(/^\/api\/v1\/runs\/([^/]+)$/);
       if (request.method === "GET" && match) {
-        const run = runs.get(match[1]); if (!run) return json(response, 404, { error: "not_found" });
+        const run = runs.get(match[1]); if (!run) return json(response, 404, { error: "not_found" }); touch(run);
         return json(response, 200, { protocolVersion, runId: run.runId, status: run.status, exitCode: run.exitCode ?? null });
       }
       const eventsMatch = url.pathname.match(/^\/api\/v1\/runs\/([^/]+)\/events$/);
       if (request.method === "GET" && eventsMatch) {
-        const run = runs.get(eventsMatch[1]); if (!run) return json(response, 404, { error: "not_found" });
+        const run = runs.get(eventsMatch[1]); if (!run) return json(response, 404, { error: "not_found" }); touch(run);
         const after = Number(request.headers["x-after-sequence"] ?? url.searchParams.get("after") ?? -1);
         if (!Number.isInteger(after)) return json(response, 400, { error: "invalid_sequence" });
         response.statusCode = 200; response.setHeader("content-type", "application/x-ndjson; charset=utf-8");
@@ -225,7 +247,7 @@ export function createGatewayServer(options) {
       }
       const frameMatch = url.pathname.match(/^\/api\/v1\/runs\/([^/]+)\/frames\/(\d+)$/);
       if (request.method === "GET" && frameMatch) {
-        const run = runs.get(frameMatch[1]); if (!run) return json(response, 404, { error: "not_found" });
+        const run = runs.get(frameMatch[1]); if (!run) return json(response, 404, { error: "not_found" }); touch(run);
         const sequence = Number(frameMatch[2]); const event = run.events.find((candidate) => candidate.type === "frame.ready" && candidate.frameSequence === sequence);
         if (!event) return json(response, 404, { error: "frame_not_published" });
         const path = resolve(run.directory, "frames", event.relativePath); const root = resolve(run.directory, "frames");
@@ -236,24 +258,25 @@ export function createGatewayServer(options) {
       }
       const cancelMatch = url.pathname.match(/^\/api\/v1\/runs\/([^/]+)\/cancel$/);
       if (request.method === "POST" && cancelMatch) {
-        const run = runs.get(cancelMatch[1]); if (!run) return json(response, 404, { error: "not_found" });
+        const run = runs.get(cancelMatch[1]); if (!run) return json(response, 404, { error: "not_found" }); touch(run);
         if (!run.terminal) { run.cancellationRequested = true; run.status = "cancelling"; run.child.kill?.("SIGTERM"); run.forceTimer = setTimeout(() => { if (!run.terminal) run.child.kill?.("SIGKILL"); }, options.graceMilliseconds ?? 2000); }
         return json(response, 202, { protocolVersion, runId: run.runId, status: run.status });
       }
       const bundleMatch = url.pathname.match(/^\/api\/v1\/runs\/([^/]+)\/bundle$/);
       if (request.method === "GET" && bundleMatch) {
-        const run = runs.get(bundleMatch[1]); if (!run) return json(response, 404, { error: "not_found" });
+        const run = runs.get(bundleMatch[1]); if (!run) return json(response, 404, { error: "not_found" }); touch(run);
         return json(response, 200, { protocolVersion, runId: run.runId, status: run.status, request: run.request, controlRequest: run.controlRequest, events: run.events, stderr: run.stderr });
       }
       return json(response, 404, { error: "not_found" });
     } catch (error) { return json(response, error.code === "invalid_request" ? 400 : 500, { error: error.code ?? "gateway_error", message: error.code === "invalid_request" ? error.message : "request failed" }); }
   });
   const shutdown = async () => {
-    for (const run of runs.values()) if (!run.terminal) { run.cancellationRequested = true; run.child.kill?.("SIGTERM"); }
+    for (const run of runs.values()) if (!run.terminal) { run.cancellationRequested = true; run.child?.kill?.("SIGTERM"); }
     server.closeAllConnections?.();
     await new Promise((resolveClose) => server.close(resolveClose));
+    await cleanupQueue;
   };
-  return { server, token, runs, shutdown };
+  return { server, token, runs, shutdown, flushRetention: async () => cleanupQueue };
 }
 
 export async function describeSimulator(options) {
