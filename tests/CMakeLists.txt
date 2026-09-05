@@ -71,6 +71,13 @@ mps_add_test(phase6.orographic_responses test_orographic_responses.cpp)
 set_tests_properties(phase6.orographic_responses PROPERTIES LABELS phase6_gate)
 mps_add_test(phase6.jw06 test_jw06.cpp)
 set_tests_properties(phase6.jw06 PROPERTIES LABELS phase6_gate)
+mps_add_test(phase9.balanced_benchmarks test_balanced_benchmarks.cpp)
+target_compile_definitions(
+  phase9.balanced_benchmarks PRIVATE MPS_CONFIG_DIRECTORY="${CMAKE_SOURCE_DIR}/configs"
+)
+set_tests_properties(
+  phase9.balanced_benchmarks PROPERTIES LABELS "phase5_gate;phase6_gate;phase9_gate"
+)
 mps_add_test(phase6.rotated_terrain test_rotated_terrain.cpp)
 set_tests_properties(phase6.rotated_terrain PROPERTIES LABELS phase6_gate)
 mps_add_test(unit.dry_hydrostatic_io test_dry_hydrostatic_io.cpp)
