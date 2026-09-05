@@ -50,8 +50,13 @@ void integrate_hydrostatic_column(const HybridPressureGeometry& geometry,
         heat_capacity_cp_j_kg_k * potential_temperature_k[k] *
             (geometry.exner_half[k + 1] - geometry.exner_full[k]);
   }
-  result.residual_m2_s2 = diagnose_hydrostatic_residuals(
-      geometry, potential_temperature_k, heat_capacity_cp_j_kg_k, result);
+  for (std::size_t k = 0; k < nz; ++k) {
+    const Real reconstructed_top =
+        result.geopotential_full_m2_s2[k] +
+        heat_capacity_cp_j_kg_k * potential_temperature_k[k] *
+            (geometry.exner_full[k] - geometry.exner_half[k]);
+    result.residual_m2_s2[k] = result.geopotential_half_m2_s2[k] - reconstructed_top;
+  }
   for (std::size_t k = 0; k <= nz; ++k) {
     result.height_half_m[k] = result.geopotential_half_m2_s2[k] / gravity_m_s2;
     if (k < nz) {
