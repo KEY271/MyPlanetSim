@@ -128,6 +128,11 @@ Phase 9 adds no threading, but its refactor is required to leave the RHS free of
 global state and to keep per-cell work independent, so that it does not obstruct later
 parallelisation.
 
+The Phase 9 pilot on Apple Silicon, one thread, Release with interprocedural optimization,
+measured 833,382 cell-level-update/s, 0.020735 s/step, 1,254.4 peak RSS bytes per
+cell-level, and zero post-warm-up allocations per RHS over 300 steps. At the amended 200 s
+production step this extrapolates to about 2.99 compute-hours for one 1200-day run.
+
 ## Consequences
 
 - The ADR 0009 six-run matrix becomes affordable on one machine.

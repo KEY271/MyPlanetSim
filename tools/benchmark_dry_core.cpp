@@ -1,8 +1,11 @@
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <new>
 #include <stdexcept>
 #include <string_view>
@@ -18,6 +21,7 @@ namespace {
 
 constexpr double kMinimumCellLevelUpdatesPerSecond = 8.0e5;
 constexpr double kMaximumSecondsPerStep = 0.022;
+constexpr double kReferenceExplicitDiffusivityM2S = 1.0e5;
 std::atomic<bool> count_allocations{false};
 std::atomic<std::size_t> allocation_count{0};
 
@@ -96,6 +100,25 @@ int main(int argc, char** argv) {
     const double updates_per_second =
         static_cast<double>(cell_levels) / seconds_per_step;
     const std::size_t rss_bytes = peak_rss_bytes();
+    const double gamma =
+        config.planet.heat_capacity_cp_j_kg_k /
+        (config.planet.heat_capacity_cp_j_kg_k - config.planet.gas_constant_j_kg_k);
+    const double initial_wave_speed_m_s =
+        std::sqrt(gamma * config.planet.gas_constant_j_kg_k *
+                  config.vertical.initial_temperature_k);
+    double implicit_diffusivity_sum_m2_s = 0.0;
+    double implicit_diffusivity_min_m2_s = std::numeric_limits<double>::infinity();
+    double implicit_diffusivity_max_m2_s = 0.0;
+    for (const auto& edge : driver.grid().edge_cache()) {
+      const double diffusivity = 0.5 * initial_wave_speed_m_s * edge.center_distance_m;
+      implicit_diffusivity_sum_m2_s += diffusivity;
+      implicit_diffusivity_min_m2_s =
+          std::min(implicit_diffusivity_min_m2_s, diffusivity);
+      implicit_diffusivity_max_m2_s =
+          std::max(implicit_diffusivity_max_m2_s, diffusivity);
+    }
+    const double implicit_diffusivity_mean_m2_s =
+        implicit_diffusivity_sum_m2_s / static_cast<double>(driver.grid().edge_count());
     const bool target_met = updates_per_second >= kMinimumCellLevelUpdatesPerSecond &&
                             seconds_per_step <= kMaximumSecondsPerStep &&
                             allocations == 0;
@@ -109,6 +132,18 @@ int main(int argc, char** argv) {
               << "peak_rss_bytes = " << rss_bytes << '\n'
               << "peak_rss_bytes_per_cell_level = "
               << static_cast<double>(rss_bytes) / static_cast<double>(cell_levels)
+              << '\n'
+              << "initial_rusanov_wave_speed_m_s = " << initial_wave_speed_m_s << '\n'
+              << "implicit_diffusivity_min_m2_s = " << implicit_diffusivity_min_m2_s
+              << '\n'
+              << "implicit_diffusivity_mean_m2_s = " << implicit_diffusivity_mean_m2_s
+              << '\n'
+              << "implicit_diffusivity_max_m2_s = " << implicit_diffusivity_max_m2_s
+              << '\n'
+              << "reference_explicit_diffusivity_m2_s = "
+              << kReferenceExplicitDiffusivityM2S << '\n'
+              << "implicit_to_explicit_diffusivity_ratio = "
+              << implicit_diffusivity_mean_m2_s / kReferenceExplicitDiffusivityM2S
               << '\n'
               << "allocations_per_rhs = " << allocations << '\n'
               << "registered_min_cell_level_updates_per_s = "

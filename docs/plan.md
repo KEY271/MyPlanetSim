@@ -303,6 +303,9 @@ surface の詳細設計と実装順は [Phase 8 実装計画](phase-8-plan.md) �
 
 ### Phase 9 — 正しさの回復、性能、平衡ベンチマーク
 
+**完了（2026-09-06）。** 結果と既知の DCMIP pressure-gradient gap は
+[Phase 9 validation](validation/phase-9.md) に記録した。
+
 Phase 8 完了時点の全体レビューが見つけた欠陥と、Phase 5--7 検証報告および ADR 0009 に記録済みの
 production gap を、新しい物理を追加せずに閉じる。詳細な設計とコミット順は
 [Phase 9 実装計画](phase-9-plan.md) に定める。

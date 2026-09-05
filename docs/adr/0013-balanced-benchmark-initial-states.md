@@ -80,6 +80,12 @@ Changing the vertical discretization itself — coordinate reconstruction, a
 Simmons--Burridge pressure-gradient force, or a reference-state subtraction — is out of
 scope. Phase 9 produces the measurement; a later ADR may act on it.
 
+The Phase 9 pilot registered the following absolute `Linf` ceilings for the two steady
+states at `N=8/16/32`: UMJS14 `6.0e-4/3.5e-4/3.0e-4 m/s2`, and JW06
+`8.0e-4/4.5e-4/3.3e-4 m/s2`. The observed DCMIP values
+`7.335e-4/1.653e-3/1.625e-3 m/s2` do not converge; that signature is retained as a
+regression measurement, not accepted as a balanced-state threshold.
+
 ## Consequences
 
 - A `steady` preset that stops being steady fails a test, at every resolution triple.

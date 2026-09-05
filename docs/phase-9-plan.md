@@ -1,6 +1,6 @@
 # Phase 9 実装計画 — 正しさの回復、性能、平衡ベンチマーク
 
-**状態:** 計画。Phase 8 完了時点（`c3246a9`）で実施したコード全体レビューが見つけた欠陥と、
+**状態:** 完了（2026-09-06）。検証結果は [Phase 9 validation](validation/phase-9.md) に記録。Phase 8 完了時点（`c3246a9`）で実施したコード全体レビューが見つけた欠陥と、
 Phase 5--7 検証報告および ADR 0009 に記録済みの production gap を、新しい物理を追加せずに閉じる。
 [docs/plan.md](plan.md) の当初 Phase 9 候補（灰色放射、湿潤過程、非静水圧、OpenMP/MPI）は
 Phase 10 以後へ送る。
@@ -528,35 +528,35 @@ entry -> P9.01 -> P9.02 -> P9.03 ---------------------+
 
 ### 正しさ
 
-- [ ] 球面ベクトル Laplacian が剛体回転と球面調和の解析解に一致し、Laplacian 運動量拡散が KE を減らす。
-- [ ] 乾燥・shallow-water・輸送の CFL が同一定義であり、`cfl` の値が三者で同じ意味を持つ。
-- [ ] `dry_hydrostatic.diffusion_*` が実際に適用され、`none` は byte-exact に従来と一致する。
-- [ ] 全 preset が起動し、`phase6_dcmip_2_0_0` の座標が単調である。
-- [ ] `steady` を名乗る preset の初期 RHS 残差が解像度とともに減少するか、非平衡であることを名前と
+- [x] 球面ベクトル Laplacian が剛体回転と球面調和の解析解に一致し、Laplacian 運動量拡散が KE を減らす。
+- [x] 乾燥・shallow-water・輸送の CFL が同一定義であり、`cfl` の値が三者で同じ意味を持つ。
+- [x] `dry_hydrostatic.diffusion_*` が実際に適用され、`none` は byte-exact に従来と一致する。
+- [x] 全 preset が起動し、`phase6_dcmip_2_0_0` の座標が単調である。
+- [x] `steady` を名乗る preset の初期 RHS 残差が解像度とともに減少するか、非平衡であることを名前と
       文書で明示している。
-- [ ] `baroclinic` preset が対応する `steady` preset と異なる初期場を持つ。
-- [ ] 解析地形が `config.planet` と整合し、非整合な組み合わせを黙って受理しない。
-- [ ] residual 診断が恒等式でなく、全球保存量が compensated summation である。
+- [x] `baroclinic` preset が対応する `steady` preset と異なる初期場を持つ。
+- [x] 解析地形が `config.planet` と整合し、非整合な組み合わせを黙って受理しない。
+- [x] residual 診断が恒等式でなく、全球保存量が compensated summation である。
 
 ### 性能
 
-- [ ] cell-level-update/s が登録目標（10x）を満たし、benchmark が再現手順とともに記録されている。
-- [ ] steady state の RHS 評価が追加のヒープ割り当てを行わない。
-- [ ] 静的 geometry cache と workspace の導入が全 preset で bit-exact である。
-- [ ] 数値を動かす唯一のコミット（P9.08）の許容差が登録され、超過理由が説明されている。
-- [ ] observer のサンプリング間隔が state と気候統計を変えないことが二間隔比較で示されている。
-- [ ] メモリ/cell が記録され、`N=48`/`K=30` の見積もりが現実的である。
+- [x] cell-level-update/s が登録目標（10x）を満たし、benchmark が再現手順とともに記録されている。
+- [x] steady state の RHS 評価が追加のヒープ割り当てを行わない。
+- [x] 静的 geometry cache と workspace の導入が全 preset で bit-exact である。
+- [x] 数値を動かす唯一のコミット（P9.08）の許容差が登録され、超過理由が説明されている。
+- [x] observer のサンプリング間隔が state と気候統計を変えないことが二間隔比較で示されている。
+- [x] メモリ/cell が記録され、`N=48`/`K=30` の見積もりが現実的である。
 
 ### 検証と引き渡し
 
-- [ ] 各修正が、その修正がなければ落ちる test を同じコミットに持つ。
-- [ ] 演算子の**観測収束次数**が登録され、単調減少だけの gate が残っていない。
-- [ ] 暗黙 Rusanov 散逸と陽的拡散が同じ単位で比較・報告されている。
-- [ ] 地形追随 PGF error の収束測定が正規の座標で行われ、結果が gate または後続 ADR の根拠として
+- [x] 各修正が、その修正がなければ落ちる test を同じコミットに持つ。
+- [x] 演算子の**観測収束次数**が登録され、単調減少だけの gate が残っていない。
+- [x] 暗黙 Rusanov 散逸と陽的拡散が同じ単位で比較・報告されている。
+- [x] 地形追随 PGF error の収束測定が正規の座標で行われ、結果が gate または後続 ADR の根拠として
       記録されている。
-- [ ] ADR 0009 の 6-run matrix が blocker なしで実行可能であり、1 run の pilot コストが実測されている。
-- [ ] CI 追加時間が +40 s 以内、GCC/Clang、ASan/UBSan、`format-check`、全 Phase 0--8 regression が通る。
-- [ ] gateway の retention と lifecycle が test で固定されている。
+- [x] ADR 0009 の 6-run matrix が blocker なしで実行可能であり、1 run の pilot コストが実測されている。
+- [x] CI 追加時間が +40 s 以内、GCC/Clang、ASan/UBSan、`format-check`、全 Phase 0--8 regression が通る。
+- [x] gateway の retention と lifecycle が test で固定されている。
 
 ## 11. Phase 9 が既存の判断に与える影響
 
