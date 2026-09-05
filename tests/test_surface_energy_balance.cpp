@@ -46,7 +46,7 @@ struct Fixture {
 
 }  // namespace
 
-MPS_TEST_CASE("surface energy signs and budget close from one evaluated flux") {
+MPS_TEST_CASE("surface energy fluxes have the registered signs") {
   const Fixture fixture;
   const auto surface = boundary(fixture, 1.0);
   const std::vector<mps::Real> temperature(fixture.grid.cell_count(), 300.0);
@@ -56,9 +56,33 @@ MPS_TEST_CASE("surface energy signs and budget close from one evaluated flux") {
   MPS_CHECK(tendency.diagnostics.absorbed_stellar_power_w > 0.0);
   MPS_CHECK(tendency.diagnostics.outgoing_longwave_power_w > 0.0);
   MPS_CHECK(tendency.diagnostics.sensible_to_atmosphere_power_w > 0.0);
-  MPS_CHECK_NEAR(tendency.diagnostics.surface_budget_residual_w, 0.0, 1.0e-8);
   for (const auto source : tendency.potential_temperature_mass_k_kg_m2_s)
     MPS_CHECK(source > 0.0);
+}
+
+MPS_TEST_CASE("surface interval budget detects an independently perturbed flux") {
+  const Fixture fixture;
+  const auto surface = boundary(fixture, 1.0);
+  const std::vector<mps::Real> initial(fixture.grid.cell_count(), 300.0);
+  const auto tendency = mps::surface_energy_tendency(
+      fixture.grid, surface, initial, fixture.atmosphere, fixture.surface_pressure,
+      mps::PlanetParameters::earth_like(), parameters(), fixture.orbit);
+  constexpr mps::Real time_step_s = 2.0;
+  std::vector<mps::Real> final(initial.size());
+  for (std::size_t cell = 0; cell < final.size(); ++cell) {
+    final[cell] = initial[cell] + time_step_s * tendency.surface_temperature_k_s[cell];
+  }
+  const auto closed = mps::integrate_surface_energy_budget(
+      fixture.grid, surface, parameters(), initial, final, time_step_s,
+      tendency.diagnostics, tendency.diagnostics, tendency.diagnostics);
+  MPS_CHECK_NEAR(closed.surface_budget_residual_j, 0.0, 2.0e-6);
+
+  auto broken_flux = tendency.diagnostics;
+  broken_flux.absorbed_stellar_power_w += 100.0;
+  const auto broken = mps::integrate_surface_energy_budget(
+      fixture.grid, surface, parameters(), initial, final, time_step_s, broken_flux,
+      tendency.diagnostics, tendency.diagnostics);
+  MPS_CHECK_NEAR(broken.surface_budget_residual_j, -time_step_s * 100.0 / 6.0, 3.0e-6);
 }
 
 MPS_TEST_CASE("ocean responds less than land to the same forcing") {

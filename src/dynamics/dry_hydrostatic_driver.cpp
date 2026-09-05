@@ -451,18 +451,26 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       }
       project_and_validate(next);
       s = std::move(next);
-      observe(s, {.thermal_energy_contribution_j =
-                      dt * (rhs1.physics_diagnostics.thermal_energy_rate_w / 6.0 +
-                            rhs2.physics_diagnostics.thermal_energy_rate_w / 6.0 +
-                            2.0 * rhs3.physics_diagnostics.thermal_energy_rate_w / 3.0),
-                  .rayleigh_drag_energy_contribution_j =
-                      dt * (rhs1.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
-                            rhs2.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
-                            2.0 * rhs3.physics_diagnostics.rayleigh_drag_work_w / 3.0),
-                  .diffusion_energy_contribution_j =
-                      dt * (rhs1.diffusion_kinetic_energy_rate_w / 6.0 +
-                            rhs2.diffusion_kinetic_energy_rate_w / 6.0 +
-                            2.0 * rhs3.diffusion_kinetic_energy_rate_w / 3.0)});
+      DryHydrostaticStepDiagnostics step{
+          .thermal_energy_contribution_j =
+              dt * (rhs1.physics_diagnostics.thermal_energy_rate_w / 6.0 +
+                    rhs2.physics_diagnostics.thermal_energy_rate_w / 6.0 +
+                    2.0 * rhs3.physics_diagnostics.thermal_energy_rate_w / 3.0),
+          .rayleigh_drag_energy_contribution_j =
+              dt * (rhs1.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
+                    rhs2.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
+                    2.0 * rhs3.physics_diagnostics.rayleigh_drag_work_w / 3.0),
+          .diffusion_energy_contribution_j =
+              dt * (rhs1.diffusion_kinetic_energy_rate_w / 6.0 +
+                    rhs2.diffusion_kinetic_energy_rate_w / 6.0 +
+                    2.0 * rhs3.diffusion_kinetic_energy_rate_w / 3.0)};
+      if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
+        step.surface_budget = integrate_surface_energy_budget(
+            grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,
+            s.surface_temperature_k, dt, rhs1.surface_diagnostics,
+            rhs2.surface_diagnostics, rhs3.surface_diagnostics);
+      }
+      observe(s, step);
       break;
     }
   }

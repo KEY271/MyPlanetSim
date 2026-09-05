@@ -9,27 +9,32 @@
 
 namespace mps::diagnostics {
 
+void CompensatedAccumulator::add(const Real value) {
+  require_finite(value, "reduction value");
+  const Real next = sum_ + value;
+  if (std::abs(sum_) >= std::abs(value)) {
+    correction_ += (sum_ - next) + value;
+  } else {
+    correction_ += (value - next) + sum_;
+  }
+  sum_ = next;
+}
+
+Real CompensatedAccumulator::value() const {
+  const Real result = sum_ + correction_;
+  require_finite(result, "reduction result");
+  return result;
+}
+
 bool all_finite(const std::span<const Real> values) noexcept {
   return std::ranges::all_of(values,
                              [](const Real value) { return std::isfinite(value); });
 }
 
 Real compensated_sum(const std::span<const Real> values) {
-  Real sum = 0.0;
-  Real correction = 0.0;
-  for (const Real value : values) {
-    require_finite(value, "reduction value");
-    const Real next = sum + value;
-    if (std::abs(sum) >= std::abs(value)) {
-      correction += (sum - next) + value;
-    } else {
-      correction += (value - next) + sum;
-    }
-    sum = next;
-  }
-  const Real result = sum + correction;
-  require_finite(result, "reduction result");
-  return result;
+  CompensatedAccumulator accumulator;
+  for (const Real value : values) accumulator.add(value);
+  return accumulator.value();
 }
 
 MinMax min_max(const std::span<const Real> values) {

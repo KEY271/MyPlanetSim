@@ -32,6 +32,7 @@ struct DryHydrostaticStepDiagnostics {
   Real thermal_energy_contribution_j = 0.0;
   Real rayleigh_drag_energy_contribution_j = 0.0;
   SurfaceEnergyDiagnostics surface_rates{};
+  SurfaceEnergyBudget surface_budget{};
   Real diffusion_energy_contribution_j = 0.0;
 };
 // The derived pointer is non-null at the configured diagnostic interval, initially,

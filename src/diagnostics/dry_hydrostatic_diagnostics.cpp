@@ -7,6 +7,7 @@
 #include <ostream>
 #include <stdexcept>
 
+#include "myplanetsim/diagnostics/reductions.hpp"
 #include "myplanetsim/numerics/spherical_operators.hpp"
 namespace mps {
 DryHydrostaticDiagnostics diagnose_dry_hydrostatic_budgets(
@@ -21,6 +22,11 @@ DryHydrostaticDiagnostics diagnose_dry_hydrostatic_budgets(
                               -std::numeric_limits<Real>::infinity(),
                               std::numeric_limits<Real>::infinity(),
                               -std::numeric_limits<Real>::infinity()};
+  diagnostics::CompensatedAccumulator dry_mass;
+  diagnostics::CompensatedAccumulator potential_temperature_mass;
+  diagnostics::CompensatedAccumulator tracer_mass;
+  diagnostics::CompensatedAccumulator total_energy;
+  diagnostics::CompensatedAccumulator axial_angular_momentum;
   const Real cv = p.heat_capacity_cp_j_kg_k - p.gas_constant_j_kg_k;
   for (std::size_t c = 0; c < d.cells; ++c) {
     auto area = grid.cells()[c].area_m2;
@@ -32,19 +38,23 @@ DryHydrostaticDiagnostics diagnose_dry_hydrostatic_budgets(
     for (std::size_t k = 0; k < d.levels; ++k) {
       auto n = dry_hydrostatic_offset(c, k, d.levels);
       auto mass = area * d.air_mass_kg_m2[n];
-      x.dry_mass_kg += mass;
-      x.potential_temperature_mass_k_kg +=
-          area * s.potential_temperature_mass_k_kg_m2[n];
-      x.tracer_mass_kg += area * s.tracer_mass_kg_m2[n];
-      x.total_energy_j += mass * (.5 * norm_squared(d.velocity_m_s[n]) +
-                                  cv * d.temperature_k[n] + d.geopotential_m2_s2[n]);
-      x.axial_angular_momentum_kg_m2_s +=
+      dry_mass.add(mass);
+      potential_temperature_mass.add(area * s.potential_temperature_mass_k_kg_m2[n]);
+      tracer_mass.add(area * s.tracer_mass_kg_m2[n]);
+      total_energy.add(mass * (.5 * norm_squared(d.velocity_m_s[n]) +
+                               cv * d.temperature_k[n] + d.geopotential_m2_s2[n]));
+      axial_angular_momentum.add(
           mass * (cross(pos, d.velocity_m_s[n]).z +
-                  p.rotation_rate_rad_s * (pos.x * pos.x + pos.y * pos.y));
+                  p.rotation_rate_rad_s * (pos.x * pos.x + pos.y * pos.y)));
       x.minimum_temperature_k = std::min(x.minimum_temperature_k, d.temperature_k[n]);
       x.maximum_temperature_k = std::max(x.maximum_temperature_k, d.temperature_k[n]);
     }
   }
+  x.dry_mass_kg = dry_mass.value();
+  x.potential_temperature_mass_k_kg = potential_temperature_mass.value();
+  x.tracer_mass_kg = tracer_mass.value();
+  x.total_energy_j = total_energy.value();
+  x.axial_angular_momentum_kg_m2_s = axial_angular_momentum.value();
   return x;
 }
 

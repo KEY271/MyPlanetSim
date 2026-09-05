@@ -5,6 +5,8 @@
 #include <limits>
 #include <stdexcept>
 
+#include "myplanetsim/diagnostics/reductions.hpp"
+
 namespace mps {
 
 SurfaceEnergyTendency surface_energy_tendency(
@@ -92,12 +94,53 @@ void surface_energy_tendency(const CubedSphereGrid& grid,
       result.stable_time_step_s = std::min(
           result.stable_time_step_s, parameters.cfl * capacity / longwave_relaxation);
   }
-  result.diagnostics.surface_budget_residual_w =
-      result.diagnostics.surface_storage_rate_w -
-      (result.diagnostics.absorbed_stellar_power_w +
-       result.diagnostics.internal_heat_power_w -
-       result.diagnostics.outgoing_longwave_power_w -
-       result.diagnostics.sensible_to_atmosphere_power_w);
+}
+
+SurfaceEnergyBudget integrate_surface_energy_budget(
+    const CubedSphereGrid& grid, const SurfaceBoundary& boundary,
+    const SurfaceParameters& parameters,
+    const std::span<const Real> initial_surface_temperature_k,
+    const std::span<const Real> final_surface_temperature_k, const Real time_step_s,
+    const SurfaceEnergyDiagnostics& stage1, const SurfaceEnergyDiagnostics& stage2,
+    const SurfaceEnergyDiagnostics& stage3) {
+  if (initial_surface_temperature_k.size() != grid.cell_count() ||
+      final_surface_temperature_k.size() != grid.cell_count() ||
+      boundary.land_fraction().size() != grid.cell_count() || !(time_step_s > 0.0) ||
+      !std::isfinite(time_step_s)) {
+    throw std::invalid_argument("surface energy budget arguments are invalid");
+  }
+  const auto integrate = [time_step_s](const Real first, const Real second,
+                                       const Real third) {
+    return time_step_s * (first / 6.0 + second / 6.0 + 2.0 * third / 3.0);
+  };
+  SurfaceEnergyBudget budget{
+      .absorbed_stellar_energy_j =
+          integrate(stage1.absorbed_stellar_power_w, stage2.absorbed_stellar_power_w,
+                    stage3.absorbed_stellar_power_w),
+      .internal_heat_energy_j =
+          integrate(stage1.internal_heat_power_w, stage2.internal_heat_power_w,
+                    stage3.internal_heat_power_w),
+      .outgoing_longwave_energy_j =
+          integrate(stage1.outgoing_longwave_power_w, stage2.outgoing_longwave_power_w,
+                    stage3.outgoing_longwave_power_w),
+      .sensible_to_atmosphere_energy_j = integrate(
+          stage1.sensible_to_atmosphere_power_w, stage2.sensible_to_atmosphere_power_w,
+          stage3.sensible_to_atmosphere_power_w)};
+  diagnostics::CompensatedAccumulator storage_change;
+  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
+    const Real capacity = mixed_surface_heat_capacity(
+        boundary.land_fraction()[cell], parameters.land_heat_capacity_j_m2_k,
+        parameters.ocean_heat_capacity_j_m2_k);
+    storage_change.add(
+        grid.cells()[cell].area_m2 * capacity *
+        (final_surface_temperature_k[cell] - initial_surface_temperature_k[cell]));
+  }
+  budget.surface_storage_change_j = storage_change.value();
+  budget.surface_budget_residual_j =
+      budget.surface_storage_change_j -
+      (budget.absorbed_stellar_energy_j + budget.internal_heat_energy_j -
+       budget.outgoing_longwave_energy_j - budget.sensible_to_atmosphere_energy_j);
+  return budget;
 }
 
 }  // namespace mps

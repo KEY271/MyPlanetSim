@@ -530,6 +530,22 @@ struct PhysicsDiagnosticsRow {
   std::uint64_t non_finite_count;
 };
 
+struct SurfaceDiagnosticsRow {
+  mps::Real time_s;
+  mps::SurfaceEnergyDiagnostics rates;
+  mps::SurfaceEnergyBudget interval_budget;
+};
+
+void add_surface_budget(mps::SurfaceEnergyBudget& total,
+                        const mps::SurfaceEnergyBudget& step) {
+  total.absorbed_stellar_energy_j += step.absorbed_stellar_energy_j;
+  total.internal_heat_energy_j += step.internal_heat_energy_j;
+  total.outgoing_longwave_energy_j += step.outgoing_longwave_energy_j;
+  total.sensible_to_atmosphere_energy_j += step.sensible_to_atmosphere_energy_j;
+  total.surface_storage_change_j += step.surface_storage_change_j;
+  total.surface_budget_residual_j += step.surface_budget_residual_j;
+}
+
 class PhysicsDiagnosticsAccumulator {
  public:
   PhysicsDiagnosticsAccumulator(const mps::ExperimentConfig& config,
@@ -838,14 +854,15 @@ int main(const int argc, const char* const argv[]) {
         climate_statistics.emplace(driver.grid(),
                                    static_cast<std::size_t>(config.vertical.levels));
       }
-      std::vector<std::pair<mps::Real, mps::SurfaceEnergyDiagnostics>>
-          surface_diagnostics;
+      std::vector<SurfaceDiagnosticsRow> surface_diagnostics;
+      mps::SurfaceEnergyBudget pending_surface_budget;
       driver.advance(
           state, config.run.end_time_s,
-          [&physics_diagnostics, &climate_statistics, &surface_diagnostics, &config](
-              const mps::DryHydrostaticState& sampled,
-              const mps::DryHydrostaticDerived* derived,
-              const mps::DryHydrostaticStepDiagnostics& step) {
+          [&physics_diagnostics, &climate_statistics, &surface_diagnostics,
+           &pending_surface_budget,
+           &config](const mps::DryHydrostaticState& sampled,
+                    const mps::DryHydrostaticDerived* derived,
+                    const mps::DryHydrostaticStepDiagnostics& step) {
             if (physics_diagnostics.has_value()) {
               physics_diagnostics->observe_step(sampled, step);
               if (derived != nullptr)
@@ -854,9 +871,14 @@ int main(const int argc, const char* const argv[]) {
             if (climate_statistics.has_value() && derived != nullptr) {
               climate_statistics->observe(sampled, *derived);
             }
-            if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance &&
-                derived != nullptr)
-              surface_diagnostics.emplace_back(sampled.time_s, step.surface_rates);
+            if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance) {
+              add_surface_budget(pending_surface_budget, step.surface_budget);
+              if (derived != nullptr) {
+                surface_diagnostics.push_back(
+                    {sampled.time_s, step.surface_rates, pending_surface_budget});
+                pending_surface_budget = {};
+              }
+            }
           });
       if (physics_diagnostics.has_value()) physics_diagnostics->write();
       if (climate_statistics.has_value()) {
@@ -903,14 +925,27 @@ int main(const int argc, const char* const argv[]) {
             << std::setprecision(17)
             << "time_s,absorbed_stellar_power_w,internal_heat_power_w,"
                "outgoing_longwave_power_w,sensible_to_atmosphere_power_w,"
-               "surface_storage_rate_w,surface_budget_residual_w\n";
-        for (const auto& [time, rates] : surface_diagnostics)
-          diagnostics_output << time << ',' << rates.absorbed_stellar_power_w << ','
-                             << rates.internal_heat_power_w << ','
+               "surface_storage_rate_w,interval_absorbed_stellar_energy_j,"
+               "interval_internal_heat_energy_j,"
+               "interval_outgoing_longwave_energy_j,"
+               "interval_sensible_to_atmosphere_energy_j,"
+               "interval_surface_storage_change_j,"
+               "interval_surface_budget_residual_j\n";
+        for (const auto& sample : surface_diagnostics) {
+          const auto& rates = sample.rates;
+          const auto& budget = sample.interval_budget;
+          diagnostics_output << sample.time_s << ',' << rates.absorbed_stellar_power_w
+                             << ',' << rates.internal_heat_power_w << ','
                              << rates.outgoing_longwave_power_w << ','
                              << rates.sensible_to_atmosphere_power_w << ','
                              << rates.surface_storage_rate_w << ','
-                             << rates.surface_budget_residual_w << '\n';
+                             << budget.absorbed_stellar_energy_j << ','
+                             << budget.internal_heat_energy_j << ','
+                             << budget.outgoing_longwave_energy_j << ','
+                             << budget.sensible_to_atmosphere_energy_j << ','
+                             << budget.surface_storage_change_j << ','
+                             << budget.surface_budget_residual_j << '\n';
+        }
       }
       if (command_line.checkpoint_path.has_value()) {
         const bool has_surface =

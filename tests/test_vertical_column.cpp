@@ -159,6 +159,13 @@ MPS_TEST_CASE(
   MPS_CHECK_NEAR(hydrostatic.geopotential_half_m2_s2.back(), 123.0, 1.0e-12);
   MPS_CHECK_NEAR(hydrostatic.residual_m2_s2[0], 0.0, 1.0e-10);
   MPS_CHECK_NEAR(hydrostatic.residual_m2_s2[1], 0.0, 1.0e-10);
+
+  auto broken = hydrostatic;
+  broken.geopotential_full_m2_s2[0] += 7.0;
+  const auto broken_residual =
+      mps::diagnose_hydrostatic_residuals(geometry, values, 1004.0, broken);
+  MPS_CHECK_NEAR(broken_residual[0], -7.0, 1.0e-10);
+  MPS_CHECK_NEAR(broken_residual[1], 0.0, 1.0e-10);
 }
 
 MPS_TEST_CASE("isothermal and dry-adiabatic hydrostatic integrals are analytic") {

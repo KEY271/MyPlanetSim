@@ -17,6 +17,16 @@ struct ErrorNorms {
   Real linf;
 };
 
+class CompensatedAccumulator {
+ public:
+  void add(Real value);
+  [[nodiscard]] Real value() const;
+
+ private:
+  Real sum_ = 0.0;
+  Real correction_ = 0.0;
+};
+
 [[nodiscard]] bool all_finite(std::span<const Real> values) noexcept;
 [[nodiscard]] Real compensated_sum(std::span<const Real> values);
 [[nodiscard]] MinMax min_max(std::span<const Real> values);

@@ -13,6 +13,14 @@ MPS_TEST_CASE("compensated sum recovers a small residual") {
                mps::diagnostics::compensated_sum(values));
 }
 
+MPS_TEST_CASE("streaming compensated accumulation recovers a small residual") {
+  mps::diagnostics::CompensatedAccumulator sum;
+  sum.add(1.0e16);
+  sum.add(1.0);
+  sum.add(-1.0e16);
+  MPS_CHECK_EQ(sum.value(), 1.0);
+}
+
 MPS_TEST_CASE("min max and finite checks report field bounds") {
   const std::array<mps::Real, 4> values{4.0, -2.0, 7.0, 1.0};
   const auto bounds = mps::diagnostics::min_max(values);

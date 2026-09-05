@@ -24,5 +24,9 @@ void integrate_hydrostatic_column(const HybridPressureGeometry& geometry,
                                   Real heat_capacity_cp_j_kg_k, Real gravity_m_s2,
                                   Real surface_geopotential_m2_s2,
                                   HydrostaticColumn& result);
+[[nodiscard]] std::vector<Real> diagnose_hydrostatic_residuals(
+    const HybridPressureGeometry& geometry,
+    std::span<const Real> potential_temperature_k, Real heat_capacity_cp_j_kg_k,
+    const HydrostaticColumn& column);
 
 }  // namespace mps
