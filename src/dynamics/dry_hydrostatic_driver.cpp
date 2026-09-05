@@ -382,12 +382,14 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
   std::vector<Vec3> centres;
   centres.reserve(grid_.cell_count());
   for (const auto& cell : grid_.cells()) centres.push_back(cell.center);
-  const auto project_and_validate = [&](DryHydrostaticState& stage) {
+  const auto project_momentum = [&](DryHydrostaticState& stage) {
     for (std::size_t n = 0; n < stage.horizontal_momentum_mass_kg_m_s.size(); ++n) {
       const auto cell = n / coordinate_.levels();
       stage.horizontal_momentum_mass_kg_m_s[n] = project_tangent(
           stage.horizontal_momentum_mass_kg_m_s[n], grid_.cells()[cell].center);
     }
+  };
+  const auto diagnose_and_validate = [&](const DryHydrostaticState& stage) {
     workspace_.column_potential_temperature.resize(coordinate_.levels());
     diagnose_dry_hydrostatic_state(
         stage, coordinate_, config_.planet, orography_.surface_geopotential_m2_s2(),
@@ -420,8 +422,12 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         halve_time_step(initial, dt);
         continue;
       }
-      project_and_validate(stage1);
+      project_momentum(stage1);
       rhs(stage1, rhs2);
+      validate_dry_hydrostatic_state(stage1, workspace_.derived, centres,
+                                     config_.vertical.minimum_surface_pressure_pa,
+                                     config_.vertical.maximum_surface_pressure_pa,
+                                     config_.vertical.temperature_floor_k);
       if (dt > stable_time_step(rhs2)) {
         halve_time_step(initial, dt);
         continue;
@@ -434,8 +440,12 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         halve_time_step(initial, dt);
         continue;
       }
-      project_and_validate(stage2);
+      project_momentum(stage2);
       rhs(stage2, rhs3);
+      validate_dry_hydrostatic_state(stage2, workspace_.derived, centres,
+                                     config_.vertical.minimum_surface_pressure_pa,
+                                     config_.vertical.maximum_surface_pressure_pa,
+                                     config_.vertical.temperature_floor_k);
       if (dt > stable_time_step(rhs3)) {
         halve_time_step(initial, dt);
         continue;
@@ -449,7 +459,8 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         halve_time_step(initial, dt);
         continue;
       }
-      project_and_validate(next);
+      project_momentum(next);
+      diagnose_and_validate(next);
       s = std::move(next);
       DryHydrostaticStepDiagnostics step{
           .thermal_energy_contribution_j =

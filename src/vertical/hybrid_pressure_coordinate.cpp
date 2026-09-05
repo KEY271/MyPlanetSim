@@ -9,15 +9,14 @@ namespace mps {
 namespace {
 
 [[nodiscard]] Real stable_exner_mean(const Real upper_pressure_pa,
-                                     const Real lower_pressure_pa, const Real kappa,
-                                     const Real reference_pressure_pa) {
+                                     const Real lower_pressure_pa,
+                                     const Real upper_exner, const Real lower_exner,
+                                     const Real kappa) {
   const Real log_ratio = std::log(lower_pressure_pa / upper_pressure_pa);
-  const Real upper = std::pow(upper_pressure_pa / reference_pressure_pa, kappa);
   if (std::abs(log_ratio) < 1.0e-8) {
-    return upper * std::expm1(kappa * log_ratio) / (kappa * log_ratio);
+    return upper_exner * std::expm1(kappa * log_ratio) / (kappa * log_ratio);
   }
-  const Real lower = std::pow(lower_pressure_pa / reference_pressure_pa, kappa);
-  return (lower - upper) / (kappa * log_ratio);
+  return (lower_exner - upper_exner) / (kappa * log_ratio);
 }
 
 }  // namespace
@@ -184,7 +183,7 @@ void AtmosphericHybridCoordinate::geometry(const Real surface_pressure_pa,
     result.air_mass_kg_m2[k] = thickness / gravity_m_s2;
     result.exner_full[k] =
         stable_exner_mean(result.pressure_half_pa[k], result.pressure_half_pa[k + 1],
-                          kappa, reference_pressure_pa);
+                          result.exner_half[k], result.exner_half[k + 1], kappa);
     result.pressure_full_pa[k] =
         reference_pressure_pa * std::pow(result.exner_full[k], 1.0 / kappa);
     if (!(result.pressure_full_pa[k] > result.pressure_half_pa[k]) ||

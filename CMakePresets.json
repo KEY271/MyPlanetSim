@@ -30,6 +30,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
         "MPS_WARNINGS_AS_ERRORS": "ON"
       }
     },

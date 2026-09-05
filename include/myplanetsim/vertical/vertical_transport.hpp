@@ -43,4 +43,14 @@ void vertical_scalar_rhs(std::span<const Real> scalar_mass,
                          std::span<Real> scalar_workspace,
                          std::span<Real> flux_workspace, std::span<Real> result);
 
+namespace detail {
+void vertical_scalar_rhs_unchecked(
+    std::span<const Real> scalar_mass, std::span<const Real> air_mass_kg_m2,
+    std::span<const Real> horizontal_scalar_tendency, const VerticalMassFlux& mass_flux,
+    VerticalTransportScheme scheme, VerticalLimiterKind limiter,
+    std::span<const Real> interface_coordinate, std::span<const Real> center_coordinate,
+    std::span<Real> scalar_workspace, std::span<Real> flux_workspace,
+    std::span<Real> result);
+}  // namespace detail
+
 }  // namespace mps

@@ -60,9 +60,9 @@ void couple_dry_hydrostatic_columns(const DryHydrostaticState& s,
     }
     const auto apply = [&](const std::span<const Real> state,
                            const std::span<const Real> horizontal) {
-      vertical_scalar_rhs(state, mass, horizontal, f, scheme, limiter,
-                          workspace.interface_coordinate, workspace.center_coordinate,
-                          workspace.scalar, workspace.flux, workspace.rhs);
+      detail::vertical_scalar_rhs_unchecked(
+          state, mass, horizontal, f, scheme, limiter, workspace.interface_coordinate,
+          workspace.center_coordinate, workspace.scalar, workspace.flux, workspace.rhs);
     };
     apply(std::span<const Real>(s.potential_temperature_mass_k_kg_m2.data() + begin,
                                 d.levels),

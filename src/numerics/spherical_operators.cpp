@@ -218,13 +218,12 @@ Vec3 reconstruct_tangent_vector_cached(const CubedSphereGrid& grid,
   if (!is_finite(cell_value)) {
     throw std::invalid_argument("vector reconstruction value is non-finite");
   }
-  const Vec3 increment = project_tangent(gradient.alpha_derivative, cell.center) *
-                             dot(face_displacement_m, basis.alpha) +
-                         project_tangent(gradient.beta_derivative, cell.center) *
-                             dot(face_displacement_m, basis.beta);
+  const Vec3 increment =
+      gradient.alpha_derivative * dot(face_displacement_m, basis.alpha) +
+      gradient.beta_derivative * dot(face_displacement_m, basis.beta);
   const Vec3 reconstructed = parallel_transport(
       project_tangent(cell_value, cell.center) + increment, cell.center, face);
-  return project_tangent(reconstructed, face);
+  return reconstructed;
 }
 
 EdgeTangentBasis edge_tangent_basis(const EdgeGeometry& edge) {

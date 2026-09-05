@@ -70,18 +70,22 @@ struct ScalarReconstruction {
          prepared.factor[cell] * dot(prepared.gradient[cell], edge.face_displacement_m);
 }
 
-[[nodiscard]] const CachedCellEdgeGeometry& cached_cell_edge(
-    const CubedSphereGrid& grid, const std::size_t cell, const std::size_t edge) {
-  for (const auto& cached : grid.cell_cache()[cell].edges) {
-    if (cached.edge == edge) return cached;
-  }
-  throw std::logic_error("cached edge is not incident to cell");
-}
-
 struct VelocityReconstruction {
   std::span<TangentVectorGradient> gradient;
   std::span<Real> factor;
 };
+
+[[nodiscard]] Vec3 reconstruct_velocity_unchecked(
+    const CubedSphereGrid& grid, const std::size_t cell, const Vec3 cell_value,
+    const Vec3 face, const Vec3 displacement, const TangentVectorGradient& gradient) {
+  const auto& cached = grid.cell_cache()[cell];
+  const Vec3 increment =
+      gradient.alpha_derivative * dot(displacement, cached.basis.alpha) +
+      gradient.beta_derivative * dot(displacement, cached.basis.beta);
+  const Vec3 at_cell = cell_value + increment;
+  const Vec3 center = grid.cells()[cell].center;
+  return at_cell - (dot(at_cell, face) / (1.0 + dot(center, face))) * (center + face);
+}
 
 // Limits the reconstructed tangent velocity the same way the shallow-water path does:
 // the face normal and tangent components stay inside the neighbourhood range and the
@@ -105,21 +109,22 @@ struct VelocityReconstruction {
       const EdgeTangentBasis basis{edge_cache.normal, edge_cache.tangent};
       const Vec3 center_at_face = project_tangent(velocity[cell], edge.center);
       const Vec3 increment =
-          reconstruct_tangent_vector_cached(grid, cell, velocity[cell], edge.center,
-                                            cached_edge.normalized_face_displacement_m,
-                                            result.gradient[cell]) -
+          reconstruct_velocity_unchecked(grid, cell, velocity[cell], edge.center,
+                                         cached_edge.normalized_face_displacement_m,
+                                         result.gradient[cell]) -
           center_at_face;
       Real minimum_normal = dot(center_at_face, basis.normal);
       Real maximum_normal = minimum_normal;
       Real minimum_tangent = dot(center_at_face, basis.tangent);
       Real maximum_tangent = minimum_tangent;
       for (const auto& neighbor_edge : grid.cell_cache()[cell].edges) {
-        const Vec3 at_face =
-            project_tangent(velocity[neighbor_edge.neighbor], edge.center);
-        minimum_normal = std::min(minimum_normal, dot(at_face, basis.normal));
-        maximum_normal = std::max(maximum_normal, dot(at_face, basis.normal));
-        minimum_tangent = std::min(minimum_tangent, dot(at_face, basis.tangent));
-        maximum_tangent = std::max(maximum_tangent, dot(at_face, basis.tangent));
+        const Vec3 neighbor_velocity = velocity[neighbor_edge.neighbor];
+        minimum_normal = std::min(minimum_normal, dot(neighbor_velocity, basis.normal));
+        maximum_normal = std::max(maximum_normal, dot(neighbor_velocity, basis.normal));
+        minimum_tangent =
+            std::min(minimum_tangent, dot(neighbor_velocity, basis.tangent));
+        maximum_tangent =
+            std::max(maximum_tangent, dot(neighbor_velocity, basis.tangent));
       }
       result.factor[cell] =
           std::min(result.factor[cell], barth_factor(dot(center_at_face, basis.normal),
@@ -144,7 +149,7 @@ struct VelocityReconstruction {
                                         const std::span<const Vec3> velocity,
                                         const VelocityReconstruction& prepared) {
   const Vec3 center_at_face = project_tangent(velocity[cell], edge.center);
-  const Vec3 unlimited = reconstruct_tangent_vector_cached(
+  const Vec3 unlimited = reconstruct_velocity_unchecked(
       grid, cell, velocity[cell], edge.center,
       cached_edge.normalized_face_displacement_m, prepared.gradient[cell]);
   return center_at_face + prepared.factor[cell] * (unlimited - center_at_face);
@@ -273,7 +278,9 @@ void reconstruct_dry_hydrostatic_face_states(
       const auto left = cached_edge.left_cell;
       const auto right = cached_edge.right_cell;
       const auto face = [&](const std::size_t cell) {
-        const auto& cell_edge = cached_cell_edge(grid, cell, edge.id);
+        const std::size_t slot =
+            cell == left ? cached_edge.left_slot : cached_edge.right_slot;
+        const auto& cell_edge = grid.cell_cache()[cell].edges[slot];
         return DryHydrostaticPrimitive{
             .air_mass_kg_m2 =
                 reconstruct_scalar(cell, cell_edge, mass, mass_reconstruction),

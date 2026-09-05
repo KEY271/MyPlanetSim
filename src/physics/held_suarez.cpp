@@ -17,18 +17,20 @@ constexpr Real kSecondsPerDay = 86400.0;
 
 [[nodiscard]] HeldSuarezRates held_suarez_rates_from_trig(
     const Real sine, const Real cosine, const Real pressure_pa,
-    const Real surface_pressure_pa, const PlanetParameters& planet) {
+    const Real surface_pressure_pa, const PlanetParameters& planet,
+    const Real exner = -1.0) {
   if (!std::isfinite(sine) || !std::isfinite(cosine) || !(pressure_pa > 0.0) ||
       !(surface_pressure_pa > 0.0) || pressure_pa > surface_pressure_pa) {
     throw std::invalid_argument("Held-Suarez pressure or latitude is invalid");
   }
   const Real pressure_ratio = pressure_pa / planet.reference_pressure_pa;
-  const Real kappa = planet.gas_constant_j_kg_k / planet.heat_capacity_cp_j_kg_k;
+  const Real pressure_exner =
+      exner > 0.0 ? exner : std::pow(pressure_ratio, planet.kappa());
   const Real cosine_squared = cosine * cosine;
   const Real equilibrium = std::max(
       200.0,
       (315.0 - 60.0 * sine * sine - 10.0 * std::log(pressure_ratio) * cosine_squared) *
-          std::pow(pressure_ratio, kappa));
+          pressure_exner);
   const Real boundary_weight =
       std::max(0.0, (pressure_pa / surface_pressure_pa - 0.7) / 0.3);
   const Real atmospheric_rate = 1.0 / (40.0 * kSecondsPerDay);
@@ -91,7 +93,6 @@ void held_suarez_tendency(const CubedSphereGrid& grid,
   result.temperature_relaxation_rate_s_1.resize(volume);
   result.rayleigh_drag_rate_s_1.resize(volume);
   workspace.theta_mass_rates.resize(derived.levels);
-  const Real kappa = planet.gas_constant_j_kg_k / planet.heat_capacity_cp_j_kg_k;
   const Real cv = planet.heat_capacity_cp_j_kg_k - planet.gas_constant_j_kg_k;
   const bool has_cached_exner =
       derived.exner_half.size() == derived.cells * (derived.levels + 1) &&
@@ -123,16 +124,14 @@ void held_suarez_tendency(const CubedSphereGrid& grid,
             : std::span<const Real>(workspace.vertical_geometry.exner_full);
     for (std::size_t level = 0; level < derived.levels; ++level) {
       const auto offset = dry_hydrostatic_offset(cell, level, derived.levels);
-      const auto rates = held_suarez_rates_from_trig(sine_latitude, cosine_latitude,
-                                                     derived.pressure_pa[offset],
-                                                     surface_pressure_pa[cell], planet);
+      const auto rates = held_suarez_rates_from_trig(
+          sine_latitude, cosine_latitude, derived.pressure_pa[offset],
+          surface_pressure_pa[cell], planet, derived.exner_full[offset]);
       const Real temperature_rate =
           -rates.temperature_relaxation_rate_s_1 *
           (derived.temperature_k[offset] - rates.equilibrium_temperature_k);
-      const Real exner =
-          std::pow(derived.pressure_pa[offset] / planet.reference_pressure_pa, kappa);
-      const Real theta_mass_rate =
-          derived.air_mass_kg_m2[offset] * temperature_rate / exner;
+      const Real theta_mass_rate = derived.air_mass_kg_m2[offset] * temperature_rate /
+                                   derived.exner_full[offset];
       const Vec3 momentum_rate = -derived.air_mass_kg_m2[offset] *
                                  rates.rayleigh_drag_rate_s_1 *
                                  derived.velocity_m_s[offset];

@@ -241,6 +241,11 @@ CubedSphereGrid::CubedSphereGrid(const Index cells_per_panel, const Real radius_
           .face_coordinates_m = {dot(face_displacement, cache.basis.alpha),
                                  dot(face_displacement, cache.basis.beta)},
       };
+      if (sign == 1) {
+        edge_cache_[edge_id].left_slot = side;
+      } else {
+        edge_cache_[edge_id].right_slot = side;
+      }
       cache.pressure_geometry_correction_m =
           cache.pressure_geometry_correction_m +
           static_cast<Real>(sign) * edge_geometry.length_m * cached_edge.normal;

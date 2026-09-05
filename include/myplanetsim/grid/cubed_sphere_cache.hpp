@@ -30,6 +30,8 @@ struct CachedCellGeometry {
 struct CachedEdgeGeometry {
   std::size_t left_cell;
   std::size_t right_cell;
+  std::size_t left_slot = 0;
+  std::size_t right_slot = 0;
   Vec3 normal;
   Vec3 tangent;
   Vec3 circulation_tangent;

@@ -165,16 +165,30 @@ void vertical_scalar_rhs(
       flux.size() != nz + 1 || rhs.size() != nz) {
     throw std::invalid_argument("vertical scalar transport shapes differ");
   }
-  std::fill(flux.begin(), flux.end(), 0.0);
   for (std::size_t k = 0; k < nz; ++k) {
     require_positive(air_mass_kg_m2[k], "air mass");
     require_finite(scalar_mass[k], "scalar mass");
     require_finite(horizontal_scalar_tendency[k], "horizontal scalar tendency");
-    scalar[k] = scalar_mass[k] / air_mass_kg_m2[k];
   }
+  for (const Real f : mass_flux.interface_flux_kg_m2_s)
+    require_finite(f, "vertical interface mass flux");
+  detail::vertical_scalar_rhs_unchecked(
+      scalar_mass, air_mass_kg_m2, horizontal_scalar_tendency, mass_flux, scheme,
+      limiter, interface_coordinate, center_coordinate, scalar, flux, rhs);
+}
+
+void detail::vertical_scalar_rhs_unchecked(
+    const std::span<const Real> scalar_mass, const std::span<const Real> air_mass_kg_m2,
+    const std::span<const Real> horizontal_scalar_tendency,
+    const VerticalMassFlux& mass_flux, const VerticalTransportScheme scheme,
+    const VerticalLimiterKind limiter, const std::span<const Real> interface_coordinate,
+    const std::span<const Real> center_coordinate, const std::span<Real> scalar,
+    const std::span<Real> flux, const std::span<Real> rhs) {
+  const std::size_t nz = scalar_mass.size();
+  std::fill(flux.begin(), flux.end(), 0.0);
+  for (std::size_t k = 0; k < nz; ++k) scalar[k] = scalar_mass[k] / air_mass_kg_m2[k];
   for (std::size_t interface = 1; interface < nz; ++interface) {
     const Real f = mass_flux.interface_flux_kg_m2_s[interface];
-    require_finite(f, "vertical interface mass flux");
     const std::size_t donor = f >= 0.0 ? interface - 1 : interface;
     Real face = scalar[donor];
     if (scheme == VerticalTransportScheme::kLinear && nz > 1) {
