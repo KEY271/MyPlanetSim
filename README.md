@@ -21,8 +21,13 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
 - [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果
 - [Phase 2 検証報告](docs/validation/phase-2.md): shallow-water 標準試験、保存量、方式比較の検証結果
+- [Phase 3 検証報告](docs/validation/phase-3.md): native gateway、Web UI、control protocol の検証結果と既知 gap
+- [Phase 4 検証報告](docs/validation/phase-4.md): hybrid 鉛直 column、診断、restart の検証結果
+- [Phase 5 検証報告](docs/validation/phase-5.md): 乾燥 3D 静水圧コアの検証結果と production gap
+- [Phase 6 検証報告](docs/validation/phase-6.md): 固定地形と山岳 benchmark の検証結果と production gap
 - [Phase 7 検証報告](docs/validation/phase-7.md): Held--Suarez forcing、online 統計、CI gate と保留中の production matrix
 - [Phase 8 検証報告](docs/validation/phase-8.md): 惑星・軌道、fractional surface、結合熱収支の bounded gate と production gap
+- [Phase 9 検証報告](docs/validation/phase-9.md): 正しさの修正、平衡 benchmark、性能 gate と既知の数値的制約
 - [cubed-sphere panel ADR](docs/adr/0001-cubed-sphere-panel-conventions.md): panel、edge、向き、flux 符号規約
 - [shallow-water state ADR](docs/adr/0002-shallow-water-state-and-staggering.md): 予報変数、staggering、flux/source 分割
 - [水平離散化 ADR](docs/adr/0003-shallow-water-horizontal-discretization.md): 基準 Rusanov 法と compatible 候補の比較と採否
@@ -78,10 +83,17 @@ Phase 8 の surface energy balance run は `surface_state.csv` と
 Earth data ではありません。この境界と production matrix の保留項目は
 [Phase 8 検証報告](docs/validation/phase-8.md)に記録しています。
 
-Phase 0 の科学・ソフトウェア基盤、Phase 1 の cubed-sphere 幾何・球面受動
-輸送、Phase 2 の全球 shallow-water、および Phase 3 の C++ 制御付き Web 可視化
-基盤はローカル検証を完了しています。Phase 3 の検証結果と既知 gap は
-[Phase 3 検証報告](docs/validation/phase-3.md)に記録しています。
+## 開発状況
+
+Phase 9 までの限定した実装・検証範囲は完了しています。球面輸送、全球 shallow-water、
+乾燥 3D 静水圧コア、固定地形、理想化乾燥物理、惑星・軌道・陸海 surface、Web 可視化に加え、
+演算子・CFL・平衡初期場の修正と静的 cache・性能 gate を実装しています。詳細と再現手順は
+[Phase 9 検証報告](docs/validation/phase-9.md)を参照してください。
+
+本プロジェクトは研究・開発段階の実験的ソフトウェアです。Phase 5--7 の production 規模の
+長時間積分は未実施で、DCMIP 2-0-0 の terrain-following pressure-gradient error は格子細分化で
+収束しない既知の数値的制約があります。現時点の結果を production climate validation として
+扱わないでください。
 
 ### Web UI と native gateway
 
@@ -190,3 +202,7 @@ MyPlanetSim/
 ```
 
 構成は各開発段階の開始時に必要最小限だけ追加し、計画上の候補を先回りして空ディレクトリ化しません。
+
+## ライセンス
+
+このプロジェクトは [MIT License](LICENSE) の下で公開します。
