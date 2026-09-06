@@ -25,10 +25,27 @@ struct DryHydrostaticSemiImplicitWorkspace {
   std::vector<Real> helmholtz_divergence;
   DryHydrostaticFastPerturbation correction;
   DryHydrostaticFastTendency external_tendency;
+  DryHydrostaticFastPerturbation scalar_right_hand_side;
+  DryHydrostaticFastTendency scalar_force;
+  DryHydrostaticFastPerturbation momentum_perturbation;
+  DryHydrostaticFastTendency momentum_scalar_tendency;
+  std::vector<Vec3> effective_momentum;
+  std::vector<Vec3> modal_momentum;
+  std::vector<Real> modal_divergence;
+  std::vector<Real> modal_solution;
 };
 
 struct DryHydrostaticExternalSolveResult {
   GmresResult linear;
+  Real equation_residual_norm = 0.0;
+};
+
+struct DryHydrostaticModalSolveResult {
+  bool all_converged = false;
+  std::size_t selected_modes = 0;
+  std::size_t linear_iterations_total = 0;
+  std::size_t linear_iterations_maximum = 0;
+  Real linear_relative_residual_maximum = 0.0;
   Real equation_residual_norm = 0.0;
 };
 
@@ -52,6 +69,18 @@ solve_dry_hydrostatic_external_mode_correction(
     const CubedSphereGrid& grid, const PlanetParameters& planet,
     const DryHydrostaticFastOperator& fast_operator,
     const DryHydrostaticExternalModeOperator& external_operator, Real implicit_time_s,
+    const DryHydrostaticFastPerturbation& right_hand_side, const GmresOptions& options,
+    DryHydrostaticFastPerturbation& correction,
+    DryHydrostaticSemiImplicitWorkspace& workspace);
+
+// Apply the exact vertical modal factorization to the selected wave modes. Modes
+// below the selection threshold retain the identity correction, leaving their
+// small-Courant response to the outer nonlinear iteration.
+[[nodiscard]] DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
+    const CubedSphereGrid& grid, const PlanetParameters& planet,
+    const DryHydrostaticFastOperator& fast_operator,
+    const DryHydrostaticVerticalModes& modes,
+    std::span<const std::size_t> selected_modes, Real implicit_time_s,
     const DryHydrostaticFastPerturbation& right_hand_side, const GmresOptions& options,
     DryHydrostaticFastPerturbation& correction,
     DryHydrostaticSemiImplicitWorkspace& workspace);

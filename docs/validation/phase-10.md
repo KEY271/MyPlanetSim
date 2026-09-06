@@ -147,3 +147,22 @@ semi-implicit step still obeys the separately diagnosed material-advection, vert
 diffusion, and surface-reservoir limits. Retry-on-failure and detailed solver diagnostics
 remain P10.10/P10.11 work; this milestone rejects a failed solve rather than accepting
 it.
+
+## P10.09 selected internal gravity modes
+
+The production reference operator now constructs the complete level-by-level vertical
+wave matrix from the same hybrid-`B` continuity recurrence, reference-theta transport,
+and pressure/hydrostatic diagnostic Jacobian used by `L_ref`. A real shifted-QR
+decomposition orders its positive eigenvalues by descending phase speed and stores both
+the right modal basis and its inverse. Projection followed by reconstruction round-trips
+arbitrary column profiles, and every registered eigenpair satisfies the original
+vertical matrix to the test tolerance.
+
+For each mode whose requested-step Courant number exceeds the configured threshold, the
+quasi-Newton inverse solves an independent two-dimensional Helmholtz problem. Modes
+below the threshold retain the identity correction and are left to the outer nonlinear
+iteration; exceeding the configured cap remains an error. Selecting every mode in the
+four-level fixture reproduces `[I - alpha*dt*L_ref]` to `2e-8` scaled error after direct
+substitution. The `N=12`, `K=20`, 1,800 s dry linear-wave gate selects more than the
+external mode and accepts the step while preserving the scalar integrals established by
+P10.08.

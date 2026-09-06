@@ -112,6 +112,73 @@ MPS_TEST_CASE("external-mode Helmholtz solve inverts the coupled correction") {
   MPS_CHECK(solve.linear.iterations < 80);
 }
 
+MPS_TEST_CASE("all selected vertical modes invert the multi-level fast operator") {
+  const auto c = coordinate();
+  const auto reference =
+      mps::make_dry_hydrostatic_reference_column(c, planet, parameters);
+  const auto fast = mps::make_dry_hydrostatic_fast_operator(c, planet, reference);
+  const auto modes = mps::make_dry_hydrostatic_vertical_modes(reference, planet, fast);
+  const mps::CubedSphereGrid grid(3, planet.radius_m);
+  const auto cells = grid.cell_count();
+  const auto volume = cells * fast.levels;
+  mps::DryHydrostaticFastPerturbation right_hand_side{
+      .surface_pressure_pa = std::vector<mps::Real>(cells),
+      .horizontal_momentum_mass_kg_m_s = std::vector<mps::Vec3>(volume),
+      .potential_temperature_mass_k_kg_m2 = std::vector<mps::Real>(volume)};
+  for (std::size_t cell = 0; cell < cells; ++cell) {
+    const auto center = grid.cells()[cell].center;
+    right_hand_side.surface_pressure_pa[cell] = 7.0 * center.x;
+    const auto tangent = mps::project_tangent({center.z, -center.x, center.y}, center);
+    for (std::size_t level = 0; level < fast.levels; ++level) {
+      const auto n = mps::dry_hydrostatic_offset(cell, level, fast.levels);
+      right_hand_side.horizontal_momentum_mass_kg_m_s[n] =
+          (1.0 + 0.3 * static_cast<mps::Real>(level)) * tangent;
+      right_hand_side.potential_temperature_mass_k_kg_m2[n] =
+          (0.2 + static_cast<mps::Real>(level)) * center.z;
+    }
+  }
+  const std::vector<std::size_t> selected = {0, 1, 2, 3};
+  mps::DryHydrostaticSemiImplicitWorkspace workspace;
+  mps::DryHydrostaticFastPerturbation correction;
+  const auto solve = mps::solve_dry_hydrostatic_modal_correction(
+      grid, planet, fast, modes, selected, 700.0, right_hand_side,
+      {.restart = 20,
+       .maximum_iterations = 80,
+       .relative_tolerance = 1.0e-10,
+       .absolute_tolerance = 1.0e-12},
+      correction, workspace);
+  MPS_CHECK(solve.all_converged);
+  MPS_CHECK_EQ(solve.selected_modes, 4U);
+
+  mps::DryHydrostaticFastOperatorWorkspace operator_workspace;
+  mps::DryHydrostaticFastTendency tendency;
+  mps::apply_dry_hydrostatic_fast_operator(grid, planet, fast, correction, tendency,
+                                           operator_workspace);
+  mps::Real residual = 0.0;
+  mps::Real scale = 1.0;
+  for (std::size_t cell = 0; cell < cells; ++cell) {
+    residual =
+        std::max(residual, std::abs(correction.surface_pressure_pa[cell] -
+                                    700.0 * tendency.surface_pressure_pa_s[cell] -
+                                    right_hand_side.surface_pressure_pa[cell]));
+    scale = std::max(scale, std::abs(right_hand_side.surface_pressure_pa[cell]));
+  }
+  for (std::size_t n = 0; n < volume; ++n) {
+    residual = std::max(residual,
+                        mps::norm(correction.horizontal_momentum_mass_kg_m_s[n] -
+                                  700.0 * tendency.tendency.momentum[n] -
+                                  right_hand_side.horizontal_momentum_mass_kg_m_s[n]));
+    residual = std::max(
+        residual, std::abs(correction.potential_temperature_mass_k_kg_m2[n] -
+                           700.0 * tendency.tendency.potential_temperature_mass[n] -
+                           right_hand_side.potential_temperature_mass_k_kg_m2[n]));
+    scale =
+        std::max({scale, mps::norm(right_hand_side.horizontal_momentum_mass_kg_m_s[n]),
+                  std::abs(right_hand_side.potential_temperature_mass_k_kg_m2[n])});
+  }
+  MPS_CHECK(residual < 2.0e-8 * scale);
+}
+
 MPS_TEST_CASE("external-mode operator preserves fast scalar integrals") {
   const auto c = coordinate();
   const auto reference =
@@ -162,6 +229,11 @@ MPS_TEST_CASE("external-mode operator preserves fast scalar integrals") {
 MPS_TEST_CASE("dry linear wave accepts one 1800-second Crank-Nicolson step") {
   const auto config = long_step_config();
   mps::DryHydrostaticDriver driver(config);
+  const auto selected = mps::select_implicit_vertical_modes(
+      driver.grid(), *driver.semi_implicit_vertical_modes(), config.run.time_step_s,
+      config.semi_implicit->wave_cfl_threshold,
+      static_cast<std::size_t>(config.semi_implicit->maximum_implicit_modes));
+  MPS_CHECK(selected.size() > 1);
   auto state = driver.initial_state();
   const auto initial_rhs = driver.rhs(state);
   MPS_CHECK(initial_rhs.horizontal_fast_wave_stable_time_step_s <

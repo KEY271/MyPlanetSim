@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "myplanetsim/dynamics/dry_hydrostatic_fast_modes.hpp"
+#include "myplanetsim/dynamics/dry_hydrostatic_fast_operator.hpp"
 #include "support/test.hpp"
 
 namespace {
@@ -88,6 +89,41 @@ MPS_TEST_CASE("mode selection uses the cell Courant sum and enforces its cap") {
   MPS_CHECK_EQ(selected.front(), 0U);
   MPS_CHECK_THROWS_AS(mps::select_implicit_vertical_modes(grid, modes, 1800.0, 0.45, 0),
                       std::invalid_argument);
+}
+
+MPS_TEST_CASE("full vertical modes diagonalize the reference fast structure") {
+  const auto c = coordinate();
+  const auto reference =
+      mps::make_dry_hydrostatic_reference_column(c, planet, parameters);
+  const auto fast = mps::make_dry_hydrostatic_fast_operator(c, planet, reference);
+  const auto modes = mps::make_dry_hydrostatic_vertical_modes(reference, planet, fast);
+  MPS_CHECK_EQ(modes.mode_count(), 4U);
+  MPS_CHECK_EQ(modes.vertical_structure_m2_s2.size(), 16U);
+  for (std::size_t mode = 0; mode < modes.mode_count(); ++mode) {
+    MPS_CHECK(modes.phase_speed_m_s[mode] > 0.0);
+    if (mode > 0)
+      MPS_CHECK(modes.phase_speed_m_s[mode - 1] >= modes.phase_speed_m_s[mode]);
+    const auto eigenvector = modes.eigenvector(mode);
+    mps::Real residual = 0.0;
+    mps::Real scale = 0.0;
+    for (std::size_t row = 0; row < modes.levels; ++row) {
+      mps::Real actual = 0.0;
+      for (std::size_t column = 0; column < modes.levels; ++column)
+        actual += modes.vertical_structure_m2_s2[row * modes.levels + column] *
+                  eigenvector[column];
+      const mps::Real expected = modes.eigenvalue_m2_s2[mode] * eigenvector[row];
+      residual = std::max(residual, std::abs(actual - expected));
+      scale = std::max(scale, std::abs(expected));
+    }
+    MPS_CHECK(residual < 2.0e-8 * std::max(1.0, scale));
+  }
+  const std::vector<mps::Real> profile = {1.0, -2.0, 0.5, 4.0};
+  std::vector<mps::Real> modal(4);
+  std::vector<mps::Real> reconstructed(4);
+  mps::project_onto_vertical_modes(modes, profile, modal);
+  mps::reconstruct_from_vertical_modes(modes, modal, reconstructed);
+  for (std::size_t level = 0; level < profile.size(); ++level)
+    MPS_CHECK_NEAR(reconstructed[level], profile[level], 2.0e-11);
 }
 
 int main() { return mps::test::run_all(); }

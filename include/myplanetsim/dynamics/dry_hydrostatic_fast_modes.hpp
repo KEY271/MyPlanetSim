@@ -11,6 +11,8 @@
 
 namespace mps {
 
+struct DryHydrostaticFastOperator;
+
 struct DryHydrostaticReferenceColumn {
   Real surface_pressure_pa = 0.0;
   Real temperature_k = 0.0;
@@ -20,13 +22,18 @@ struct DryHydrostaticReferenceColumn {
   HydrostaticColumn hydrostatic;
 };
 
-// Eigenvectors are stored mode-major. P10.06 registers the external mode; P10.09
-// extends this same representation with the internal gravity modes.
+// Eigenvectors are stored mode-major. The full basis contains the external mode
+// followed by internal gravity modes in descending phase-speed order.
 struct DryHydrostaticVerticalModes {
   std::size_t levels = 0;
   std::vector<Real> phase_speed_m_s;
   std::vector<Real> eigenvalue_m2_s2;
+  // Right eigenvectors are mode-major. inverse_eigenvectors contains the
+  // corresponding rows of V^-1 and is used for projection when the vertical
+  // structure matrix is not symmetric in prognostic momentum variables.
   std::vector<Real> eigenvectors;
+  std::vector<Real> inverse_eigenvectors;
+  std::vector<Real> vertical_structure_m2_s2;
 
   [[nodiscard]] std::size_t mode_count() const noexcept {
     return phase_speed_m_s.size();
@@ -40,6 +47,10 @@ struct DryHydrostaticVerticalModes {
 
 [[nodiscard]] DryHydrostaticVerticalModes make_dry_hydrostatic_external_mode(
     const DryHydrostaticReferenceColumn& reference, const PlanetParameters& planet);
+
+[[nodiscard]] DryHydrostaticVerticalModes make_dry_hydrostatic_vertical_modes(
+    const DryHydrostaticReferenceColumn& reference, const PlanetParameters& planet,
+    const DryHydrostaticFastOperator& fast_operator);
 
 [[nodiscard]] std::vector<std::size_t> select_implicit_vertical_modes(
     const CubedSphereGrid& grid, const DryHydrostaticVerticalModes& modes,

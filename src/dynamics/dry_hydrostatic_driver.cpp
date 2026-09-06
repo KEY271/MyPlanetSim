@@ -302,10 +302,11 @@ DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
           "semi-implicit dry driver requires semi-implicit parameters");
     semi_implicit_reference_column_ = make_dry_hydrostatic_reference_column(
         coordinate_, config_.planet, *config_.semi_implicit);
-    semi_implicit_vertical_modes_ = make_dry_hydrostatic_external_mode(
-        *semi_implicit_reference_column_, config_.planet);
     semi_implicit_fast_operator_ = make_dry_hydrostatic_fast_operator(
         coordinate_, config_.planet, *semi_implicit_reference_column_);
+    semi_implicit_vertical_modes_ = make_dry_hydrostatic_vertical_modes(
+        *semi_implicit_reference_column_, config_.planet,
+        *semi_implicit_fast_operator_);
     semi_implicit_external_operator_ = make_dry_hydrostatic_external_mode_operator(
         *semi_implicit_reference_column_, *semi_implicit_vertical_modes_);
   }
@@ -656,6 +657,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     const auto& parameters = *config_.semi_implicit;
     const auto& reference = *semi_implicit_reference_column_;
     const auto& fast_operator = *semi_implicit_fast_operator_;
+    const auto& vertical_modes = *semi_implicit_vertical_modes_;
     const auto& external_operator = *semi_implicit_external_operator_;
     const GmresOptions linear_options{
         .restart = static_cast<std::size_t>(parameters.gmres_restart),
@@ -678,6 +680,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       if (dt < parameters.minimum_time_step_s && dt < end - initial.time_s)
         throw std::runtime_error(
             "semi-implicit dry time step is below the configured minimum");
+      const auto selected_modes = select_implicit_vertical_modes(
+          grid_, vertical_modes, dt, parameters.wave_cfl_threshold,
+          static_cast<std::size_t>(parameters.maximum_implicit_modes));
 
       DryHydrostaticState candidate = initial;
       candidate.time_s = initial.time_s + dt;
@@ -699,14 +704,13 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         }
         if (iteration == parameters.nonlinear_maximum_iterations) break;
         const auto correction_rhs = negative_fast_residual(residual);
-        const auto solve = solve_dry_hydrostatic_external_mode_correction(
-            grid_, config_.planet, fast_operator, external_operator,
+        const auto solve = solve_dry_hydrostatic_modal_correction(
+            grid_, config_.planet, fast_operator, vertical_modes, selected_modes,
             parameters.implicit_weight * dt, correction_rhs, linear_options,
             semi_implicit_workspace_.correction, semi_implicit_workspace_);
-        if (!solve.linear.converged() ||
+        if (!solve.all_converged ||
             solve.equation_residual_norm > 10.0 * parameters.linear_relative_tolerance)
-          throw std::runtime_error(
-              "semi-implicit external-mode linear solve did not converge");
+          throw std::runtime_error("semi-implicit modal linear solve did not converge");
         add_semi_implicit_correction(candidate, semi_implicit_workspace_.correction,
                                      residual);
         project_momentum(candidate);
