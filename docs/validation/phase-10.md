@@ -184,3 +184,24 @@ the first retry leaves the caller state unchanged and produces a fatal error. A 
 3,600 s test compares one uninterrupted call with two 1,800 s calls and obtains the same
 step count, step sequence, and prognostic arrays bit-for-bit without storing tendency
 history.
+
+## P10.11 solver and Courant diagnostics
+
+Each accepted semi-implicit step now carries the configured/requested and accepted time
+steps; material-advection, implicit-wave, and vertical Courant numbers; selected mode
+count; total and maximum per-mode GMRES iterations; maximum linear residual; nonlinear
+iteration and residual; retry count; and wall time split among full RHS evaluation,
+modal linear solves, and the complete step. Rejected-attempt work is included in the
+iteration, retry, and timing totals so the reported cost cannot hide recovery work.
+
+Standalone runs write sampled values to `semi_implicit_diagnostics.csv` without changing
+legacy explicit CSV schemas. Run metadata additionally records every reference vertical
+mode phase speed in descending order; the active semi-implicit configuration remains in
+the canonical configuration/fingerprint block established by P10.05.
+
+The production modal path now uses caller-owned divergence edge fluxes, Helmholtz
+diagonals, mode masks, and persistent GMRES callables. The allocation gate warms the
+workspace once and measures zero heap allocations on the following multi-mode solve.
+`benchmark_semi_implicit CONFIG [--steps COUNT]` reports seconds per model day, accepted
+step range, GMRES work, retries, RHS/linear/unattributed time, and peak RSS for the
+long-step presets registered at P10.13.

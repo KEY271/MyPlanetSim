@@ -33,6 +33,13 @@ struct DryHydrostaticSemiImplicitWorkspace {
   std::vector<Vec3> modal_momentum;
   std::vector<Real> modal_divergence;
   std::vector<Real> modal_solution;
+  std::vector<Real> vector_divergence_edge_flux;
+  std::vector<Real> helmholtz_inverse_diagonal;
+  std::vector<unsigned char> selected_mode_mask;
+  const CubedSphereGrid* active_modal_grid = nullptr;
+  Real active_modal_coefficient_m2 = 0.0;
+  GmresLinearOperator modal_helmholtz_operator;
+  GmresPreconditioner modal_helmholtz_preconditioner;
 };
 
 struct DryHydrostaticExternalSolveResult {

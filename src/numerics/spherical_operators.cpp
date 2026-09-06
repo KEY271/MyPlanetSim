@@ -142,8 +142,19 @@ std::vector<Real> finite_volume_curl(const CubedSphereGrid& grid,
 
 std::vector<Real> finite_volume_vector_divergence(
     const CubedSphereGrid& grid, const std::span<const Vec3> cell_vectors) {
-  validate_cell_vectors(grid, cell_vectors);
   std::vector<Real> edge_flux(grid.edge_count());
+  std::vector<Real> divergence(grid.cell_count());
+  finite_volume_vector_divergence(grid, cell_vectors, edge_flux, divergence);
+  return divergence;
+}
+
+void finite_volume_vector_divergence(const CubedSphereGrid& grid,
+                                     const std::span<const Vec3> cell_vectors,
+                                     const std::span<Real> edge_flux,
+                                     const std::span<Real> divergence) {
+  validate_cell_vectors(grid, cell_vectors);
+  if (edge_flux.size() != grid.edge_count() || divergence.size() != grid.cell_count())
+    throw std::invalid_argument("vector divergence workspace shape mismatch");
   for (const auto& edge : grid.edges()) {
     const auto& cached = grid.edge_cache()[edge.id];
     const std::size_t left = cached.left_cell;
@@ -151,7 +162,9 @@ std::vector<Real> finite_volume_vector_divergence(
     const Vec3 average = 0.5 * (cell_vectors[left] + cell_vectors[right]);
     edge_flux[edge.id] = dot(average, edge.outward_normal_from_left) * edge.length_m;
   }
-  return finite_volume_divergence(grid, edge_flux);
+  scatter_oriented_edge_flux(grid, edge_flux, divergence);
+  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell)
+    divergence[cell] = -divergence[cell] / grid.cells()[cell].area_m2;
 }
 
 std::vector<TangentVectorGradient> least_squares_vector_gradient(

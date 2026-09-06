@@ -221,11 +221,11 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
       right_hand_side.horizontal_momentum_mass_kg_m_s.size() != volume ||
       right_hand_side.potential_temperature_mass_k_kg_m2.size() != volume)
     throw std::invalid_argument("modal correction shapes differ");
-  std::vector<bool> selected(levels, false);
+  workspace.selected_mode_mask.assign(levels, 0);
   for (const auto mode : selected_modes) {
-    if (mode >= levels || selected[mode])
+    if (mode >= levels || workspace.selected_mode_mask[mode] != 0)
       throw std::invalid_argument("selected dry vertical modes are invalid");
-    selected[mode] = true;
+    workspace.selected_mode_mask[mode] = 1;
   }
 
   workspace.scalar_right_hand_side = right_hand_side;
@@ -259,35 +259,55 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
                                         .selected_modes = selected_modes.size()};
   workspace.helmholtz_gradient.resize(cells);
   workspace.helmholtz_divergence.resize(cells);
+  workspace.vector_divergence_edge_flux.resize(grid.edge_count());
+  workspace.helmholtz_inverse_diagonal.resize(cells);
+  workspace.active_modal_grid = &grid;
+  if (!workspace.modal_helmholtz_operator) {
+    workspace.modal_helmholtz_operator = [&workspace](const std::span<const Real> input,
+                                                      const std::span<Real> output) {
+      const auto& active_grid = *workspace.active_modal_grid;
+      least_squares_gradient(active_grid, input, workspace.helmholtz_gradient);
+      finite_volume_vector_divergence(active_grid, workspace.helmholtz_gradient,
+                                      workspace.vector_divergence_edge_flux,
+                                      workspace.helmholtz_divergence);
+      for (std::size_t cell = 0; cell < active_grid.cell_count(); ++cell)
+        output[cell] = input[cell] - workspace.active_modal_coefficient_m2 *
+                                         workspace.helmholtz_divergence[cell];
+    };
+    workspace.modal_helmholtz_preconditioner =
+        [&workspace](const std::span<const Real> input, const std::span<Real> output) {
+          for (std::size_t cell = 0; cell < input.size(); ++cell)
+            output[cell] = workspace.helmholtz_inverse_diagonal[cell] * input[cell];
+        };
+  }
   for (std::size_t mode = 0; mode < levels; ++mode) {
-    if (!selected[mode]) continue;
+    if (workspace.selected_mode_mask[mode] == 0) continue;
     workspace.column_momentum.resize(cells);
     for (std::size_t cell = 0; cell < cells; ++cell)
       workspace.column_momentum[cell] =
           workspace.modal_momentum[dry_hydrostatic_offset(cell, mode, levels)];
-    workspace.modal_divergence =
-        finite_volume_vector_divergence(grid, workspace.column_momentum);
+    workspace.modal_divergence.resize(cells);
+    finite_volume_vector_divergence(grid, workspace.column_momentum,
+                                    workspace.vector_divergence_edge_flux,
+                                    workspace.modal_divergence);
     workspace.modal_solution = workspace.modal_divergence;
     const Real coefficient_m2 =
         implicit_time_s * implicit_time_s * modes.eigenvalue_m2_s2[mode];
-    const FiniteVolumeHelmholtzOperator preconditioner(grid, coefficient_m2);
-    const GmresLinearOperator helmholtz = [&](const std::span<const Real> input,
-                                              const std::span<Real> output) {
-      least_squares_gradient(grid, input, workspace.helmholtz_gradient);
-      const auto divergence =
-          finite_volume_vector_divergence(grid, workspace.helmholtz_gradient);
-      std::copy(divergence.begin(), divergence.end(),
-                workspace.helmholtz_divergence.begin());
-      for (std::size_t cell = 0; cell < cells; ++cell)
-        output[cell] = input[cell] - coefficient_m2 * divergence[cell];
-    };
-    const GmresPreconditioner jacobi = [&](const std::span<const Real> input,
-                                           const std::span<Real> output) {
-      preconditioner.apply_jacobi_preconditioner(input, output);
-    };
+    workspace.active_modal_coefficient_m2 = coefficient_m2;
+    for (std::size_t cell = 0; cell < cells; ++cell) {
+      Real laplacian_diagonal = 0.0;
+      for (const auto& edge : grid.cell_cache()[cell].edges) {
+        laplacian_diagonal += grid.edges()[edge.edge].length_m /
+                              (grid.cells()[cell].area_m2 *
+                               grid.edge_cache()[edge.edge].center_distance_m);
+      }
+      workspace.helmholtz_inverse_diagonal[cell] =
+          1.0 / (1.0 + coefficient_m2 * laplacian_diagonal);
+    }
     const auto linear =
-        restarted_gmres(helmholtz, workspace.modal_divergence, workspace.modal_solution,
-                        options, workspace.gmres, jacobi);
+        restarted_gmres(workspace.modal_helmholtz_operator, workspace.modal_divergence,
+                        workspace.modal_solution, options, workspace.gmres,
+                        workspace.modal_helmholtz_preconditioner);
     result.linear_iterations_total += linear.iterations;
     result.linear_iterations_maximum =
         std::max(result.linear_iterations_maximum, linear.iterations);

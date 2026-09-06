@@ -254,7 +254,13 @@ MPS_TEST_CASE("dry linear wave accepts one 1800-second Crank-Nicolson step") {
     return std::pair{pressure, potential_temperature_mass};
   };
   const auto initial_integrals = scalar_integrals(state);
-  driver.advance(state, config.run.end_time_s);
+  mps::DryHydrostaticStepDiagnostics step_diagnostics;
+  driver.advance(
+      state, config.run.end_time_s,
+      [&](const mps::DryHydrostaticState& sampled, const mps::DryHydrostaticDerived*,
+          const mps::DryHydrostaticStepDiagnostics& step) {
+        if (sampled.step > 0) step_diagnostics = step;
+      });
   MPS_CHECK_EQ(state.step, 1U);
   MPS_CHECK_NEAR(state.time_s, 1800.0, 0.0);
   mps::Real maximum_pressure_change = 0.0;
@@ -270,6 +276,21 @@ MPS_TEST_CASE("dry linear wave accepts one 1800-second Crank-Nicolson step") {
                  2.0e-12 * std::abs(initial_integrals.first));
   MPS_CHECK_NEAR(final_integrals.second, initial_integrals.second,
                  2.0e-12 * std::abs(initial_integrals.second));
+  MPS_CHECK_NEAR(step_diagnostics.requested_time_step_s, 1800.0, 0.0);
+  MPS_CHECK_NEAR(step_diagnostics.accepted_time_step_s, 1800.0, 0.0);
+  MPS_CHECK(step_diagnostics.implicit_wave_courant >= 3.0);
+  MPS_CHECK(step_diagnostics.selected_implicit_modes > 1);
+  MPS_CHECK(step_diagnostics.linear_iterations_total > 0);
+  MPS_CHECK(step_diagnostics.linear_iterations_maximum > 0);
+  MPS_CHECK(step_diagnostics.linear_relative_residual_maximum < 1.0e-9);
+  MPS_CHECK(step_diagnostics.nonlinear_iterations > 0);
+  MPS_CHECK(step_diagnostics.nonlinear_relative_residual <=
+            config.semi_implicit->nonlinear_relative_tolerance);
+  MPS_CHECK_EQ(step_diagnostics.retry_count, 0U);
+  MPS_CHECK(step_diagnostics.wall_seconds_rhs >= 0.0);
+  MPS_CHECK(step_diagnostics.wall_seconds_linear_solve >= 0.0);
+  MPS_CHECK(step_diagnostics.wall_seconds_total >=
+            step_diagnostics.wall_seconds_linear_solve);
 }
 
 MPS_TEST_CASE("failed long step retries from the unchanged initial state") {
@@ -279,16 +300,21 @@ MPS_TEST_CASE("failed long step retries from the unchanged initial state") {
   mps::DryHydrostaticDriver retrying_driver(config);
   auto retried = retrying_driver.initial_state();
   bool accepted = false;
+  mps::DryHydrostaticStepDiagnostics retry_diagnostics;
   retrying_driver.advance(
       retried, config.run.end_time_s,
       [&](const mps::DryHydrostaticState& state, const mps::DryHydrostaticDerived*,
-          const mps::DryHydrostaticStepDiagnostics&) {
+          const mps::DryHydrostaticStepDiagnostics& step) {
         if (state.step > 0) accepted = true;
+        if (state.step > 0) retry_diagnostics = step;
       },
       [&] { return accepted; });
   MPS_CHECK_EQ(retried.step, 1U);
   MPS_CHECK(retried.time_s < config.run.time_step_s);
   MPS_CHECK(retried.time_s >= config.semi_implicit->minimum_time_step_s);
+  MPS_CHECK_NEAR(retry_diagnostics.requested_time_step_s, 1800.0, 0.0);
+  MPS_CHECK_NEAR(retry_diagnostics.accepted_time_step_s, retried.time_s, 0.0);
+  MPS_CHECK(retry_diagnostics.retry_count > 0);
 
   mps::DryHydrostaticDriver direct_driver(config);
   auto direct = direct_driver.initial_state();

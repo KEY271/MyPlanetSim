@@ -56,6 +56,21 @@ struct DryHydrostaticStepDiagnostics {
   SurfaceEnergyDiagnostics surface_rates{};
   SurfaceEnergyBudget surface_budget{};
   Real diffusion_energy_contribution_j = 0.0;
+  Real requested_time_step_s = 0.0;
+  Real accepted_time_step_s = 0.0;
+  Real advective_cfl = 0.0;
+  Real implicit_wave_courant = 0.0;
+  Real vertical_cfl = 0.0;
+  std::size_t selected_implicit_modes = 0;
+  std::size_t linear_iterations_total = 0;
+  std::size_t linear_iterations_maximum = 0;
+  Real linear_relative_residual_maximum = 0.0;
+  std::size_t nonlinear_iterations = 0;
+  Real nonlinear_relative_residual = 0.0;
+  std::size_t retry_count = 0;
+  Real wall_seconds_rhs = 0.0;
+  Real wall_seconds_linear_solve = 0.0;
+  Real wall_seconds_total = 0.0;
 };
 // The derived pointer is non-null at the configured diagnostic interval, initially,
 // and at the final time. Step-integrated budgets are delivered on every accepted step.

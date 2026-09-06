@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <limits>
 #include <numeric>
+#include <ostream>
 #include <stdexcept>
 
 #include "myplanetsim/core/validation.hpp"
@@ -398,6 +400,39 @@ std::vector<std::size_t> select_implicit_vertical_modes(
     throw std::runtime_error(
         "required implicit vertical modes exceed the configured maximum");
   return selected;
+}
+
+Real maximum_vertical_mode_courant(const CubedSphereGrid& grid,
+                                   const DryHydrostaticVerticalModes& modes,
+                                   const Real time_step_s) {
+  require_positive(time_step_s, "semi-implicit wave Courant time step");
+  if (modes.mode_count() == 0 || !(modes.phase_speed_m_s.front() > 0.0) ||
+      !std::isfinite(modes.phase_speed_m_s.front()))
+    throw std::invalid_argument("dry vertical modes are empty or malformed");
+  Real maximum_geometry_factor_m_inverse = 0.0;
+  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
+    Real perimeter = 0.0;
+    for (const auto& edge : grid.cell_cache()[cell].edges)
+      perimeter += grid.edges()[edge.edge].length_m;
+    maximum_geometry_factor_m_inverse = std::max(
+        maximum_geometry_factor_m_inverse, perimeter / grid.cells()[cell].area_m2);
+  }
+  return time_step_s * modes.phase_speed_m_s.front() *
+         maximum_geometry_factor_m_inverse;
+}
+
+void write_dry_hydrostatic_vertical_mode_metadata(
+    std::ostream& output, const DryHydrostaticVerticalModes& modes) {
+  if (modes.mode_count() == 0 || modes.eigenvalue_m2_s2.size() != modes.mode_count())
+    throw std::invalid_argument("dry vertical modes are empty or malformed");
+  output << std::setprecision(std::numeric_limits<Real>::max_digits10)
+         << "semi_implicit.vertical_mode_count = " << modes.mode_count() << '\n';
+  for (std::size_t mode = 0; mode < modes.mode_count(); ++mode) {
+    output << "semi_implicit.mode_" << mode
+           << "_phase_speed_m_s = " << modes.phase_speed_m_s[mode] << '\n';
+  }
+  if (!output)
+    throw std::runtime_error("failed while writing dry vertical mode metadata");
 }
 
 void project_onto_vertical_modes(const DryHydrostaticVerticalModes& modes,

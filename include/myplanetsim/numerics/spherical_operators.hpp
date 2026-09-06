@@ -31,6 +31,10 @@ void least_squares_gradient(const CubedSphereGrid& grid,
                                                    std::span<const Vec3> cell_vectors);
 [[nodiscard]] std::vector<Real> finite_volume_vector_divergence(
     const CubedSphereGrid& grid, std::span<const Vec3> cell_vectors);
+void finite_volume_vector_divergence(const CubedSphereGrid& grid,
+                                     std::span<const Vec3> cell_vectors,
+                                     std::span<Real> oriented_edge_flux,
+                                     std::span<Real> divergence);
 [[nodiscard]] std::vector<TangentVectorGradient> least_squares_vector_gradient(
     const CubedSphereGrid& grid, std::span<const Vec3> cell_vectors);
 void least_squares_vector_gradient(const CubedSphereGrid& grid,

@@ -1,6 +1,7 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -264,6 +265,15 @@ void add_semi_implicit_correction(DryHydrostaticState& state,
                          config.dry_hydrostatic.cfl;
   return std::min({advective, rhs.diffusion_stable_time_step_s,
                    rhs.vertical_stable_time_step_s, rhs.surface_stable_time_step_s});
+}
+
+[[nodiscard]] Real courant_from_stable_time_step(const Real time_step_s,
+                                                 const Real configured_cfl,
+                                                 const Real stable_time_step_s) {
+  if (std::isinf(stable_time_step_s)) return 0.0;
+  if (!(stable_time_step_s > 0.0) || !std::isfinite(stable_time_step_s))
+    throw std::runtime_error("stable time step is invalid for Courant diagnostics");
+  return time_step_s * configured_cfl / stable_time_step_s;
 }
 
 }  // namespace
@@ -670,8 +680,27 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     DryHydrostaticRhs candidate_rhs;
     while (s.time_s < end) {
       if (cancel && cancel()) return;
+      const auto step_wall_start = std::chrono::steady_clock::now();
+      Real rhs_wall_seconds = 0.0;
+      Real linear_solve_wall_seconds = 0.0;
+      std::size_t linear_iterations_total = 0;
+      std::size_t linear_iterations_maximum = 0;
+      Real linear_relative_residual_maximum = 0.0;
+      std::size_t accepted_selected_modes = 0;
+      std::size_t accepted_nonlinear_iterations = 0;
+      Real accepted_nonlinear_residual = 0.0;
+      std::size_t retry_count = 0;
       const DryHydrostaticState initial = s;
-      rhs(initial, initial_rhs);
+      const Real requested_dt = std::min(config_.run.time_step_s, end - initial.time_s);
+      const auto timed_rhs = [&](const DryHydrostaticState& state,
+                                 DryHydrostaticRhs& result) {
+        const auto start = std::chrono::steady_clock::now();
+        rhs(state, result);
+        rhs_wall_seconds +=
+            std::chrono::duration<Real>(std::chrono::steady_clock::now() - start)
+                .count();
+      };
+      timed_rhs(initial, initial_rhs);
       Real dt = std::min({config_.run.time_step_s,
                           semi_implicit_explicit_limit(config_, initial_rhs),
                           end - initial.time_s});
@@ -687,12 +716,13 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         const auto selected_modes = select_implicit_vertical_modes(
             grid_, vertical_modes, attempted_dt, parameters.wave_cfl_threshold,
             static_cast<std::size_t>(parameters.maximum_implicit_modes));
+        accepted_selected_modes = selected_modes.size();
         DryHydrostaticState candidate = initial;
         candidate.time_s = initial.time_s + attempted_dt;
         bool converged = false;
         for (Index iteration = 0; iteration <= parameters.nonlinear_maximum_iterations;
              ++iteration) {
-          rhs(candidate, candidate_rhs);
+          timed_rhs(candidate, candidate_rhs);
           if (attempted_dt > semi_implicit_explicit_limit(config_, candidate_rhs))
             throw std::runtime_error("candidate violates an explicit CFL constraint");
           const auto residual =
@@ -700,16 +730,28 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                                       attempted_dt, parameters.implicit_weight);
           const Real residual_norm = scaled_crank_nicolson_residual(
               residual, initial, reference, external_operator);
+          accepted_nonlinear_iterations = static_cast<std::size_t>(iteration);
+          accepted_nonlinear_residual = residual_norm;
           if (residual_norm <= parameters.nonlinear_relative_tolerance) {
             converged = true;
             break;
           }
           if (iteration == parameters.nonlinear_maximum_iterations) break;
           const auto correction_rhs = negative_fast_residual(residual);
+          const auto solve_start = std::chrono::steady_clock::now();
           const auto solve = solve_dry_hydrostatic_modal_correction(
               grid_, config_.planet, fast_operator, vertical_modes, selected_modes,
               parameters.implicit_weight * attempted_dt, correction_rhs, linear_options,
               semi_implicit_workspace_.correction, semi_implicit_workspace_);
+          linear_solve_wall_seconds +=
+              std::chrono::duration<Real>(std::chrono::steady_clock::now() -
+                                          solve_start)
+                  .count();
+          linear_iterations_total += solve.linear_iterations_total;
+          linear_iterations_maximum =
+              std::max(linear_iterations_maximum, solve.linear_iterations_maximum);
+          linear_relative_residual_maximum = std::max(
+              linear_relative_residual_maximum, solve.linear_relative_residual_maximum);
           if (!solve.all_converged || solve.equation_residual_norm >
                                           10.0 * parameters.linear_relative_tolerance)
             throw std::runtime_error("modal linear solve did not converge");
@@ -743,6 +785,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                 std::string(error.what()));
           }
           dt = retry_time_step_s;
+          ++retry_count;
         }
       }
 
@@ -762,7 +805,32 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           .diffusion_energy_contribution_j =
               dt * (explicit_weight * initial_rhs.diffusion_kinetic_energy_rate_w +
                     parameters.implicit_weight *
-                        candidate_rhs.diffusion_kinetic_energy_rate_w)};
+                        candidate_rhs.diffusion_kinetic_energy_rate_w),
+          .requested_time_step_s = requested_dt,
+          .accepted_time_step_s = dt,
+          .advective_cfl =
+              std::max(courant_from_stable_time_step(
+                           dt, config_.dry_hydrostatic.cfl,
+                           initial_rhs.horizontal_advective_stable_time_step_s),
+                       courant_from_stable_time_step(
+                           dt, config_.dry_hydrostatic.cfl,
+                           candidate_rhs.horizontal_advective_stable_time_step_s)),
+          .implicit_wave_courant =
+              maximum_vertical_mode_courant(grid_, vertical_modes, dt),
+          .vertical_cfl = std::max(
+              courant_from_stable_time_step(dt, config_.vertical.cfl,
+                                            initial_rhs.vertical_stable_time_step_s),
+              courant_from_stable_time_step(dt, config_.vertical.cfl,
+                                            candidate_rhs.vertical_stable_time_step_s)),
+          .selected_implicit_modes = accepted_selected_modes,
+          .linear_iterations_total = linear_iterations_total,
+          .linear_iterations_maximum = linear_iterations_maximum,
+          .linear_relative_residual_maximum = linear_relative_residual_maximum,
+          .nonlinear_iterations = accepted_nonlinear_iterations,
+          .nonlinear_relative_residual = accepted_nonlinear_residual,
+          .retry_count = retry_count,
+          .wall_seconds_rhs = rhs_wall_seconds,
+          .wall_seconds_linear_solve = linear_solve_wall_seconds};
       if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
         const auto weighted = [&](const Real first, const Real second) {
           return explicit_weight * first + parameters.implicit_weight * second;
@@ -787,6 +855,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
             grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,
             s.surface_temperature_k, dt, rates, rates, rates);
       }
+      step.wall_seconds_total = std::chrono::duration<Real>(
+                                    std::chrono::steady_clock::now() - step_wall_start)
+                                    .count();
       observe(s, step);
     }
     return;

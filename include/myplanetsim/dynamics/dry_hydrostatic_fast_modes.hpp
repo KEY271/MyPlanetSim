@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iosfwd>
 #include <span>
 #include <vector>
 
@@ -55,6 +56,13 @@ struct DryHydrostaticVerticalModes {
 [[nodiscard]] std::vector<std::size_t> select_implicit_vertical_modes(
     const CubedSphereGrid& grid, const DryHydrostaticVerticalModes& modes,
     Real time_step_s, Real wave_cfl_threshold, std::size_t maximum_implicit_modes);
+
+[[nodiscard]] Real maximum_vertical_mode_courant(
+    const CubedSphereGrid& grid, const DryHydrostaticVerticalModes& modes,
+    Real time_step_s);
+
+void write_dry_hydrostatic_vertical_mode_metadata(
+    std::ostream& output, const DryHydrostaticVerticalModes& modes);
 
 void project_onto_vertical_modes(const DryHydrostaticVerticalModes& modes,
                                  std::span<const Real> level_values,

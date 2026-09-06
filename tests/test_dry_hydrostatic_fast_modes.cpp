@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -124,6 +125,12 @@ MPS_TEST_CASE("full vertical modes diagonalize the reference fast structure") {
   mps::reconstruct_from_vertical_modes(modes, modal, reconstructed);
   for (std::size_t level = 0; level < profile.size(); ++level)
     MPS_CHECK_NEAR(reconstructed[level], profile[level], 2.0e-11);
+  std::ostringstream metadata;
+  mps::write_dry_hydrostatic_vertical_mode_metadata(metadata, modes);
+  MPS_CHECK(metadata.str().find("semi_implicit.vertical_mode_count = 4\n") !=
+            std::string::npos);
+  MPS_CHECK(metadata.str().find("semi_implicit.mode_0_phase_speed_m_s = ") !=
+            std::string::npos);
 }
 
 int main() { return mps::test::run_all(); }

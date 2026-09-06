@@ -142,6 +142,16 @@ set_target_properties(
   benchmark_dry_core PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools"
 )
 
+add_executable(benchmark_semi_implicit tools/benchmark_semi_implicit.cpp)
+target_link_libraries(
+  benchmark_semi_implicit
+  PRIVATE myplanetsim_core myplanetsim_warnings myplanetsim_sanitizers
+)
+set_target_properties(
+  benchmark_semi_implicit
+  PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools"
+)
+
 include(CTest)
 if(BUILD_TESTING)
   add_test(NAME smoke.help COMMAND my_planet_sim --help)
@@ -204,6 +214,17 @@ if(BUILD_TESTING)
     phase4.csv_output
     phase4.checkpoint_restart
     PROPERTIES LABELS phase4_gate
+  )
+  add_test(
+    NAME phase10.semi_implicit_diagnostics
+    COMMAND
+      ${CMAKE_COMMAND} -DMPS_EXECUTABLE=$<TARGET_FILE:my_planet_sim>
+      -DMPS_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/tests/data/phase10_diagnostics.cfg
+      -DMPS_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR} -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase10_diagnostics.cmake
+  )
+  set_tests_properties(
+    phase10.semi_implicit_diagnostics PROPERTIES LABELS phase10_gate
   )
   set_tests_properties(
     smoke.phase1_transport

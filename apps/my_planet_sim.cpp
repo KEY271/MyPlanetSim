@@ -631,6 +631,43 @@ struct SurfaceDiagnosticsRow {
   mps::SurfaceEnergyBudget interval_budget;
 };
 
+struct SemiImplicitDiagnosticsRow {
+  mps::Real time_s;
+  std::uint64_t step;
+  mps::DryHydrostaticStepDiagnostics diagnostics;
+};
+
+void write_semi_implicit_diagnostics(
+    const mps::ExperimentConfig& config,
+    const std::span<const SemiImplicitDiagnosticsRow> rows) {
+  const std::filesystem::path directory(config.output_directory);
+  std::filesystem::create_directories(directory);
+  std::ofstream output(directory / "semi_implicit_diagnostics.csv", std::ios::trunc);
+  if (!output) throw std::runtime_error("unable to open semi-implicit diagnostics CSV");
+  output << "time_s,step,requested_dt_s,accepted_dt_s,advective_cfl,"
+            "implicit_wave_cfl,vertical_cfl,selected_implicit_modes,"
+            "linear_iterations_total,linear_iterations_maximum,"
+            "linear_relative_residual_maximum,nonlinear_iterations,"
+            "nonlinear_relative_residual,retry_count,wall_seconds_rhs,"
+            "wall_seconds_linear_solve,wall_seconds_total\n"
+         << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+  for (const auto& row : rows) {
+    const auto& value = row.diagnostics;
+    output << row.time_s << ',' << row.step << ',' << value.requested_time_step_s << ','
+           << value.accepted_time_step_s << ',' << value.advective_cfl << ','
+           << value.implicit_wave_courant << ',' << value.vertical_cfl << ','
+           << value.selected_implicit_modes << ',' << value.linear_iterations_total
+           << ',' << value.linear_iterations_maximum << ','
+           << value.linear_relative_residual_maximum << ','
+           << value.nonlinear_iterations << ',' << value.nonlinear_relative_residual
+           << ',' << value.retry_count << ',' << value.wall_seconds_rhs << ','
+           << value.wall_seconds_linear_solve << ',' << value.wall_seconds_total
+           << '\n';
+  }
+  if (!output)
+    throw std::runtime_error("failed while writing semi-implicit diagnostics CSV");
+}
+
 void add_surface_budget(mps::SurfaceEnergyBudget& total,
                         const mps::SurfaceEnergyBudget& step) {
   total.absorbed_stellar_energy_j += step.absorbed_stellar_energy_j;
@@ -877,6 +914,7 @@ int main(const int argc, const char* const argv[]) {
         machine_events->emit("run.accepted");
         const mps::DryHydrostaticDriver driver(run_config);
         auto state = driver.initial_state();
+        std::vector<SemiImplicitDiagnosticsRow> semi_implicit_diagnostics;
         MachineFrameV2Context frame_context{
             .directory = run_config.output_directory,
             .config_fingerprint = mps::config_fingerprint(run_config),
@@ -889,11 +927,15 @@ int main(const int argc, const char* const argv[]) {
         std::signal(SIGTERM, request_cancellation);
         driver.advance(
             state, run_config.run.end_time_s,
-            [&frame_context](const mps::DryHydrostaticState& sampled,
-                             const mps::DryHydrostaticDerived* derived,
-                             const mps::DryHydrostaticStepDiagnostics&) {
+            [&frame_context, &semi_implicit_diagnostics](
+                const mps::DryHydrostaticState& sampled,
+                const mps::DryHydrostaticDerived* derived,
+                const mps::DryHydrostaticStepDiagnostics& step) {
               if (derived != nullptr) {
                 write_machine_frame_v2(frame_context, sampled, *derived);
+                semi_implicit_diagnostics.push_back({.time_s = sampled.time_s,
+                                                     .step = sampled.step,
+                                                     .diagnostics = step});
               }
             },
             [] { return g_cancel_requested.load(); });
@@ -909,6 +951,11 @@ int main(const int argc, const char* const argv[]) {
         }
         mps::write_run_metadata(metadata, mps::make_run_metadata(run_config),
                                 run_config);
+        if (driver.semi_implicit_vertical_modes().has_value()) {
+          mps::write_dry_hydrostatic_vertical_mode_metadata(
+              metadata, *driver.semi_implicit_vertical_modes());
+          write_semi_implicit_diagnostics(run_config, semi_implicit_diagnostics);
+        }
         if (run_config.orography.kind != mps::OrographyKind::kFlat) {
           const auto sources = driver.diagnose_sources(derived);
           const auto terrain = mps::diagnose_terrain_budgets(
@@ -957,6 +1004,7 @@ int main(const int argc, const char* const argv[]) {
                                    static_cast<std::size_t>(config.vertical.levels));
       }
       std::vector<SurfaceDiagnosticsRow> surface_diagnostics;
+      std::vector<SemiImplicitDiagnosticsRow> semi_implicit_diagnostics;
       mps::SurfaceEnergyBudget pending_surface_budget;
       ProgressReporter progress(config, state, command_line.progress_interval_s);
       g_cancel_requested.store(false);
@@ -965,7 +1013,7 @@ int main(const int argc, const char* const argv[]) {
       driver.advance(
           state, config.run.end_time_s,
           [&physics_diagnostics, &climate_statistics, &surface_diagnostics,
-           &pending_surface_budget, &progress,
+           &pending_surface_budget, &semi_implicit_diagnostics, &progress,
            &config](const mps::DryHydrostaticState& sampled,
                     const mps::DryHydrostaticDerived* derived,
                     const mps::DryHydrostaticStepDiagnostics& step) {
@@ -977,6 +1025,11 @@ int main(const int argc, const char* const argv[]) {
             }
             if (climate_statistics.has_value() && derived != nullptr) {
               climate_statistics->observe(sampled, *derived);
+            }
+            if (config.semi_implicit.has_value() && derived != nullptr) {
+              semi_implicit_diagnostics.push_back({.time_s = sampled.time_s,
+                                                   .step = sampled.step,
+                                                   .diagnostics = step});
             }
             if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance) {
               add_surface_budget(pending_surface_budget, step.surface_budget);
@@ -1005,6 +1058,8 @@ int main(const int argc, const char* const argv[]) {
         if (!output) throw std::runtime_error("unable to open climate statistics CSV");
         mps::write_climate_statistics_csv(output, climate_statistics->rows());
       }
+      if (driver.semi_implicit_vertical_modes().has_value())
+        write_semi_implicit_diagnostics(config, semi_implicit_diagnostics);
       if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance) {
         const std::filesystem::path directory(config.output_directory);
         std::filesystem::create_directories(directory);
@@ -1086,6 +1141,9 @@ int main(const int argc, const char* const argv[]) {
       const auto diagnostics = mps::diagnose_dry_hydrostatic_budgets(
           driver.grid(), state, derived, config.planet);
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
+      if (driver.semi_implicit_vertical_modes().has_value())
+        mps::write_dry_hydrostatic_vertical_mode_metadata(
+            std::cout, *driver.semi_implicit_vertical_modes());
       if (config.orography.kind != mps::OrographyKind::kFlat) {
         const auto sources = driver.diagnose_sources(derived);
         const auto terrain = mps::diagnose_terrain_budgets(
