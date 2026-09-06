@@ -6,6 +6,7 @@
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_coupling.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_fast_operator.hpp"
+#include "myplanetsim/dynamics/dry_hydrostatic_semi_implicit.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_workspace.hpp"
 #include "myplanetsim/dynamics/surface_boundary.hpp"
 #include "myplanetsim/dynamics/surface_orography.hpp"
@@ -107,7 +108,9 @@ class DryHydrostaticDriver {
   std::optional<DryHydrostaticReferenceColumn> semi_implicit_reference_column_;
   std::optional<DryHydrostaticVerticalModes> semi_implicit_vertical_modes_;
   std::optional<DryHydrostaticFastOperator> semi_implicit_fast_operator_;
+  std::optional<DryHydrostaticExternalModeOperator> semi_implicit_external_operator_;
   mutable DryHydrostaticWorkspace workspace_;
+  mutable DryHydrostaticSemiImplicitWorkspace semi_implicit_workspace_;
 
   void rhs_with_components(const DryHydrostaticState&, DryHydrostaticRhs&,
                            DryHydrostaticRhsComponents*) const;

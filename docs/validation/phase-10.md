@@ -128,3 +128,22 @@ reference rest state, area-weighted global `ps` and `Mtheta` conservation to rou
 and the algebraic `F = L_ref + (F - L_ref)` reconstruction. This commit does not yet
 permit a large driver step; P10.08 supplies and validates the external-mode implicit
 inverse first.
+
+## P10.08 external-mode iterative Crank--Nicolson
+
+The semi-implicit driver path now evaluates the complete nonlinear RHS at both
+Crank--Nicolson time levels and applies reference-linear quasi-Newton corrections until
+the configured scaled residual is met. The external-mode Schur complement is a
+matrix-free two-dimensional Helmholtz problem built from the same centred column-mass
+divergence and least-squares surface-pressure gradient as the correction operator. A
+finite-volume Jacobi approximation preconditions restarted GMRES. Conservative thermal
+back substitution uses the same edge and hybrid-`B` mass fluxes.
+
+`unit.dry_hydrostatic_semi_implicit` directly verifies the coupled inverse and scalar
+conservation. Its `N=12`, `K=20` flat dry linear wave accepts one requested 1,800 s step
+even though that step exceeds the diagnosed explicit Lamb stability limit, while dry
+mass and global `Mtheta` remain conserved to the registered solver tolerance. The
+semi-implicit step still obeys the separately diagnosed material-advection, vertical,
+diffusion, and surface-reservoir limits. Retry-on-failure and detailed solver diagnostics
+remain P10.10/P10.11 work; this milestone rejects a failed solve rather than accepting
+it.
