@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -14,6 +15,7 @@
 #include <numbers>
 #include <optional>
 #include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -47,6 +49,7 @@ struct CommandLine {
   std::optional<std::filesystem::path> restart_path;
   std::optional<std::uint64_t> stop_after_step;
   std::optional<std::filesystem::path> control_request_path;
+  double progress_interval_s = 10.0;
   bool event_stream_ndjson = false;
   bool describe_control = false;
 };
@@ -58,6 +61,8 @@ void print_usage(std::ostream& output) {
          << "  --checkpoint PATH          Write the final or stopped state\n"
          << "  --restart PATH             Continue from a checkpoint\n"
          << "  --stop-after-step N        Stop after absolute step N\n"
+         << "  --progress-interval-s SEC  Dry-core progress interval; 0 disables "
+            "(default: 10)\n"
          << "  --control-request PATH     Run a validated machine control request\n"
          << "  --event-stream ndjson      Emit machine-readable lifecycle events\n"
          << "  --describe-control         Describe the machine control protocol\n"
@@ -69,6 +74,16 @@ void print_usage(std::ostream& output) {
   const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
   if (result.ec != std::errc{} || result.ptr != text.data() + text.size()) {
     throw std::invalid_argument("invalid --stop-after-step value");
+  }
+  return value;
+}
+
+[[nodiscard]] double parse_progress_interval(const std::string_view text) {
+  double value = 0.0;
+  const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
+  if (result.ec != std::errc{} || result.ptr != text.data() + text.size() ||
+      !std::isfinite(value) || value < 0.0) {
+    throw std::invalid_argument("invalid --progress-interval-s value");
   }
   return value;
 }
@@ -99,6 +114,8 @@ void print_usage(std::ostream& output) {
       command_line.restart_path = value;
     } else if (argument == "--stop-after-step") {
       command_line.stop_after_step = parse_step(value);
+    } else if (argument == "--progress-interval-s") {
+      command_line.progress_interval_s = parse_progress_interval(value);
     } else if (argument == "--control-request") {
       command_line.control_request_path = value;
     } else if (argument == "--event-stream") {
@@ -124,6 +141,83 @@ std::atomic_bool g_cancel_requested = false;
 void request_cancellation(const int) noexcept { g_cancel_requested.store(true); }
 
 bool cancellation_requested(void*) noexcept { return g_cancel_requested.load(); }
+
+class ProgressReporter {
+ public:
+  ProgressReporter(const mps::ExperimentConfig& config,
+                   const mps::DryHydrostaticState& initial_state,
+                   const double interval_s)
+      : start_time_s_(config.run.start_time_s),
+        end_time_s_(config.run.end_time_s),
+        initial_model_time_s_(initial_state.time_s),
+        interval_s_(interval_s),
+        wall_start_(std::chrono::steady_clock::now()),
+        last_report_(wall_start_) {}
+
+  void observe(const mps::DryHydrostaticState& state) {
+    if (!(interval_s_ > 0.0)) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (reported_ &&
+        std::chrono::duration<double>(now - last_report_).count() < interval_s_) {
+      return;
+    }
+    emit(state, "running", now);
+    reported_ = true;
+    last_report_ = now;
+  }
+
+  void finish(const mps::DryHydrostaticState& state, const std::string_view status) {
+    if (!(interval_s_ > 0.0)) return;
+    emit(state, status, std::chrono::steady_clock::now());
+  }
+
+ private:
+  [[nodiscard]] static std::string format_duration(const double seconds) {
+    if (!std::isfinite(seconds) || seconds < 0.0) return "unknown";
+    const auto total_seconds = static_cast<std::uint64_t>(std::round(seconds));
+    const auto hours = total_seconds / 3600;
+    const auto minutes = (total_seconds % 3600) / 60;
+    const auto remainder = total_seconds % 60;
+    std::ostringstream result;
+    result << hours << ':' << std::setfill('0') << std::setw(2) << minutes << ':'
+           << std::setw(2) << remainder;
+    return result.str();
+  }
+
+  void emit(const mps::DryHydrostaticState& state, const std::string_view status,
+            const std::chrono::steady_clock::time_point now) const {
+    constexpr double seconds_per_day = 86400.0;
+    const double duration_s = end_time_s_ - start_time_s_;
+    const double completed_s = state.time_s - start_time_s_;
+    const double percent = duration_s > 0.0
+                               ? 100.0 * std::clamp(completed_s / duration_s, 0.0, 1.0)
+                               : 100.0;
+    const double elapsed_s = std::chrono::duration<double>(now - wall_start_).count();
+    const double advanced_s = state.time_s - initial_model_time_s_;
+    const double remaining_s = std::max(0.0, end_time_s_ - state.time_s);
+
+    std::ostringstream line;
+    line << std::fixed << std::setprecision(2) << "progress status=" << status
+         << " step=" << state.step
+         << " model_day=" << (state.time_s - start_time_s_) / seconds_per_day << '/'
+         << duration_s / seconds_per_day << " percent=" << percent
+         << " elapsed=" << format_duration(elapsed_s) << " eta=";
+    if (advanced_s > 0.0) {
+      line << format_duration(elapsed_s * remaining_s / advanced_s);
+    } else {
+      line << "unknown";
+    }
+    std::cerr << line.str() << '\n' << std::flush;
+  }
+
+  double start_time_s_;
+  double end_time_s_;
+  double initial_model_time_s_;
+  double interval_s_;
+  std::chrono::steady_clock::time_point wall_start_;
+  std::chrono::steady_clock::time_point last_report_;
+  bool reported_ = false;
+};
 
 [[nodiscard]] std::string json_escape(const std::string_view value) {
   std::string escaped;
@@ -855,13 +949,18 @@ int main(const int argc, const char* const argv[]) {
       }
       std::vector<SurfaceDiagnosticsRow> surface_diagnostics;
       mps::SurfaceEnergyBudget pending_surface_budget;
+      ProgressReporter progress(config, state, command_line.progress_interval_s);
+      g_cancel_requested.store(false);
+      std::signal(SIGINT, request_cancellation);
+      std::signal(SIGTERM, request_cancellation);
       driver.advance(
           state, config.run.end_time_s,
           [&physics_diagnostics, &climate_statistics, &surface_diagnostics,
-           &pending_surface_budget,
+           &pending_surface_budget, &progress,
            &config](const mps::DryHydrostaticState& sampled,
                     const mps::DryHydrostaticDerived* derived,
                     const mps::DryHydrostaticStepDiagnostics& step) {
+            progress.observe(sampled);
             if (physics_diagnostics.has_value()) {
               physics_diagnostics->observe_step(sampled, step);
               if (derived != nullptr)
@@ -878,7 +977,17 @@ int main(const int argc, const char* const argv[]) {
                 pending_surface_budget = {};
               }
             }
+          },
+          [&state, &command_line] {
+            return g_cancel_requested.load() ||
+                   (command_line.stop_after_step.has_value() &&
+                    state.step >= *command_line.stop_after_step);
           });
+      const bool reached_end_time = state.time_s >= config.run.end_time_s;
+      const bool was_cancelled = g_cancel_requested.load();
+      const std::string_view result_status =
+          reached_end_time ? "complete" : (was_cancelled ? "cancelled" : "stopped");
+      progress.finish(state, result_status);
       if (physics_diagnostics.has_value()) physics_diagnostics->write();
       if (climate_statistics.has_value()) {
         const std::filesystem::path directory(config.output_directory);
@@ -975,11 +1084,13 @@ int main(const int argc, const char* const argv[]) {
             driver.orography().surface_geopotential_m2_s2(), config.planet);
         mps::write_terrain_diagnostics(std::cout, terrain);
       }
-      std::cout << "result.status = complete\nresult.time_s = " << state.time_s
+      std::cout << "result.status = " << result_status
+                << "\nresult.time_s = " << state.time_s
                 << "\nresult.step = " << state.step
                 << "\ndiagnostics.dry_mass_kg = " << diagnostics.dry_mass_kg
                 << "\ndiagnostics.total_energy_j = " << diagnostics.total_energy_j
                 << '\n';
+      if (was_cancelled) return 130;
     } else {
       if (command_line.integrator != mps::IntegratorKind::kSspRk3) {
         throw std::invalid_argument("shallow water supports only ssprk3");

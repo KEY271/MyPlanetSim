@@ -243,5 +243,11 @@ if(BUILD_TESTING)
   set_tests_properties(phase8.csv_output PROPERTIES LABELS phase8_gate)
   add_test(NAME smoke.invalid_cli COMMAND my_planet_sim --unknown value)
   set_tests_properties(smoke.invalid_cli PROPERTIES WILL_FAIL TRUE)
+  add_test(
+    NAME smoke.invalid_progress_interval
+    COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase7_held_suarez_short.cfg
+            --progress-interval-s invalid
+  )
+  set_tests_properties(smoke.invalid_progress_interval PROPERTIES WILL_FAIL TRUE)
   add_subdirectory(tests)
 endif()

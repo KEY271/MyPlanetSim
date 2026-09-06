@@ -77,6 +77,9 @@ Held--Suarez 強制を実行します。
 Held--Suarez run は `physics_diagnostics.csv` と `climate_statistics.csv` を
 `output.directory` に出力します。`phase7_held_suarez_short.cfg` は CI 用であり、1200 日の
 climate conformance を主張する preset ではありません。
+standalone dry-hydrostatic run は10秒ごとに、step、モデル日、進捗率、経過時間、ETAを
+標準エラーへ表示します。間隔は `--progress-interval-s SEC` で変更でき、`0` で無効化できます。
+`Ctrl-C` はpartial diagnosticsと指定済みcheckpointを書いて `result.status = cancelled` で終了します。
 
 Phase 8 の surface energy balance run は `surface_state.csv` と
 `surface_diagnostics.csv` を追加で出力します。checked-in Earth surface product は
