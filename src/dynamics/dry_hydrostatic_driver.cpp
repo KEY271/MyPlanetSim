@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <string>
 
 #include "myplanetsim/dynamics/dry_hydrostatic_benchmarks.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_diffusion.hpp"
@@ -680,51 +681,71 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       if (dt < parameters.minimum_time_step_s && dt < end - initial.time_s)
         throw std::runtime_error(
             "semi-implicit dry time step is below the configured minimum");
-      const auto selected_modes = select_implicit_vertical_modes(
-          grid_, vertical_modes, dt, parameters.wave_cfl_threshold,
-          static_cast<std::size_t>(parameters.maximum_implicit_modes));
-
-      DryHydrostaticState candidate = initial;
-      candidate.time_s = initial.time_s + dt;
-      bool converged = false;
-      for (Index iteration = 0; iteration <= parameters.nonlinear_maximum_iterations;
-           ++iteration) {
-        rhs(candidate, candidate_rhs);
-        if (dt > semi_implicit_explicit_limit(config_, candidate_rhs))
-          throw std::runtime_error(
-              "semi-implicit candidate violates an explicit CFL constraint");
-        const auto residual =
-            crank_nicolson_residual(initial, candidate, initial_rhs, candidate_rhs, dt,
-                                    parameters.implicit_weight);
-        const Real residual_norm = scaled_crank_nicolson_residual(
-            residual, initial, reference, external_operator);
-        if (residual_norm <= parameters.nonlinear_relative_tolerance) {
-          converged = true;
-          break;
+      const Real minimum_retry_time_step_s =
+          std::min(parameters.minimum_time_step_s, end - initial.time_s);
+      const auto attempt_step = [&](const Real attempted_dt) {
+        const auto selected_modes = select_implicit_vertical_modes(
+            grid_, vertical_modes, attempted_dt, parameters.wave_cfl_threshold,
+            static_cast<std::size_t>(parameters.maximum_implicit_modes));
+        DryHydrostaticState candidate = initial;
+        candidate.time_s = initial.time_s + attempted_dt;
+        bool converged = false;
+        for (Index iteration = 0; iteration <= parameters.nonlinear_maximum_iterations;
+             ++iteration) {
+          rhs(candidate, candidate_rhs);
+          if (attempted_dt > semi_implicit_explicit_limit(config_, candidate_rhs))
+            throw std::runtime_error("candidate violates an explicit CFL constraint");
+          const auto residual =
+              crank_nicolson_residual(initial, candidate, initial_rhs, candidate_rhs,
+                                      attempted_dt, parameters.implicit_weight);
+          const Real residual_norm = scaled_crank_nicolson_residual(
+              residual, initial, reference, external_operator);
+          if (residual_norm <= parameters.nonlinear_relative_tolerance) {
+            converged = true;
+            break;
+          }
+          if (iteration == parameters.nonlinear_maximum_iterations) break;
+          const auto correction_rhs = negative_fast_residual(residual);
+          const auto solve = solve_dry_hydrostatic_modal_correction(
+              grid_, config_.planet, fast_operator, vertical_modes, selected_modes,
+              parameters.implicit_weight * attempted_dt, correction_rhs, linear_options,
+              semi_implicit_workspace_.correction, semi_implicit_workspace_);
+          if (!solve.all_converged || solve.equation_residual_norm >
+                                          10.0 * parameters.linear_relative_tolerance)
+            throw std::runtime_error("modal linear solve did not converge");
+          add_semi_implicit_correction(candidate, semi_implicit_workspace_.correction,
+                                       residual);
+          project_momentum(candidate);
+          if (!pressure_is_in_range(config_, candidate) ||
+              !surface_temperature_is_positive(candidate))
+            throw std::runtime_error("correction violates a prognostic invariant");
+          diagnose_and_validate(candidate);
         }
-        if (iteration == parameters.nonlinear_maximum_iterations) break;
-        const auto correction_rhs = negative_fast_residual(residual);
-        const auto solve = solve_dry_hydrostatic_modal_correction(
-            grid_, config_.planet, fast_operator, vertical_modes, selected_modes,
-            parameters.implicit_weight * dt, correction_rhs, linear_options,
-            semi_implicit_workspace_.correction, semi_implicit_workspace_);
-        if (!solve.all_converged ||
-            solve.equation_residual_norm > 10.0 * parameters.linear_relative_tolerance)
-          throw std::runtime_error("semi-implicit modal linear solve did not converge");
-        add_semi_implicit_correction(candidate, semi_implicit_workspace_.correction,
-                                     residual);
-        project_momentum(candidate);
-        if (!pressure_is_in_range(config_, candidate) ||
-            !surface_temperature_is_positive(candidate))
-          throw std::runtime_error(
-              "semi-implicit correction violates a prognostic invariant");
-      }
-      if (!converged)
-        throw std::runtime_error(
-            "semi-implicit Crank-Nicolson iteration did not converge");
+        if (!converged)
+          throw std::runtime_error("Crank-Nicolson iteration did not converge");
+        candidate.step = initial.step + 1;
+        diagnose_and_validate(candidate);
+        return candidate;
+      };
 
-      candidate.step = initial.step + 1;
-      diagnose_and_validate(candidate);
+      DryHydrostaticState candidate;
+      while (true) {
+        try {
+          candidate = attempt_step(dt);
+          break;
+        } catch (const std::runtime_error& error) {
+          const Real retry_time_step_s = 0.5 * dt;
+          if (!(retry_time_step_s > 0.0) ||
+              initial.time_s + retry_time_step_s == initial.time_s ||
+              retry_time_step_s < minimum_retry_time_step_s) {
+            throw std::runtime_error(
+                "semi-implicit dry step failed at the configured minimum: " +
+                std::string(error.what()));
+          }
+          dt = retry_time_step_s;
+        }
+      }
+
       s = std::move(candidate);
       const Real explicit_weight = 1.0 - parameters.implicit_weight;
       DryHydrostaticStepDiagnostics step{

@@ -272,4 +272,75 @@ MPS_TEST_CASE("dry linear wave accepts one 1800-second Crank-Nicolson step") {
                  2.0e-12 * std::abs(initial_integrals.second));
 }
 
+MPS_TEST_CASE("failed long step retries from the unchanged initial state") {
+  auto config = long_step_config();
+  config.semi_implicit->maximum_implicit_modes = 1;
+  config.validate();
+  mps::DryHydrostaticDriver retrying_driver(config);
+  auto retried = retrying_driver.initial_state();
+  bool accepted = false;
+  retrying_driver.advance(
+      retried, config.run.end_time_s,
+      [&](const mps::DryHydrostaticState& state, const mps::DryHydrostaticDerived*,
+          const mps::DryHydrostaticStepDiagnostics&) {
+        if (state.step > 0) accepted = true;
+      },
+      [&] { return accepted; });
+  MPS_CHECK_EQ(retried.step, 1U);
+  MPS_CHECK(retried.time_s < config.run.time_step_s);
+  MPS_CHECK(retried.time_s >= config.semi_implicit->minimum_time_step_s);
+
+  mps::DryHydrostaticDriver direct_driver(config);
+  auto direct = direct_driver.initial_state();
+  direct_driver.advance(direct, retried.time_s);
+  MPS_CHECK_EQ(direct.step, retried.step);
+  MPS_CHECK_NEAR(direct.time_s, retried.time_s, 0.0);
+  for (std::size_t cell = 0; cell < direct.surface_pressure_pa.size(); ++cell)
+    MPS_CHECK_NEAR(direct.surface_pressure_pa[cell], retried.surface_pressure_pa[cell],
+                   0.0);
+  for (std::size_t n = 0; n < direct.horizontal_momentum_mass_kg_m_s.size(); ++n) {
+    MPS_CHECK_NEAR(mps::norm(direct.horizontal_momentum_mass_kg_m_s[n] -
+                             retried.horizontal_momentum_mass_kg_m_s[n]),
+                   0.0, 0.0);
+    MPS_CHECK_NEAR(direct.potential_temperature_mass_k_kg_m2[n],
+                   retried.potential_temperature_mass_k_kg_m2[n], 0.0);
+    MPS_CHECK_NEAR(direct.tracer_mass_kg_m2[n], retried.tracer_mass_kg_m2[n], 0.0);
+  }
+
+  config.semi_implicit->minimum_time_step_s = 1000.0;
+  config.validate();
+  mps::DryHydrostaticDriver minimum_driver(config);
+  auto rejected = minimum_driver.initial_state();
+  MPS_CHECK_THROWS_AS(minimum_driver.advance(rejected, config.run.end_time_s),
+                      std::runtime_error);
+  MPS_CHECK_EQ(rejected.step, 0U);
+  MPS_CHECK_NEAR(rejected.time_s, 0.0, 0.0);
+}
+
+MPS_TEST_CASE("semi-implicit continuation is deterministic without time history") {
+  const auto config = long_step_config();
+  mps::DryHydrostaticDriver uninterrupted_driver(config);
+  auto uninterrupted = uninterrupted_driver.initial_state();
+  uninterrupted_driver.advance(uninterrupted, 3600.0);
+
+  mps::DryHydrostaticDriver continued_driver(config);
+  auto continued = continued_driver.initial_state();
+  continued_driver.advance(continued, 1800.0);
+  continued_driver.advance(continued, 3600.0);
+  MPS_CHECK_EQ(continued.step, uninterrupted.step);
+  MPS_CHECK_NEAR(continued.time_s, uninterrupted.time_s, 0.0);
+  for (std::size_t cell = 0; cell < continued.surface_pressure_pa.size(); ++cell)
+    MPS_CHECK_NEAR(continued.surface_pressure_pa[cell],
+                   uninterrupted.surface_pressure_pa[cell], 0.0);
+  for (std::size_t n = 0; n < continued.horizontal_momentum_mass_kg_m_s.size(); ++n) {
+    MPS_CHECK_NEAR(mps::norm(continued.horizontal_momentum_mass_kg_m_s[n] -
+                             uninterrupted.horizontal_momentum_mass_kg_m_s[n]),
+                   0.0, 0.0);
+    MPS_CHECK_NEAR(continued.potential_temperature_mass_k_kg_m2[n],
+                   uninterrupted.potential_temperature_mass_k_kg_m2[n], 0.0);
+    MPS_CHECK_NEAR(continued.tracer_mass_kg_m2[n], uninterrupted.tracer_mass_kg_m2[n],
+                   0.0);
+  }
+}
+
 int main() { return mps::test::run_all(); }

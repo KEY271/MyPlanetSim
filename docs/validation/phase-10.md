@@ -166,3 +166,21 @@ four-level fixture reproduces `[I - alpha*dt*L_ref]` to `2e-8` scaled error afte
 substitution. The `N=12`, `K=20`, 1,800 s dry linear-wave gate selects more than the
 external mode and accepts the step while preserving the scalar integrals established by
 P10.08.
+
+## P10.10 convergence, invariants, CFL, and retry
+
+Every semi-implicit attempt now begins from the last accepted instantaneous state. A
+mode-cap failure, linear or nonlinear residual failure, candidate explicit-CFL
+violation, or prognostic/diagnosed invariant violation rejects the attempt and retries
+with half the step. No failed candidate is copied into the accepted state. If the next
+halving would cross `semi_implicit.minimum_time_step_s`, the driver stops with the final
+rejection reason instead of accepting a failed solution. A shortened final remainder is
+still allowed, as specified by the run end time.
+
+The retry gate forces the 1,800 s, 20-level case above a one-mode cap, verifies that a
+shorter attempt is accepted, and reproduces that accepted state bit-for-bit by running
+the shorter step directly from the same initial state. Raising the minimum step above
+the first retry leaves the caller state unchanged and produces a fatal error. A separate
+3,600 s test compares one uninterrupted call with two 1,800 s calls and obtains the same
+step count, step sequence, and prognostic arrays bit-for-bit without storing tendency
+history.
