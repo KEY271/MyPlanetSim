@@ -617,6 +617,7 @@ struct PhysicsDiagnosticsRow {
   mps::HeldSuarezDiagnostics rates;
   mps::Real cumulative_thermal_energy_j;
   mps::Real cumulative_drag_energy_j;
+  mps::Real cumulative_diffusion_energy_j;
   mps::Real measured_energy_change_j;
   mps::Real energy_residual_j;
   mps::DryHydrostaticDiagnostics health;
@@ -652,6 +653,7 @@ class PhysicsDiagnosticsAccumulator {
     if (previous_time_s_.has_value() && *previous_time_s_ >= spin_up_end_s) {
       cumulative_thermal_energy_j_ += step.thermal_energy_contribution_j;
       cumulative_drag_energy_j_ += step.rayleigh_drag_energy_contribution_j;
+      cumulative_diffusion_energy_j_ += step.diffusion_energy_contribution_j;
     }
     previous_time_s_ = state.time_s;
   }
@@ -681,13 +683,15 @@ class PhysicsDiagnosticsAccumulator {
         window_energy_j_.has_value() ? health.total_energy_j - *window_energy_j_ : 0.0;
     const mps::Real physics_energy =
         cumulative_thermal_energy_j_ + cumulative_drag_energy_j_;
+    const mps::Real attributed_energy = physics_energy + cumulative_diffusion_energy_j_;
     last_ = {.time_s = state.time_s,
              .step = state.step,
              .rates = step.physics_rates,
              .cumulative_thermal_energy_j = cumulative_thermal_energy_j_,
              .cumulative_drag_energy_j = cumulative_drag_energy_j_,
+             .cumulative_diffusion_energy_j = cumulative_diffusion_energy_j_,
              .measured_energy_change_j = measured_energy_change,
-             .energy_residual_j = measured_energy_change - physics_energy,
+             .energy_residual_j = measured_energy_change - attributed_energy,
              .health = health,
              .maximum_wind_m_s = maximum_wind,
              .non_finite_count = non_finite_count};
@@ -706,7 +710,9 @@ class PhysicsDiagnosticsAccumulator {
               "eastward_momentum_rate_n,northward_momentum_rate_n,"
               "thermal_energy_rate_w,rayleigh_drag_work_w,total_physics_energy_rate_w,"
               "cumulative_thermal_energy_j,cumulative_drag_energy_j,"
-              "cumulative_physics_energy_j,measured_energy_change_j,energy_residual_j,"
+              "cumulative_physics_energy_j,cumulative_diffusion_energy_j,"
+              "cumulative_attributed_energy_j,measured_energy_change_j,"
+              "energy_residual_j,"
               "dry_mass_kg,tracer_mass_kg,minimum_temperature_k,maximum_wind_m_s,"
               "non_finite_count\n";
     output << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
@@ -715,6 +721,7 @@ class PhysicsDiagnosticsAccumulator {
           row.rates.thermal_energy_rate_w + row.rates.rayleigh_drag_work_w;
       const auto physics_energy =
           row.cumulative_thermal_energy_j + row.cumulative_drag_energy_j;
+      const auto attributed_energy = physics_energy + row.cumulative_diffusion_energy_j;
       output << row.time_s << ',' << row.step << ','
              << row.rates.potential_temperature_mass_rate_k_kg_s << ','
              << row.rates.eastward_momentum_rate_n << ','
@@ -722,6 +729,7 @@ class PhysicsDiagnosticsAccumulator {
              << row.rates.thermal_energy_rate_w << ',' << row.rates.rayleigh_drag_work_w
              << ',' << physics_rate << ',' << row.cumulative_thermal_energy_j << ','
              << row.cumulative_drag_energy_j << ',' << physics_energy << ','
+             << row.cumulative_diffusion_energy_j << ',' << attributed_energy << ','
              << row.measured_energy_change_j << ',' << row.energy_residual_j << ','
              << row.health.dry_mass_kg << ',' << row.health.tracer_mass_kg << ','
              << row.health.minimum_temperature_k << ',' << row.maximum_wind_m_s << ','
@@ -738,6 +746,7 @@ class PhysicsDiagnosticsAccumulator {
   std::optional<mps::Real> window_energy_j_;
   mps::Real cumulative_thermal_energy_j_ = 0.0;
   mps::Real cumulative_drag_energy_j_ = 0.0;
+  mps::Real cumulative_diffusion_energy_j_ = 0.0;
   std::optional<PhysicsDiagnosticsRow> last_;
   std::vector<PhysicsDiagnosticsRow> rows_;
 };

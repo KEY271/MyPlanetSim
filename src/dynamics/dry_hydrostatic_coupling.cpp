@@ -23,6 +23,17 @@ void couple_dry_hydrostatic_columns(const DryHydrostaticState& s,
                                     const VerticalLimiterKind limiter,
                                     DryHydrostaticCoupling& out,
                                     DryHydrostaticCouplingWorkspace& workspace) {
+  couple_dry_hydrostatic_columns(s, d, h, b, g, scheme, limiter, limiter, out,
+                                 workspace);
+}
+
+void couple_dry_hydrostatic_columns(
+    const DryHydrostaticState& s, const DryHydrostaticDerived& d,
+    const DryHydrostaticTransportTendency& h, const std::span<const Real> b,
+    const Real g, const VerticalTransportScheme scheme,
+    const VerticalLimiterKind limiter,
+    const VerticalLimiterKind potential_temperature_limiter,
+    DryHydrostaticCoupling& out, DryHydrostaticCouplingWorkspace& workspace) {
   const auto n = d.cells * d.levels;
   if (h.air_mass.size() != n || h.momentum.size() != n ||
       h.potential_temperature_mass.size() != n || h.tracer_mass.size() != n ||
@@ -59,20 +70,23 @@ void couple_dry_hydrostatic_columns(const DryHydrostaticState& s,
                                               workspace.interface_coordinate[k + 1]);
     }
     const auto apply = [&](const std::span<const Real> state,
-                           const std::span<const Real> horizontal) {
+                           const std::span<const Real> horizontal,
+                           const VerticalLimiterKind field_limiter) {
       detail::vertical_scalar_rhs_unchecked(
-          state, mass, horizontal, f, scheme, limiter, workspace.interface_coordinate,
-          workspace.center_coordinate, workspace.scalar, workspace.flux, workspace.rhs);
+          state, mass, horizontal, f, scheme, field_limiter,
+          workspace.interface_coordinate, workspace.center_coordinate, workspace.scalar,
+          workspace.flux, workspace.rhs);
     };
     apply(std::span<const Real>(s.potential_temperature_mass_k_kg_m2.data() + begin,
                                 d.levels),
-          std::span<const Real>(h.potential_temperature_mass.data() + begin, d.levels));
+          std::span<const Real>(h.potential_temperature_mass.data() + begin, d.levels),
+          potential_temperature_limiter);
     for (std::size_t k = 0; k < d.levels; ++k) {
       out.tendency.air_mass[begin + k] = f.target_air_mass_tendency_kg_m2_s[k];
       out.tendency.potential_temperature_mass[begin + k] = workspace.rhs[k];
     }
     apply(std::span<const Real>(s.tracer_mass_kg_m2.data() + begin, d.levels),
-          std::span<const Real>(h.tracer_mass.data() + begin, d.levels));
+          std::span<const Real>(h.tracer_mass.data() + begin, d.levels), limiter);
     for (std::size_t k = 0; k < d.levels; ++k)
       out.tendency.tracer_mass[begin + k] = workspace.rhs[k];
     for (int component = 0; component < 3; ++component) {
@@ -81,7 +95,7 @@ void couple_dry_hydrostatic_columns(const DryHydrostaticState& s,
             s.horizontal_momentum_mass_kg_m_s[begin + k][component];
         workspace.horizontal_component[k] = h.momentum[begin + k][component];
       }
-      apply(workspace.component, workspace.horizontal_component);
+      apply(workspace.component, workspace.horizontal_component, limiter);
       for (std::size_t k = 0; k < d.levels; ++k)
         out.tendency.momentum[begin + k][component] = workspace.rhs[k];
     }

@@ -33,4 +33,14 @@ void couple_dry_hydrostatic_columns(
     const DryHydrostaticTransportTendency& horizontal, std::span<const Real> b_half,
     Real gravity_m_s2, VerticalTransportScheme scheme, VerticalLimiterKind limiter,
     DryHydrostaticCoupling& result, DryHydrostaticCouplingWorkspace& workspace);
+// Dry thermodynamics benefits from a smooth vertical theta profile because nonlinear
+// limiter switches degrade its cancellation with hydrostatic pressure work. This
+// overload lets the driver keep bounded
+// momentum/tracer reconstruction while selecting a separate theta limiter.
+void couple_dry_hydrostatic_columns(
+    const DryHydrostaticState& state, const DryHydrostaticDerived& derived,
+    const DryHydrostaticTransportTendency& horizontal, std::span<const Real> b_half,
+    Real gravity_m_s2, VerticalTransportScheme scheme, VerticalLimiterKind limiter,
+    VerticalLimiterKind potential_temperature_limiter, DryHydrostaticCoupling& result,
+    DryHydrostaticCouplingWorkspace& workspace);
 }  // namespace mps

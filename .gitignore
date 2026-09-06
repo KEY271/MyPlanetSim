@@ -1,6 +1,7 @@
 **/.DS_Store
 /build/
 /output/
+/logs/
 /.runs/
 /web/node_modules/
 /web/**/dist/

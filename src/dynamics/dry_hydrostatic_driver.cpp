@@ -247,8 +247,12 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
   }
   couple_dry_hydrostatic_columns(
       s, d, h, coordinate_.coefficients().b_half, config_.planet.gravity_m_s2,
-      config_.vertical.transport_scheme, config_.vertical.limiter, workspace.coupling,
-      workspace.coupling_workspace);
+      config_.vertical.transport_scheme, config_.vertical.limiter,
+      // Nonlinear minmod switches in theta transport degrade the cancellation between
+      // thermodynamic transport and hydrostatic pressure work. Keep the configured
+      // limiter for momentum and passive tracer, but use the smoother linear theta
+      // reconstruction. Stage validation still rejects non-positive temperatures.
+      VerticalLimiterKind::kNone, workspace.coupling, workspace.coupling_workspace);
   auto& coupled = workspace.coupling;
   Real vertical_dt = config_.run.time_step_s;
   for (std::size_t c = 0; c < C; ++c) {
