@@ -70,6 +70,7 @@ add_library(
   src/dynamics/dry_hydrostatic_reconstruction.cpp
   src/dynamics/dry_hydrostatic_diffusion.cpp
   src/dynamics/dry_hydrostatic_fast_modes.cpp
+  src/dynamics/dry_hydrostatic_fast_operator.cpp
   src/dynamics/dry_hydrostatic_driver.cpp
   src/dynamics/dry_hydrostatic_benchmarks.cpp
   src/dynamics/surface_orography.cpp

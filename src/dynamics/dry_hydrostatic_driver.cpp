@@ -187,6 +187,8 @@ DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
         coordinate_, config_.planet, *config_.semi_implicit);
     semi_implicit_vertical_modes_ = make_dry_hydrostatic_external_mode(
         *semi_implicit_reference_column_, config_.planet);
+    semi_implicit_fast_operator_ = make_dry_hydrostatic_fast_operator(
+        coordinate_, config_.planet, *semi_implicit_reference_column_);
   }
 }
 DryHydrostaticState DryHydrostaticDriver::initial_state() const {

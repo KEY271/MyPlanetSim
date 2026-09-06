@@ -113,3 +113,18 @@ profile. Per-cell perimeter/area Courant selection leaves it explicit at 100 s a
 selects it at 1,800 s on `N=12`; exceeding the configured mode cap is an error. The dry
 driver constructs and owns this immutable reference data only for active semi-implicit
 configuration. Internal eigenmodes remain the explicit P10.09 extension.
+
+## P10.07 conservative reference-linear fast operator
+
+The dry fast operator now acts on `(delta ps, delta(Mu), delta(Mtheta))`. It uses one
+centered mass flux per unique horizontal edge, the existing hybrid-`B` continuity
+recurrence, centered reference-theta vertical transport, and a construction-time
+linearization of the production pressure/hydrostatic diagnostic. The pressure force is
+then evaluated with the production least-squares gradient. Limiting, Rusanov jump
+dissipation, Coriolis, diffusion, physics, tracer, and terrain remain outside `L_ref`.
+
+`unit.dry_hydrostatic_fast_operator` registers linearity, exact zero at the horizontal
+reference rest state, area-weighted global `ps` and `Mtheta` conservation to roundoff,
+and the algebraic `F = L_ref + (F - L_ref)` reconstruction. This commit does not yet
+permit a large driver step; P10.08 supplies and validates the external-mode implicit
+inverse first.
