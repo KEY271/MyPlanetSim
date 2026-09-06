@@ -7,7 +7,8 @@ namespace mps {
 DryHydrostaticEdgeFlux rusanov_dry_hydrostatic_flux(const DryHydrostaticPrimitive& l,
                                                     const DryHydrostaticPrimitive& r,
                                                     const EdgeTangentBasis& b,
-                                                    const Real rd, const Real cp) {
+                                                    const Real rd, const Real cp,
+                                                    const bool compute_wave_speed) {
   if (!(l.air_mass_kg_m2 > 0 && r.air_mass_kg_m2 > 0 && l.temperature_k > 0 &&
         r.temperature_k > 0 && cp > rd && rd > 0) ||
       !is_finite(l.velocity_m_s) || !is_finite(r.velocity_m_s))
@@ -17,15 +18,18 @@ DryHydrostaticEdgeFlux rusanov_dry_hydrostatic_flux(const DryHydrostaticPrimitiv
   const auto ur = dot(r.velocity_m_s, b.normal) * b.normal +
                   dot(r.velocity_m_s, b.tangent) * b.tangent;
   const auto unl = dot(ul, b.normal), unr = dot(ur, b.normal);
-  const auto gamma = cp / (cp - rd);
   // These physical fluxes are the advective block of the split hydrostatic system;
   // pressure is advanced separately by dry_hydrostatic_sources. Upwind their jumps
   // with the advective characteristic, while retaining the fast horizontal Lamb mode
   // below for the SSPRK3 stability limit.
   const auto dissipation_speed = std::max(std::abs(unl), std::abs(unr));
   const auto maximum_wave_speed =
-      std::max(std::abs(unl) + std::sqrt(gamma * rd * l.temperature_k),
-               std::abs(unr) + std::sqrt(gamma * rd * r.temperature_k));
+      compute_wave_speed
+          ? std::max(std::abs(unl) +
+                         std::sqrt(cp / (cp - rd) * rd * l.temperature_k),
+                     std::abs(unr) +
+                         std::sqrt(cp / (cp - rd) * rd * r.temperature_k))
+          : 0.0;
   const auto fm = 0.5 * (l.air_mass_kg_m2 * unl + r.air_mass_kg_m2 * unr) -
                   0.5 * dissipation_speed * (r.air_mass_kg_m2 - l.air_mass_kg_m2);
   const auto ml = l.air_mass_kg_m2 * ul, mr = r.air_mass_kg_m2 * ur;

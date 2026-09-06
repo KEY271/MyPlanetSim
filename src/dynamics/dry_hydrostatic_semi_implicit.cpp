@@ -12,24 +12,31 @@ namespace {
 
 [[nodiscard]] Real scaled_equation_residual(
     const DryHydrostaticFastPerturbation& actual,
-    const DryHydrostaticFastPerturbation& expected) {
+    const DryHydrostaticFastPerturbation& expected,
+    const char** const maximum_component = nullptr) {
   Real residual = 0.0;
+  const auto consider = [&](const Real value, const char* const component) {
+    if (value > residual) {
+      residual = value;
+      if (maximum_component != nullptr) *maximum_component = component;
+    }
+  };
   for (std::size_t cell = 0; cell < actual.surface_pressure_pa.size(); ++cell) {
-    residual = std::max(
-        residual, std::abs(actual.surface_pressure_pa[cell] -
-                           expected.surface_pressure_pa[cell]) /
-                      std::max(1.0, std::abs(expected.surface_pressure_pa[cell])));
+    consider(std::abs(actual.surface_pressure_pa[cell] -
+                      expected.surface_pressure_pa[cell]) /
+                 std::max(1.0, std::abs(expected.surface_pressure_pa[cell])),
+             "surface_pressure");
   }
   for (std::size_t n = 0; n < actual.horizontal_momentum_mass_kg_m_s.size(); ++n) {
-    residual = std::max(
-        residual, norm(actual.horizontal_momentum_mass_kg_m_s[n] -
-                       expected.horizontal_momentum_mass_kg_m_s[n]) /
-                      std::max(1.0, norm(expected.horizontal_momentum_mass_kg_m_s[n])));
-    residual = std::max(
-        residual,
-        std::abs(actual.potential_temperature_mass_k_kg_m2[n] -
-                 expected.potential_temperature_mass_k_kg_m2[n]) /
-            std::max(1.0, std::abs(expected.potential_temperature_mass_k_kg_m2[n])));
+    consider(norm(actual.horizontal_momentum_mass_kg_m_s[n] -
+                  expected.horizontal_momentum_mass_kg_m_s[n]) /
+                 std::max(1.0, norm(expected.horizontal_momentum_mass_kg_m_s[n])),
+             "momentum");
+    consider(std::abs(actual.potential_temperature_mass_k_kg_m2[n] -
+                      expected.potential_temperature_mass_k_kg_m2[n]) /
+                 std::max(1.0,
+                          std::abs(expected.potential_temperature_mass_k_kg_m2[n])),
+             "potential_temperature_mass");
   }
   return residual;
 }
@@ -228,13 +235,15 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
     workspace.selected_mode_mask[mode] = 1;
   }
 
-  workspace.scalar_right_hand_side = right_hand_side;
-  std::fill(workspace.scalar_right_hand_side.horizontal_momentum_mass_kg_m_s.begin(),
-            workspace.scalar_right_hand_side.horizontal_momentum_mass_kg_m_s.end(),
-            Vec3{});
+  workspace.scalar_right_hand_side.surface_pressure_pa =
+      right_hand_side.surface_pressure_pa;
+  workspace.scalar_right_hand_side.horizontal_momentum_mass_kg_m_s.assign(volume, {});
+  workspace.scalar_right_hand_side.potential_temperature_mass_k_kg_m2 =
+      right_hand_side.potential_temperature_mass_k_kg_m2;
   apply_dry_hydrostatic_fast_operator(grid, planet, fast_operator,
                                       workspace.scalar_right_hand_side,
-                                      workspace.scalar_force, workspace.fast_operator);
+                                      workspace.scalar_force, workspace.fast_operator,
+                                      false, true);
   workspace.effective_momentum.resize(volume);
   for (std::size_t n = 0; n < volume; ++n) {
     workspace.effective_momentum[n] =
@@ -243,15 +252,19 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
   }
 
   workspace.modal_momentum.assign(volume, {});
+  workspace.modal_momentum_right_hand_side.assign(volume, {});
   for (std::size_t cell = 0; cell < cells; ++cell) {
     for (std::size_t mode = 0; mode < levels; ++mode) {
+      if (workspace.selected_mode_mask[mode] == 0) continue;
       Vec3 value{};
       for (std::size_t level = 0; level < levels; ++level) {
         value = value + modes.inverse_eigenvectors[mode * levels + level] *
                             workspace.effective_momentum[dry_hydrostatic_offset(
                                 cell, level, levels)];
       }
-      workspace.modal_momentum[dry_hydrostatic_offset(cell, mode, levels)] = value;
+      const auto n = dry_hydrostatic_offset(cell, mode, levels);
+      workspace.modal_momentum[n] = value;
+      workspace.modal_momentum_right_hand_side[n] = value;
     }
   }
 
@@ -260,7 +273,20 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
   workspace.helmholtz_gradient.resize(cells);
   workspace.helmholtz_divergence.resize(cells);
   workspace.vector_divergence_edge_flux.resize(grid.edge_count());
+  if (workspace.helmholtz_laplacian_diagonal.size() != cells) {
+    workspace.helmholtz_laplacian_diagonal.resize(cells);
+    for (std::size_t cell = 0; cell < cells; ++cell) {
+      Real diagonal = 0.0;
+      for (const auto& edge : grid.cell_cache()[cell].edges) {
+        diagonal += grid.edges()[edge.edge].length_m /
+                    (grid.cells()[cell].area_m2 *
+                     grid.edge_cache()[edge.edge].center_distance_m);
+      }
+      workspace.helmholtz_laplacian_diagonal[cell] = diagonal;
+    }
+  }
   workspace.helmholtz_inverse_diagonal.resize(cells);
+  workspace.modal_solution.resize(cells);
   workspace.active_modal_grid = &grid;
   if (!workspace.modal_helmholtz_operator) {
     workspace.modal_helmholtz_operator = [&workspace](const std::span<const Real> input,
@@ -290,19 +316,14 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
     finite_volume_vector_divergence(grid, workspace.column_momentum,
                                     workspace.vector_divergence_edge_flux,
                                     workspace.modal_divergence);
-    workspace.modal_solution = workspace.modal_divergence;
     const Real coefficient_m2 =
         implicit_time_s * implicit_time_s * modes.eigenvalue_m2_s2[mode];
     workspace.active_modal_coefficient_m2 = coefficient_m2;
     for (std::size_t cell = 0; cell < cells; ++cell) {
-      Real laplacian_diagonal = 0.0;
-      for (const auto& edge : grid.cell_cache()[cell].edges) {
-        laplacian_diagonal += grid.edges()[edge.edge].length_m /
-                              (grid.cells()[cell].area_m2 *
-                               grid.edge_cache()[edge.edge].center_distance_m);
-      }
       workspace.helmholtz_inverse_diagonal[cell] =
-          1.0 / (1.0 + coefficient_m2 * laplacian_diagonal);
+          1.0 /
+          (1.0 + coefficient_m2 * workspace.helmholtz_laplacian_diagonal[cell]);
+      workspace.modal_solution[cell] = workspace.modal_divergence[cell];
     }
     const auto linear =
         restarted_gmres(workspace.modal_helmholtz_operator, workspace.modal_divergence,
@@ -327,32 +348,33 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
   }
 
   correction.surface_pressure_pa = right_hand_side.surface_pressure_pa;
-  correction.horizontal_momentum_mass_kg_m_s.assign(volume, {});
+  correction.horizontal_momentum_mass_kg_m_s = workspace.effective_momentum;
   correction.potential_temperature_mass_k_kg_m2 =
       right_hand_side.potential_temperature_mass_k_kg_m2;
   for (std::size_t cell = 0; cell < cells; ++cell) {
     for (std::size_t level = 0; level < levels; ++level) {
-      Vec3 value{};
+      Vec3 value = correction.horizontal_momentum_mass_kg_m_s[
+          dry_hydrostatic_offset(cell, level, levels)];
       for (std::size_t mode = 0; mode < levels; ++mode) {
-        value =
-            value +
-            modes.eigenvectors[mode * levels + level] *
-                workspace.modal_momentum[dry_hydrostatic_offset(cell, mode, levels)];
+        if (workspace.selected_mode_mask[mode] == 0) continue;
+        const auto modal = dry_hydrostatic_offset(cell, mode, levels);
+        value = value + modes.eigenvectors[mode * levels + level] *
+                            (workspace.modal_momentum[modal] -
+                             workspace.modal_momentum_right_hand_side[modal]);
       }
       correction.horizontal_momentum_mass_kg_m_s[dry_hydrostatic_offset(
           cell, level, levels)] = value;
     }
   }
 
-  workspace.momentum_perturbation = correction;
-  std::fill(workspace.momentum_perturbation.surface_pressure_pa.begin(),
-            workspace.momentum_perturbation.surface_pressure_pa.end(), 0.0);
-  std::fill(workspace.momentum_perturbation.potential_temperature_mass_k_kg_m2.begin(),
-            workspace.momentum_perturbation.potential_temperature_mass_k_kg_m2.end(),
-            0.0);
+  workspace.momentum_perturbation.surface_pressure_pa.assign(cells, 0.0);
+  workspace.momentum_perturbation.horizontal_momentum_mass_kg_m_s =
+      correction.horizontal_momentum_mass_kg_m_s;
+  workspace.momentum_perturbation.potential_temperature_mass_k_kg_m2.assign(volume,
+                                                                            0.0);
   apply_dry_hydrostatic_fast_operator(
       grid, planet, fast_operator, workspace.momentum_perturbation,
-      workspace.momentum_scalar_tendency, workspace.fast_operator);
+      workspace.momentum_scalar_tendency, workspace.fast_operator, true, false);
   for (std::size_t cell = 0; cell < cells; ++cell) {
     correction.surface_pressure_pa[cell] +=
         implicit_time_s *
@@ -363,7 +385,6 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
         implicit_time_s *
         workspace.momentum_scalar_tendency.tendency.potential_temperature_mass[n];
   }
-
   // The selected-mode Schur equations are the accuracy contract of this
   // approximate inverse. Unselected small-Courant modes intentionally retain the
   // identity and are converged by the outer quasi-Newton iteration.

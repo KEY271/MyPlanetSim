@@ -157,14 +157,22 @@ struct DryHydrostaticParameters {
   Real advective_cfl = 0.45;
 };
 
+// ADR 0016: the reference-linear operator may be frozen at construction or rebuilt
+// from the horizontal mean of the current state at every step. The per-step form
+// follows Thuburn et al. (2014), whose reference field is updated from the state at
+// step n and whose quasi-Newton residual then falls about one order per iteration.
+enum class SemiImplicitReferenceUpdate { kFixed, kPerStep };
+
 struct SemiImplicitParameters {
   Real reference_surface_pressure_pa = 0.0;
   Real reference_temperature_k = 0.0;
+  SemiImplicitReferenceUpdate reference_update = SemiImplicitReferenceUpdate::kFixed;
   Real implicit_weight = 0.5;
   Real wave_cfl_threshold = 0.45;
   Index maximum_implicit_modes = 0;
-  Real nonlinear_relative_tolerance = 0.0;
-  Index nonlinear_maximum_iterations = 0;
+  // ICI schemes are indexed by a fixed iteration count, not by a residual tolerance
+  // (Benard 2003). The residual is recorded as a diagnostic only.
+  Index nonlinear_iterations = 0;
   Real linear_relative_tolerance = 0.0;
   Real linear_absolute_tolerance = 0.0;
   Index linear_maximum_iterations = 0;

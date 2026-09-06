@@ -21,5 +21,5 @@ struct DryHydrostaticEdgeFlux {
 [[nodiscard]] DryHydrostaticEdgeFlux rusanov_dry_hydrostatic_flux(
     const DryHydrostaticPrimitive& left, const DryHydrostaticPrimitive& right,
     const EdgeTangentBasis& basis, Real gas_constant_j_kg_k,
-    Real heat_capacity_cp_j_kg_k);
+    Real heat_capacity_cp_j_kg_k, bool compute_maximum_wave_speed = true);
 }  // namespace mps

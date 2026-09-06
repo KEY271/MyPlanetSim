@@ -120,14 +120,22 @@ class DryHydrostaticDriver {
   SurfaceOrography orography_;
   std::optional<SurfaceBoundary> surface_boundary_;
   std::optional<DryHydrostaticPressureReference> pressure_reference_;
-  std::optional<DryHydrostaticReferenceColumn> semi_implicit_reference_column_;
-  std::optional<DryHydrostaticVerticalModes> semi_implicit_vertical_modes_;
-  std::optional<DryHydrostaticFastOperator> semi_implicit_fast_operator_;
-  std::optional<DryHydrostaticExternalModeOperator> semi_implicit_external_operator_;
+  // Mutable because the per-step reference update rebuilds them from the current state
+  // inside the const `advance` path, like the reusable workspaces below.
+  mutable std::optional<DryHydrostaticReferenceColumn> semi_implicit_reference_column_;
+  mutable std::optional<DryHydrostaticVerticalModes> semi_implicit_vertical_modes_;
+  mutable std::optional<DryHydrostaticFastOperator> semi_implicit_fast_operator_;
+  mutable std::optional<DryHydrostaticExternalModeOperator>
+      semi_implicit_external_operator_;
   mutable DryHydrostaticWorkspace workspace_;
   mutable DryHydrostaticSemiImplicitWorkspace semi_implicit_workspace_;
 
   void rhs_with_components(const DryHydrostaticState&, DryHydrostaticRhs&,
-                           DryHydrostaticRhsComponents*) const;
+                           DryHydrostaticRhsComponents*,
+                           bool compute_fast_wave_cfl = true) const;
+
+  // Rebuilds the horizontally uniform reference column, fast operator, vertical modes
+  // and external operator from the mass-weighted horizontal mean of `state`.
+  void update_semi_implicit_reference(const DryHydrostaticState& state) const;
 };
 }  // namespace mps

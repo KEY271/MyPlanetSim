@@ -57,6 +57,47 @@ to 0.55 only when their damping and phase effects are recorded. The method carri
 past tendency, so the existing instantaneous checkpoint state remains sufficient for a
 deterministic restart.
 
+**The iteration count is the contract, not a residual tolerance.** This is an iterative
+centred-implicit (ICI) scheme in the sense of Benard (2003): the classical semi-implicit
+scheme and every iterative variant belong to one class that differs only in its number of
+iterations. Operational schemes fix that number and never test a residual. Cullen (2000)
+and Cote et al. (1998) use two; Thuburn et al. (2014) use four and report that fewer may
+suffice; ENDGame solves its linear system four times per step. The fully converged limit
+is explicitly described as unreachable and of theoretical interest only.
+
+`semi_implicit.nonlinear_iterations` therefore performs exactly that many quasi-Newton
+corrections. Because the initial guess is `U_n` rather than an extrapolation, a single
+iteration would be only first-order accurate, so two is the minimum accepted value. The
+scaled residual is computed and reported every step, but it does not gate acceptance.
+Only a non-finite residual, or a final residual larger than the initial one, rejects the
+attempt: that is a divergence guard, not a convergence test. Temporal accuracy is
+established by the 1,800/900/450 s refinement sequence, never by the residual level.
+
+The linear solve is likewise not required to be tight. A loose inner solve is standard:
+Thuburn et al. (2014) use a single multigrid sweep, and the operational ENDGame tolerance
+is 1e-4. Phase 10 presets use `linear_relative_tolerance = 1e-4`.
+
+### Reference state
+
+`semi_implicit.reference_update` selects between a reference column frozen at
+construction (`fixed`) and one rebuilt each step from the mass-weighted horizontal mean
+of the current state (`per_step`). Both stay horizontally uniform, so a single vertical
+structure eigendecomposition per step still serves every cell.
+
+`fixed` is the default. Benard (2003) records that stability requires a reference with
+large static stability, that Simmons et al. (1978) and Cote et al. (1983) bound the
+atmospheric profile by the reference one, and that a warm isothermal reference is the
+long-standing NWP recommendation; a second iteration relaxes that bound from `T <= T*`
+to `T <= 2T*`. Measurement agrees: on Held--Suarez the residual improves monotonically
+as `T*` warms from 200 K and is best near 300 K.
+
+`per_step` follows Thuburn et al. (2014), whose reference field is updated from step `n`.
+It did not improve the residual here, because a horizontally uniform reference cannot
+represent the pole-to-equator thermal structure that dominates the remaining residual
+regardless of its profile. Its measured value is different: it makes the result exactly
+independent of `reference_temperature_k`, which removes a hand-tuning failure mode for
+planets where no good fixed value is known.
+
 ### Vertical modes and horizontal solve
 
 Build the hydrostatic reference column once at driver construction. Diagonalize its
@@ -80,9 +121,10 @@ clipping is allowed.
 
 `run.time_step_s` is a requested maximum, not a promise. A semi-implicit step must obey
 the remaining material-advection, vertical-transport, diffusion, surface-reservoir, and
-invariant constraints. A failed linear solve, nonlinear residual, stage constraint, or
-state invariant causes a retry from `U_n` at half the step. Crossing
-`semi_implicit.minimum_time_step_s` is a diagnosed hard failure.
+invariant constraints. A failed linear solve, a diverging nonlinear residual, a stage
+constraint, or a state invariant causes a retry from `U_n` at half the step. Crossing
+`semi_implicit.minimum_time_step_s` is a diagnosed hard failure. A merely large residual
+is not a failure, so a correctly configured run performs no retries at all.
 
 The registered delivery target remains 1,800 s, with median accepted Held--Suarez step
 at least 1,200 s. This is not an artificial ceiling. After the 1,800/900/450 s accuracy
@@ -109,12 +151,12 @@ dry_hydrostatic.time_integrator = semi_implicit
 dry_hydrostatic.advective_cfl = 0.45
 semi_implicit.reference_surface_pressure_pa = 100000
 semi_implicit.reference_temperature_k = 300
+semi_implicit.reference_update = fixed
 semi_implicit.implicit_weight = 0.5
 semi_implicit.wave_cfl_threshold = 0.45
 semi_implicit.maximum_implicit_modes = 5
-semi_implicit.nonlinear_relative_tolerance = 1e-8
-semi_implicit.nonlinear_maximum_iterations = 4
-semi_implicit.linear_relative_tolerance = 1e-8
+semi_implicit.nonlinear_iterations = 2
+semi_implicit.linear_relative_tolerance = 1e-4
 semi_implicit.linear_absolute_tolerance = 1e-12
 semi_implicit.linear_maximum_iterations = 40
 semi_implicit.gmres_restart = 20
@@ -135,6 +177,24 @@ other experiment kinds and participate in the fingerprint when active.
 - The first implementation is optimized for the current small serial cubed-sphere
   problem. MPI/GPU solvers and semi-Lagrangian transport remain later work.
 - Terrain failure cannot be waived as a flat-only success.
+- Cost is governed by the number of full nonlinear RHS evaluations per model day, not by
+  the elliptic solve. Adding an iteration is the most expensive knob in the scheme.
+
+## References
+
+- P. Benard (2003), [Stability of Semi-Implicit and Iterative Centred-Implicit Time
+  Discretisations for Various Equation Systems Used in NWP](https://arxiv.org/abs/physics/0304114),
+  Monthly Weather Review 131, 2479--2491. The ICI class, its fixed iteration counts, the
+  preconditioned fixed-point convergence condition, and the reference-state stability
+  bounds.
+- J. Thuburn, C. J. Cotter, T. Dubos (2014), [A mimetic, semi-implicit, forward-in-time,
+  finite volume shallow water model](https://doi.org/10.5194/gmd-7-909-2014),
+  Geoscientific Model Development 7, 909--929. Four fixed iterations, a per-step
+  reference field, and a single multigrid sweep for the Helmholtz problem.
+- S. Sandbach, J. Thuburn, D. Vassilev, M. G. Duda (2015),
+  [A Semi-Implicit Version of the MPAS-Atmosphere Dynamical Core](https://doi.org/10.1175/MWR-D-15-0059.1),
+  Monthly Weather Review 143, 3838--3855. Quasi-Newton Crank--Nicolson with a small
+  number of outer iterations.
 
 ## Validation
 

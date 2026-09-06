@@ -48,6 +48,7 @@ void reconstruct_dry_hydrostatic_face_states(
     const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
     ReconstructionKind reconstruction, LimiterKind limiter,
     DryHydrostaticReconstruction& result,
-    DryHydrostaticReconstructionWorkspace& workspace);
+    DryHydrostaticReconstructionWorkspace& workspace,
+    bool reconstruct_temperature = true);
 
 }  // namespace mps

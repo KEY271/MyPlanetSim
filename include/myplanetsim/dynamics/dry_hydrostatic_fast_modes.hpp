@@ -46,6 +46,14 @@ struct DryHydrostaticVerticalModes {
     const AtmosphericHybridCoordinate& coordinate, const PlanetParameters& planet,
     const SemiImplicitParameters& parameters);
 
+// Per-level form used by the per-step reference update. The column stays horizontally
+// uniform, so the vertical structure matrix remains common to every cell and a single
+// eigendecomposition per step is still sufficient. `temperature_k` is set to the
+// mass-weighted mean of the profile and drives the external Lamb mode.
+[[nodiscard]] DryHydrostaticReferenceColumn make_dry_hydrostatic_reference_column(
+    const AtmosphericHybridCoordinate& coordinate, const PlanetParameters& planet,
+    Real reference_surface_pressure_pa, std::span<const Real> temperature_profile_k);
+
 [[nodiscard]] DryHydrostaticVerticalModes make_dry_hydrostatic_external_mode(
     const DryHydrostaticReferenceColumn& reference, const PlanetParameters& planet);
 

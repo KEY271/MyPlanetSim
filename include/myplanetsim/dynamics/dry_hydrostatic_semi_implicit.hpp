@@ -31,9 +31,11 @@ struct DryHydrostaticSemiImplicitWorkspace {
   DryHydrostaticFastTendency momentum_scalar_tendency;
   std::vector<Vec3> effective_momentum;
   std::vector<Vec3> modal_momentum;
+  std::vector<Vec3> modal_momentum_right_hand_side;
   std::vector<Real> modal_divergence;
   std::vector<Real> modal_solution;
   std::vector<Real> vector_divergence_edge_flux;
+  std::vector<Real> helmholtz_laplacian_diagonal;
   std::vector<Real> helmholtz_inverse_diagonal;
   std::vector<unsigned char> selected_mode_mask;
   const CubedSphereGrid* active_modal_grid = nullptr;

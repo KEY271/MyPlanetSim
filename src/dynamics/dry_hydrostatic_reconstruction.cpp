@@ -219,7 +219,8 @@ void reconstruct_dry_hydrostatic_face_states(
     const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
     const ReconstructionKind reconstruction, const LimiterKind limiter,
     DryHydrostaticReconstruction& result,
-    DryHydrostaticReconstructionWorkspace& workspace) {
+    DryHydrostaticReconstructionWorkspace& workspace,
+    const bool reconstruct_temperature) {
   const auto cells = grid.cell_count();
   const auto levels = derived.levels;
   const auto volume = cells * levels;
@@ -291,18 +292,28 @@ void reconstruct_dry_hydrostatic_face_states(
         grid, mass, limiter, worker.scalar_gradients[0], worker.limiter_factors[0]);
     const auto theta_reconstruction = prepare_scalar(
         grid, theta, limiter, worker.scalar_gradients[1], worker.limiter_factors[1]);
-    const auto tracer_reconstruction = prepare_scalar(
-        grid, tracer, limiter, worker.scalar_gradients[2], worker.limiter_factors[2]);
-    const auto temperature_reconstruction =
-        prepare_scalar(grid, temperature, limiter, worker.scalar_gradients[3],
-                       worker.limiter_factors[3]);
+    const bool tracer_is_constant = std::ranges::all_of(
+        tracer, [&](const Real value) { return value == tracer.front(); });
+    ScalarReconstruction tracer_reconstruction{};
+    if (!tracer_is_constant) {
+      tracer_reconstruction = prepare_scalar(
+          grid, tracer, limiter, worker.scalar_gradients[2], worker.limiter_factors[2]);
+    }
+    ScalarReconstruction temperature_reconstruction{};
+    if (reconstruct_temperature) {
+      temperature_reconstruction =
+          prepare_scalar(grid, temperature, limiter, worker.scalar_gradients[3],
+                         worker.limiter_factors[3]);
+    }
     const auto velocity_reconstruction = prepare_velocity(
         grid, velocity, limiter, worker.velocity_gradient, worker.limiter_factors[4]);
     for (std::size_t cell = 0; cell < cells; ++cell) {
       if (mass_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
           theta_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
-          tracer_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
-          temperature_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
+          (!tracer_is_constant &&
+           tracer_reconstruction.factor[cell] < 1.0 - 1.0e-14) ||
+          (reconstruct_temperature &&
+           temperature_reconstruction.factor[cell] < 1.0 - 1.0e-14) ||
           velocity_reconstruction.factor[cell] < 1.0 - 1.0e-14)
         ++limiter_activations;
     }
@@ -322,9 +333,15 @@ void reconstruct_dry_hydrostatic_face_states(
             .potential_temperature_k =
                 reconstruct_scalar(cell, cell_edge, theta, theta_reconstruction),
             .tracer_mixing_ratio =
-                reconstruct_scalar(cell, cell_edge, tracer, tracer_reconstruction),
-            .temperature_k = reconstruct_scalar(cell, cell_edge, temperature,
-                                                temperature_reconstruction)};
+                tracer_is_constant
+                    ? tracer[cell]
+                    : reconstruct_scalar(cell, cell_edge, tracer,
+                                         tracer_reconstruction),
+            .temperature_k =
+                reconstruct_temperature
+                    ? reconstruct_scalar(cell, cell_edge, temperature,
+                                         temperature_reconstruction)
+                    : temperature[cell]};
       };
       result.edge_levels[edge.id * levels + level] = {.left = face(left),
                                                       .right = face(right)};

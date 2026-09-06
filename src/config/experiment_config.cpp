@@ -142,11 +142,11 @@ constexpr std::array<std::string_view, 24> kDryHydrostaticRequiredKeys{
 constexpr std::array<std::string_view, 12> kSemiImplicitRequiredKeys{
     "semi_implicit.reference_surface_pressure_pa",
     "semi_implicit.reference_temperature_k",
+    "semi_implicit.reference_update",
     "semi_implicit.implicit_weight",
     "semi_implicit.wave_cfl_threshold",
     "semi_implicit.maximum_implicit_modes",
-    "semi_implicit.nonlinear_relative_tolerance",
-    "semi_implicit.nonlinear_maximum_iterations",
+    "semi_implicit.nonlinear_iterations",
     "semi_implicit.linear_relative_tolerance",
     "semi_implicit.linear_absolute_tolerance",
     "semi_implicit.linear_maximum_iterations",
@@ -539,16 +539,22 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       semi_implicit.reference_surface_pressure_pa = parse_real(value, line, key);
     else if (key == "semi_implicit.reference_temperature_k")
       semi_implicit.reference_temperature_k = parse_real(value, line, key);
-    else if (key == "semi_implicit.implicit_weight")
+    else if (key == "semi_implicit.reference_update") {
+      if (value == "fixed")
+        semi_implicit.reference_update = SemiImplicitReferenceUpdate::kFixed;
+      else if (value == "per_step")
+        semi_implicit.reference_update = SemiImplicitReferenceUpdate::kPerStep;
+      else
+        throw parse_error(line,
+                          "unknown semi_implicit.reference_update " + std::string(value));
+    } else if (key == "semi_implicit.implicit_weight")
       semi_implicit.implicit_weight = parse_real(value, line, key);
     else if (key == "semi_implicit.wave_cfl_threshold")
       semi_implicit.wave_cfl_threshold = parse_real(value, line, key);
     else if (key == "semi_implicit.maximum_implicit_modes")
       semi_implicit.maximum_implicit_modes = parse_index(value, line, key);
-    else if (key == "semi_implicit.nonlinear_relative_tolerance")
-      semi_implicit.nonlinear_relative_tolerance = parse_real(value, line, key);
-    else if (key == "semi_implicit.nonlinear_maximum_iterations")
-      semi_implicit.nonlinear_maximum_iterations = parse_index(value, line, key);
+    else if (key == "semi_implicit.nonlinear_iterations")
+      semi_implicit.nonlinear_iterations = parse_index(value, line, key);
     else if (key == "semi_implicit.linear_relative_tolerance")
       semi_implicit.linear_relative_tolerance = parse_real(value, line, key);
     else if (key == "semi_implicit.linear_absolute_tolerance")
@@ -855,11 +861,11 @@ void ExperimentConfig::validate() const {
           parameters.maximum_implicit_modes > vertical.levels)
         throw std::invalid_argument(
             "semi_implicit.maximum_implicit_modes must be in [1, vertical.levels]");
-      require_positive(parameters.nonlinear_relative_tolerance,
-                       "semi_implicit.nonlinear_relative_tolerance");
-      if (parameters.nonlinear_maximum_iterations <= 0)
+      // Benard (2003): a non-extrapolating ICI scheme with a single iteration is only
+      // first-order accurate in time, so two is the smallest second-order setting.
+      if (parameters.nonlinear_iterations < 2)
         throw std::invalid_argument(
-            "semi_implicit.nonlinear_maximum_iterations must be positive");
+            "semi_implicit.nonlinear_iterations must be at least 2");
       require_positive(parameters.linear_relative_tolerance,
                        "semi_implicit.linear_relative_tolerance");
       require_positive(parameters.linear_absolute_tolerance,
@@ -1370,16 +1376,20 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
                << semi_implicit.reference_surface_pressure_pa << '\n'
                << "semi_implicit.reference_temperature_k = "
                << semi_implicit.reference_temperature_k << '\n'
+               << "semi_implicit.reference_update = "
+               << (semi_implicit.reference_update ==
+                           SemiImplicitReferenceUpdate::kPerStep
+                       ? "per_step"
+                       : "fixed")
+               << '\n'
                << "semi_implicit.implicit_weight = " << semi_implicit.implicit_weight
                << '\n'
                << "semi_implicit.wave_cfl_threshold = "
                << semi_implicit.wave_cfl_threshold << '\n'
                << "semi_implicit.maximum_implicit_modes = "
                << semi_implicit.maximum_implicit_modes << '\n'
-               << "semi_implicit.nonlinear_relative_tolerance = "
-               << semi_implicit.nonlinear_relative_tolerance << '\n'
-               << "semi_implicit.nonlinear_maximum_iterations = "
-               << semi_implicit.nonlinear_maximum_iterations << '\n'
+               << "semi_implicit.nonlinear_iterations = "
+               << semi_implicit.nonlinear_iterations << '\n'
                << "semi_implicit.linear_relative_tolerance = "
                << semi_implicit.linear_relative_tolerance << '\n'
                << "semi_implicit.linear_absolute_tolerance = "

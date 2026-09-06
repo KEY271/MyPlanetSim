@@ -24,8 +24,7 @@ constexpr mps::SemiImplicitParameters parameters{
     .implicit_weight = 0.5,
     .wave_cfl_threshold = 0.45,
     .maximum_implicit_modes = 4,
-    .nonlinear_relative_tolerance = 1.0e-8,
-    .nonlinear_maximum_iterations = 4,
+    .nonlinear_iterations = 2,
     .linear_relative_tolerance = 1.0e-10,
     .linear_absolute_tolerance = 1.0e-12,
     .linear_maximum_iterations = 80,
@@ -291,9 +290,11 @@ MPS_TEST_CASE("dry linear wave accepts one 1800-second Crank-Nicolson step") {
   MPS_CHECK(step_diagnostics.linear_iterations_total > 0);
   MPS_CHECK(step_diagnostics.linear_iterations_maximum > 0);
   MPS_CHECK(step_diagnostics.linear_relative_residual_maximum < 1.0e-9);
-  MPS_CHECK(step_diagnostics.nonlinear_iterations > 0);
-  MPS_CHECK(step_diagnostics.nonlinear_relative_residual <=
-            config.semi_implicit->nonlinear_relative_tolerance);
+  // ADR 0016: the iteration count is the contract, so it must equal the configured
+  // fixed value exactly. The residual is reported but does not gate acceptance.
+  MPS_CHECK_EQ(step_diagnostics.nonlinear_iterations,
+               static_cast<std::size_t>(config.semi_implicit->nonlinear_iterations));
+  MPS_CHECK(std::isfinite(step_diagnostics.nonlinear_relative_residual));
   MPS_CHECK_EQ(step_diagnostics.retry_count, 0U);
   MPS_CHECK(step_diagnostics.wall_seconds_rhs >= 0.0);
   MPS_CHECK(step_diagnostics.wall_seconds_linear_solve >= 0.0);

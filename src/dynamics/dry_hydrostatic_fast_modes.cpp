@@ -298,36 +298,56 @@ std::span<const Real> DryHydrostaticVerticalModes::eigenvector(
 
 DryHydrostaticReferenceColumn make_dry_hydrostatic_reference_column(
     const AtmosphericHybridCoordinate& coordinate, const PlanetParameters& planet,
-    const SemiImplicitParameters& parameters) {
+    const Real reference_surface_pressure_pa,
+    const std::span<const Real> temperature_profile_k) {
   planet.validate();
-  require_positive(parameters.reference_surface_pressure_pa,
+  require_positive(reference_surface_pressure_pa,
                    "semi-implicit reference surface pressure");
-  require_positive(parameters.reference_temperature_k,
-                   "semi-implicit reference temperature");
+  const auto levels = coordinate.levels();
+  if (temperature_profile_k.size() != levels)
+    throw std::invalid_argument("semi-implicit reference temperature profile shape");
+  for (const Real temperature : temperature_profile_k)
+    require_positive(temperature, "semi-implicit reference temperature");
   DryHydrostaticReferenceColumn result{
-      .surface_pressure_pa = parameters.reference_surface_pressure_pa,
-      .temperature_k = parameters.reference_temperature_k,
-      .geometry = coordinate.geometry(parameters.reference_surface_pressure_pa,
+      .surface_pressure_pa = reference_surface_pressure_pa,
+      .temperature_k = 0.0,
+      .geometry = coordinate.geometry(reference_surface_pressure_pa,
                                       planet.gravity_m_s2, planet.gas_constant_j_kg_k,
                                       planet.heat_capacity_cp_j_kg_k,
                                       planet.reference_pressure_pa),
       .potential_temperature_k = {},
       .potential_temperature_mass_k_kg_m2 = {},
       .hydrostatic = {}};
-  const auto levels = coordinate.levels();
   result.potential_temperature_k.resize(levels);
   result.potential_temperature_mass_k_kg_m2.resize(levels);
+  Real mass = 0.0;
+  Real thermal_mass = 0.0;
   for (std::size_t level = 0; level < levels; ++level) {
     const Real potential_temperature =
-        parameters.reference_temperature_k / result.geometry.exner_full[level];
+        temperature_profile_k[level] / result.geometry.exner_full[level];
     result.potential_temperature_k[level] = potential_temperature;
     result.potential_temperature_mass_k_kg_m2[level] =
         result.geometry.air_mass_kg_m2[level] * potential_temperature;
+    mass += result.geometry.air_mass_kg_m2[level];
+    thermal_mass += result.geometry.air_mass_kg_m2[level] * temperature_profile_k[level];
   }
+  require_positive(mass, "semi-implicit reference column mass");
+  result.temperature_k = thermal_mass / mass;
   result.hydrostatic = integrate_hydrostatic_column(
       result.geometry, result.potential_temperature_k, planet.heat_capacity_cp_j_kg_k,
       planet.gravity_m_s2, 0.0);
   return result;
+}
+
+DryHydrostaticReferenceColumn make_dry_hydrostatic_reference_column(
+    const AtmosphericHybridCoordinate& coordinate, const PlanetParameters& planet,
+    const SemiImplicitParameters& parameters) {
+  require_positive(parameters.reference_temperature_k,
+                   "semi-implicit reference temperature");
+  const std::vector<Real> profile(coordinate.levels(),
+                                  parameters.reference_temperature_k);
+  return make_dry_hydrostatic_reference_column(
+      coordinate, planet, parameters.reference_surface_pressure_pa, profile);
 }
 
 DryHydrostaticVerticalModes make_dry_hydrostatic_external_mode(
