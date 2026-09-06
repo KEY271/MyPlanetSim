@@ -38,7 +38,10 @@ constexpr mps::SemiImplicitParameters parameters{
       .kind = mps::ExperimentKind::kDryHydrostatic,
       .planet = planet,
       .run = {0.0, 1800.0, 1800.0, 0},
+      .ode = {},
       .grid = {12},
+      .transport = {},
+      .shallow_water = {},
       .vertical = {.levels = 20,
                    .a_half_pa = coefficients.a_half_pa,
                    .b_half = coefficients.b_half,
@@ -62,8 +65,13 @@ constexpr mps::SemiImplicitParameters parameters{
                               mps::DryHydrostaticTimeIntegrator::kSemiImplicit,
                           .advective_cfl = 0.45},
       .semi_implicit = parameters,
+      .orography = {},
+      .physics = {},
       .diagnostics = {1},
-      .output_directory = "x"};
+      .output_directory = "x",
+      .source_directory = {},
+      .orbit = {},
+      .surface = {}};
   result.semi_implicit->reference_temperature_k = 288.0;
   result.validate();
   return result;

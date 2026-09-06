@@ -56,7 +56,13 @@ DryHydrostaticState unflatten_dry_hydrostatic_state(const Real time_s,
   const auto volume = cells * levels;
   if (cells == 0 || levels == 0 || values.size() != cells + 5 * volume)
     throw std::invalid_argument("dry hydrostatic flat state size does not match shape");
-  DryHydrostaticState state{.time_s = time_s, .step = step};
+  DryHydrostaticState state{.time_s = time_s,
+                            .step = step,
+                            .surface_pressure_pa = {},
+                            .horizontal_momentum_mass_kg_m_s = {},
+                            .potential_temperature_mass_k_kg_m2 = {},
+                            .tracer_mass_kg_m2 = {},
+                            .surface_temperature_k = {}};
   state.surface_pressure_pa.assign(values.begin(),
                                    values.begin() + static_cast<std::ptrdiff_t>(cells));
   state.horizontal_momentum_mass_kg_m_s.resize(volume);

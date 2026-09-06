@@ -153,7 +153,8 @@ void resize_zero_rhs_components(DryHydrostaticRhsComponents& components,
 [[nodiscard]] DryHydrostaticState crank_nicolson_residual(
     const DryHydrostaticState& initial, const DryHydrostaticState& candidate,
     const DryHydrostaticRhs& initial_rhs, const DryHydrostaticRhs& candidate_rhs,
-    const Real time_step_s, const Real implicit_weight) {
+    const Real time_step_s, const Real implicit_weight,
+    const std::span<const Vec3> cell_centres, const std::size_t levels) {
   DryHydrostaticState residual = candidate;
   const Real initial_weight = 1.0 - implicit_weight;
   for (std::size_t cell = 0; cell < residual.surface_pressure_pa.size(); ++cell) {
@@ -168,6 +169,8 @@ void resize_zero_rhs_components(DryHydrostaticRhsComponents& components,
         initial.horizontal_momentum_mass_kg_m_s[n] -
         time_step_s * (initial_weight * initial_rhs.tendency.momentum[n] +
                        implicit_weight * candidate_rhs.tendency.momentum[n]);
+    residual.horizontal_momentum_mass_kg_m_s[n] = project_tangent(
+        residual.horizontal_momentum_mass_kg_m_s[n], cell_centres[n / levels]);
     residual.potential_temperature_mass_k_kg_m2[n] =
         candidate.potential_temperature_mass_k_kg_m2[n] -
         initial.potential_temperature_mass_k_kg_m2[n] -
@@ -725,9 +728,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           timed_rhs(candidate, candidate_rhs);
           if (attempted_dt > semi_implicit_explicit_limit(config_, candidate_rhs))
             throw std::runtime_error("candidate violates an explicit CFL constraint");
-          const auto residual =
-              crank_nicolson_residual(initial, candidate, initial_rhs, candidate_rhs,
-                                      attempted_dt, parameters.implicit_weight);
+          const auto residual = crank_nicolson_residual(
+              initial, candidate, initial_rhs, candidate_rhs, attempted_dt,
+              parameters.implicit_weight, centres, coordinate_.levels());
           const Real residual_norm = scaled_crank_nicolson_residual(
               residual, initial, reference, external_operator);
           accepted_nonlinear_iterations = static_cast<std::size_t>(iteration);
@@ -764,7 +767,10 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           diagnose_and_validate(candidate);
         }
         if (!converged)
-          throw std::runtime_error("Crank-Nicolson iteration did not converge");
+          throw std::runtime_error(
+              "Crank-Nicolson iteration did not converge: residual=" +
+              std::to_string(accepted_nonlinear_residual) +
+              ", dt_s=" + std::to_string(attempted_dt));
         candidate.step = initial.step + 1;
         diagnose_and_validate(candidate);
         return candidate;

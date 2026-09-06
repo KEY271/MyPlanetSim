@@ -240,6 +240,7 @@ CubedSphereGrid::CubedSphereGrid(const Index cells_per_panel, const Real radius_
                                      dot(neighbor_displacement, cache.basis.beta)},
           .face_coordinates_m = {dot(face_displacement, cache.basis.alpha),
                                  dot(face_displacement, cache.basis.beta)},
+          .least_squares_weight_m_inverse = {},
       };
       if (sign == 1) {
         edge_cache_[edge_id].left_slot = side;

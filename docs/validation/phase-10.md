@@ -205,3 +205,30 @@ workspace once and measures zero heap allocations on the following multi-mode so
 `benchmark_semi_implicit CONFIG [--steps COUNT]` reports seconds per model day, accepted
 step range, GMRES work, retries, RHS/linear/unattributed time, and peak RSS for the
 long-step presets registered at P10.13.
+
+## P10.12 balanced, terrain, and baroclinic gates
+
+The nonlinear Crank--Nicolson residual is now evaluated in the same cell-centred
+tangent space used by accepted momentum states. This removes the radial component
+introduced when three-dimensional momentum fluxes from differently oriented cells are
+scattered before the state is projected. The discarded component is normal to the
+sphere and therefore is not a prognostic degree of freedom. Failed nonlinear steps now
+also report their last residual and attempted step in the rejection reason.
+
+The vertical eigensolver first reduces the nonsymmetric structure matrix to upper
+Hessenberg form before shifted QR iteration. This makes the real positive spectrum
+converge for both the flat reference and the DCMIP terrain-following hybrid coordinate.
+The registered balance test then verifies:
+
+- exact stationarity of flat isothermal rest and DCMIP 2-0-0 terrain rest for two
+  requested 1,800 s steps;
+- temporal refinement of the linear mountain wave over 7,200 s, with normalized state
+  differences `2.36514e-7` for 1,800/900 s and `6.07442e-8` for 900/450 s;
+- 1,800 s versus 450 s normalized differences below `5e-4` for UMJS14 steady,
+  JW06 steady, UMJS14 baroclinic, and JW06 baroclinic initial states (observed range
+  `2.4822e-7`--`3.04763e-7`).
+
+The complete Clang development suite passes 84/84 tests. The six `phase10_gate` tests
+also pass with GCC 15.2 under `-Werror`, and with the Clang ASan/UBSan preset. Aggregate
+initializers touched by the Phase 10 state/config additions explicitly initialize their
+remaining members so both compilers enforce the same warning-clean contract.

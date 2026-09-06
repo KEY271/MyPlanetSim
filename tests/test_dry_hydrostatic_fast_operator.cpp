@@ -201,7 +201,8 @@ MPS_TEST_CASE("state subtraction maps the horizontal reference state to zero") {
           std::vector<mps::Real>(cells, reference.surface_pressure_pa),
       .horizontal_momentum_mass_kg_m_s = std::vector<mps::Vec3>(cells * c.levels()),
       .potential_temperature_mass_k_kg_m2 = std::vector<mps::Real>(cells * c.levels()),
-      .tracer_mass_kg_m2 = std::vector<mps::Real>(cells * c.levels())};
+      .tracer_mass_kg_m2 = std::vector<mps::Real>(cells * c.levels()),
+      .surface_temperature_k = {}};
   for (std::size_t cell = 0; cell < cells; ++cell)
     std::copy(reference.potential_temperature_mass_k_kg_m2.begin(),
               reference.potential_temperature_mass_k_kg_m2.end(),

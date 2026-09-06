@@ -209,7 +209,13 @@ struct Umjs14BaseState {
 DryHydrostaticState initialize_dry_hydrostatic_benchmark(
     const ExperimentConfig& config, const CubedSphereGrid& grid,
     const AtmosphericHybridCoordinate& coordinate, const SurfaceOrography& orography) {
-  DryHydrostaticState state{.time_s = config.run.start_time_s};
+  DryHydrostaticState state{.time_s = config.run.start_time_s,
+                            .step = 0,
+                            .surface_pressure_pa = {},
+                            .horizontal_momentum_mass_kg_m_s = {},
+                            .potential_temperature_mass_k_kg_m2 = {},
+                            .tracer_mass_kg_m2 = {},
+                            .surface_temperature_k = {}};
   const auto cells = grid.cell_count();
   const auto levels = coordinate.levels();
   state.surface_pressure_pa.assign(cells, config.vertical.surface_pressure_pa);

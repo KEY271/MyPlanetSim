@@ -122,12 +122,59 @@ struct RealEigenDecomposition {
   std::vector<Real> inverse_eigenvectors;
 };
 
+void reduce_to_upper_hessenberg(std::vector<Real>& matrix, std::vector<Real>& transform,
+                                const std::size_t size) {
+  std::vector<Real> reflector(size, 0.0);
+  for (std::size_t column = 0; column + 2 < size; ++column) {
+    Real vector_norm = 0.0;
+    for (std::size_t row = column + 1; row < size; ++row)
+      vector_norm = std::hypot(vector_norm, matrix[matrix_offset(row, column, size)]);
+    if (vector_norm == 0.0) continue;
+    std::fill(reflector.begin(), reflector.end(), 0.0);
+    const Real first = matrix[matrix_offset(column + 1, column, size)];
+    reflector[column + 1] =
+        first + std::copysign(vector_norm, first == 0.0 ? 1.0 : first);
+    for (std::size_t row = column + 2; row < size; ++row)
+      reflector[row] = matrix[matrix_offset(row, column, size)];
+    Real reflector_norm = 0.0;
+    for (std::size_t row = column + 1; row < size; ++row)
+      reflector_norm = std::hypot(reflector_norm, reflector[row]);
+    for (std::size_t row = column + 1; row < size; ++row)
+      reflector[row] /= reflector_norm;
+
+    for (std::size_t j = column; j < size; ++j) {
+      Real projection = 0.0;
+      for (std::size_t row = column + 1; row < size; ++row)
+        projection += reflector[row] * matrix[matrix_offset(row, j, size)];
+      for (std::size_t row = column + 1; row < size; ++row)
+        matrix[matrix_offset(row, j, size)] -= 2.0 * reflector[row] * projection;
+    }
+    for (std::size_t row = 0; row < size; ++row) {
+      Real projection = 0.0;
+      for (std::size_t j = column + 1; j < size; ++j)
+        projection += matrix[matrix_offset(row, j, size)] * reflector[j];
+      for (std::size_t j = column + 1; j < size; ++j)
+        matrix[matrix_offset(row, j, size)] -= 2.0 * projection * reflector[j];
+    }
+    for (std::size_t row = 0; row < size; ++row) {
+      Real projection = 0.0;
+      for (std::size_t j = column + 1; j < size; ++j)
+        projection += transform[matrix_offset(row, j, size)] * reflector[j];
+      for (std::size_t j = column + 1; j < size; ++j)
+        transform[matrix_offset(row, j, size)] -= 2.0 * projection * reflector[j];
+    }
+    for (std::size_t row = column + 2; row < size; ++row)
+      matrix[matrix_offset(row, column, size)] = 0.0;
+  }
+}
+
 [[nodiscard]] RealEigenDecomposition decompose_real_positive_matrix(
     const std::span<const Real> matrix, const std::size_t size) {
   if (matrix.size() != size * size || size == 0)
     throw std::invalid_argument("dry vertical structure matrix shape is invalid");
   std::vector<Real> schur(matrix.begin(), matrix.end());
   auto transform = identity_matrix(size);
+  reduce_to_upper_hessenberg(schur, transform, size);
   std::vector<Real> q;
   std::vector<Real> r;
   std::size_t active = size;
@@ -263,7 +310,10 @@ DryHydrostaticReferenceColumn make_dry_hydrostatic_reference_column(
       .geometry = coordinate.geometry(parameters.reference_surface_pressure_pa,
                                       planet.gravity_m_s2, planet.gas_constant_j_kg_k,
                                       planet.heat_capacity_cp_j_kg_k,
-                                      planet.reference_pressure_pa)};
+                                      planet.reference_pressure_pa),
+      .potential_temperature_k = {},
+      .potential_temperature_mass_k_kg_m2 = {},
+      .hydrostatic = {}};
   const auto levels = coordinate.levels();
   result.potential_temperature_k.resize(levels);
   result.potential_temperature_mass_k_kg_m2.resize(levels);
@@ -295,7 +345,8 @@ DryHydrostaticVerticalModes make_dry_hydrostatic_external_mode(
           .phase_speed_m_s = {std::sqrt(eigenvalue)},
           .eigenvalue_m2_s2 = {eigenvalue},
           .eigenvectors = std::vector<Real>(levels, normalization),
-          .inverse_eigenvectors = std::vector<Real>(levels, normalization)};
+          .inverse_eigenvectors = std::vector<Real>(levels, normalization),
+          .vertical_structure_m2_s2 = {}};
 }
 
 DryHydrostaticVerticalModes make_dry_hydrostatic_vertical_modes(
