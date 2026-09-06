@@ -70,6 +70,36 @@ MPS_TEST_CASE("sloping hybrid pressure-gradient cancellation converges") {
   MPS_CHECK_NEAR(sloping_surface_cancellation_error(12, 4), medium, 1e-8 * medium);
 }
 
+MPS_TEST_CASE("reference-state pressure gradient preserves its hydrostatic state") {
+  const mps::CubedSphereGrid grid(8, 6.37122e6);
+  mps::DryHydrostaticDerived derived{.cells = grid.cell_count(), .levels = 1};
+  derived.pressure_pa.resize(derived.cells);
+  derived.air_mass_kg_m2.assign(derived.cells, 1000);
+  derived.velocity_m_s.assign(derived.cells, {});
+  derived.temperature_k.assign(derived.cells, 280);
+  derived.geopotential_m2_s2.resize(derived.cells);
+  for (std::size_t cell = 0; cell < derived.cells; ++cell) {
+    const double shape = 0.35 * grid.cells()[cell].center.x;
+    derived.pressure_pa[cell] = 50000 * std::exp(shape);
+    derived.geopotential_m2_s2[cell] = -287 * 280 * shape;
+  }
+  const mps::PlanetParameters planet{grid.radius_m(), 0, 9.80616, 287, 1004.5, 100000};
+  const auto reference =
+      mps::make_dry_hydrostatic_pressure_reference(grid, derived, planet);
+  mps::DryHydrostaticSources sources;
+  mps::DryHydrostaticSourcesWorkspace workspace;
+  mps::dry_hydrostatic_sources(grid, derived, planet, reference, sources, workspace);
+  for (const auto force : sources.pressure_gradient_kg_m_s2)
+    MPS_CHECK_EQ(mps::norm(force), 0.0);
+
+  derived.geopotential_m2_s2.front() += 1.0;
+  mps::dry_hydrostatic_sources(grid, derived, planet, reference, sources, workspace);
+  const bool any_nonzero =
+      std::ranges::any_of(sources.pressure_gradient_kg_m_s2,
+                          [](const mps::Vec3 force) { return mps::norm(force) > 0.0; });
+  MPS_CHECK(any_nonzero);
+}
+
 MPS_TEST_CASE("terrain budgets and absolute pressure velocity are diagnostics") {
   mps::CubedSphereGrid grid(4, 2);
   mps::DryHydrostaticDerived derived{.cells = grid.cell_count(), .levels = 1};

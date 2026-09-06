@@ -807,8 +807,7 @@ int main(const int argc, const char* const argv[]) {
         mps::write_run_metadata(metadata, mps::make_run_metadata(run_config),
                                 run_config);
         if (run_config.orography.kind != mps::OrographyKind::kFlat) {
-          const auto sources =
-              mps::dry_hydrostatic_sources(driver.grid(), derived, run_config.planet);
+          const auto sources = driver.diagnose_sources(derived);
           const auto terrain = mps::diagnose_terrain_budgets(
               driver.grid(), state, derived, sources,
               driver.orography().surface_geopotential_m2_s2(), run_config.planet);
@@ -970,8 +969,7 @@ int main(const int argc, const char* const argv[]) {
           driver.grid(), state, derived, config.planet);
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
       if (config.orography.kind != mps::OrographyKind::kFlat) {
-        const auto sources =
-            mps::dry_hydrostatic_sources(driver.grid(), derived, config.planet);
+        const auto sources = driver.diagnose_sources(derived);
         const auto terrain = mps::diagnose_terrain_budgets(
             driver.grid(), state, derived, sources,
             driver.orography().surface_geopotential_m2_s2(), config.planet);

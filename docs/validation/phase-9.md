@@ -110,12 +110,12 @@ Checkpoint and output costs are not included in these compute-only extrapolation
 the observed RSS/cell-level to `N=48`, `K=30` gives about 520 MB before fixed overhead,
 which is practical on the measured host.
 
-For the uniform 264 K initial state, the measured Rusanov wave speed is 325.724 m/s.
-Using each cached edge-center distance, its Laplacian-equivalent coefficient
-`nu_num = 0.5 lambda Delta-x` is `1.022e8` to `1.358e8 m2/s`, mean `1.259e8 m2/s`.
-That mean is 1,259 times the explicit `1e5 m2/s` Laplacian setting used by the diffusion
-gate. This is a scale comparison, not an assertion that the two operators have identical
-spectra; it supports a later Riemann-solver decision while Phase 9 keeps Rusanov unchanged.
+At Phase 9 closeout, the uniform 264 K initial state had a Rusanov speed of 325.724 m/s
+and a first-order Laplacian-equivalent proxy of `1.259e8 m2/s`. This historical result
+motivated [ADR 0014](../adr/0014-low-dissipation-and-reference-balanced-dry-core.md),
+which now retains that speed for the Lamb CFL but uses only the advective characteristic
+for jump dissipation. The benchmark reports the inactive fast-speed proxy and active
+jump diffusivity separately.
 
 ## Unblocked and deferred work
 
@@ -125,5 +125,6 @@ spectra; it supports a later Riemann-solver decision while Phase 9 keeps Rusanov
 - UMJS14/JW06 balanced-state gates and the intended DCMIP coordinate are now measurable.
 - The Phase 5 quantitative long integrations, Phase 6 six-day comparisons, and Phase 7
   1200-day climate matrix remain their respective phases' production-validation work.
-- DCMIP pressure-gradient convergence remains a known numerical defect. New physics,
-  HLL/HLLC, PGF redesign, and OpenMP/MPI remain outside Phase 9.
+- The Phase 9 DCMIP pressure-gradient signature and Rusanov proxy are historical
+  measurements superseded by ADR 0014. New physics, HLL/HLLC, and OpenMP/MPI remain
+  outside Phase 9.

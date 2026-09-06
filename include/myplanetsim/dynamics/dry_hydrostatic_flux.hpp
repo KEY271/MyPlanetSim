@@ -13,6 +13,9 @@ struct DryHydrostaticEdgeFlux {
   Vec3 momentum_kg_s2;
   Real potential_temperature_mass_k_kg_m_s;
   Real tracer_mass_kg_m_s;
+  // Advective characteristic used only in the jump dissipation. The hydrostatic
+  // external/Lamb speed remains in maximum_wave_speed_m_s for the explicit CFL.
+  Real maximum_dissipation_speed_m_s;
   Real maximum_wave_speed_m_s;
 };
 [[nodiscard]] DryHydrostaticEdgeFlux rusanov_dry_hydrostatic_flux(

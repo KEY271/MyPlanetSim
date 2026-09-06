@@ -94,16 +94,15 @@ MPS_TEST_CASE("JW06 steady initial residual decreases with resolution") {
   MPS_CHECK(values[2].linf_m_s2 < 3.3e-4);
 }
 
-MPS_TEST_CASE("DCMIP 2-0-0 pressure-gradient error is registered") {
+MPS_TEST_CASE("DCMIP 2-0-0 reference rest is discretely preserved") {
   const auto values = resolution_triplet("phase6_dcmip_2_0_0.cfg");
   print_triplet("dcmip_2_0_0", values);
-  // The repaired coordinate starts, but the current terrain-following pressure-gradient
-  // discretization does not converge. ADR 0013 deliberately records this result for a
-  // later discretization decision instead of weakening a convergence gate.
-  MPS_CHECK(values[0].linf_m_s2 < 8.0e-4);
-  MPS_CHECK(values[1].linf_m_s2 > 1.5e-3);
-  MPS_CHECK(values[2].linf_m_s2 > 1.5e-3);
-  MPS_CHECK(values[2].l2_m_s2 > values[1].l2_m_s2);
+  // The DCMIP hydrostatic reference is now preserved by both the pressure source and
+  // the stationary advective flux, independently of terrain resolution.
+  for (const auto value : values) {
+    MPS_CHECK_EQ(value.l2_m_s2, 0.0);
+    MPS_CHECK_EQ(value.linf_m_s2, 0.0);
+  }
 }
 
 int main() { return mps::test::run_all(); }

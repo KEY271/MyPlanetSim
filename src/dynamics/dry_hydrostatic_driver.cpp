@@ -149,6 +149,14 @@ DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
                           surface_boundary_->surface_geopotential_m2_s2().end()),
         surface_boundary_->source_fingerprint());
   }
+  // Reference-state well balancing is intentionally limited to the named hydrostatic
+  // rest benchmark. Applying an initial-state correction to jets or forced cases would
+  // silently modify their physical pressure force.
+  if (config_.dry_hydrostatic.test_case == DryHydrostaticTestCase::kDcmip200Rest) {
+    const auto reference_state = initial_state();
+    pressure_reference_ = make_dry_hydrostatic_pressure_reference(
+        grid_, diagnose(reference_state), config_.planet);
+  }
 }
 DryHydrostaticState DryHydrostaticDriver::initial_state() const {
   auto state =
@@ -162,6 +170,17 @@ DryHydrostaticDerived DryHydrostaticDriver::diagnose(
     const DryHydrostaticState& s) const {
   return diagnose_dry_hydrostatic_state(s, coordinate_, config_.planet,
                                         orography_.surface_geopotential_m2_s2());
+}
+DryHydrostaticSources DryHydrostaticDriver::diagnose_sources(
+    const DryHydrostaticDerived& d) const {
+  DryHydrostaticSources result;
+  DryHydrostaticSourcesWorkspace workspace;
+  if (pressure_reference_.has_value())
+    dry_hydrostatic_sources(grid_, d, config_.planet, *pressure_reference_, result,
+                            workspace);
+  else
+    dry_hydrostatic_sources(grid_, d, config_.planet, result, workspace);
+  return result;
 }
 DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const {
   DryHydrostaticRhs result;
@@ -244,8 +263,12 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
         vertical_stable_time_step(air_mass, interface_flux, horizontal_air_mass,
                                   config_.vertical.cfl, config_.run.time_step_s));
   }
-  dry_hydrostatic_sources(grid_, d, config_.planet, workspace.sources,
-                          workspace.sources_workspace);
+  if (pressure_reference_.has_value())
+    dry_hydrostatic_sources(grid_, d, config_.planet, *pressure_reference_,
+                            workspace.sources, workspace.sources_workspace);
+  else
+    dry_hydrostatic_sources(grid_, d, config_.planet, workspace.sources,
+                            workspace.sources_workspace);
   const auto& sources = workspace.sources;
   for (std::size_t n = 0; n < C * K; ++n)
     coupled.tendency.momentum[n] = coupled.tendency.momentum[n] +

@@ -84,6 +84,7 @@ int main(int argc, char** argv) {
     driver.rhs(state, rhs);
     count_allocations.store(false, std::memory_order_relaxed);
     const std::size_t allocations = allocation_count.load(std::memory_order_relaxed);
+    const auto initial_derived = driver.diagnose(state);
 
     const std::uint64_t initial_step = state.step;
     const double end_time =
@@ -106,19 +107,32 @@ int main(int argc, char** argv) {
     const double initial_wave_speed_m_s =
         std::sqrt(gamma * config.planet.gas_constant_j_kg_k *
                   config.vertical.initial_temperature_k);
-    double implicit_diffusivity_sum_m2_s = 0.0;
-    double implicit_diffusivity_min_m2_s = std::numeric_limits<double>::infinity();
-    double implicit_diffusivity_max_m2_s = 0.0;
+    double fast_proxy_sum_m2_s = 0.0;
+    double jump_diffusivity_sum_m2_s = 0.0;
+    double jump_diffusivity_min_m2_s = std::numeric_limits<double>::infinity();
+    double jump_diffusivity_max_m2_s = 0.0;
+    std::size_t edge_levels = 0;
     for (const auto& edge : driver.grid().edge_cache()) {
-      const double diffusivity = 0.5 * initial_wave_speed_m_s * edge.center_distance_m;
-      implicit_diffusivity_sum_m2_s += diffusivity;
-      implicit_diffusivity_min_m2_s =
-          std::min(implicit_diffusivity_min_m2_s, diffusivity);
-      implicit_diffusivity_max_m2_s =
-          std::max(implicit_diffusivity_max_m2_s, diffusivity);
+      fast_proxy_sum_m2_s += 0.5 * initial_wave_speed_m_s * edge.center_distance_m;
+      for (std::size_t level = 0; level < initial_derived.levels; ++level) {
+        const auto left =
+            mps::dry_hydrostatic_offset(edge.left_cell, level, initial_derived.levels);
+        const auto right =
+            mps::dry_hydrostatic_offset(edge.right_cell, level, initial_derived.levels);
+        const double speed = std::max(
+            std::abs(mps::dot(initial_derived.velocity_m_s[left], edge.normal)),
+            std::abs(mps::dot(initial_derived.velocity_m_s[right], edge.normal)));
+        const double diffusivity = 0.5 * speed * edge.center_distance_m;
+        jump_diffusivity_sum_m2_s += diffusivity;
+        jump_diffusivity_min_m2_s = std::min(jump_diffusivity_min_m2_s, diffusivity);
+        jump_diffusivity_max_m2_s = std::max(jump_diffusivity_max_m2_s, diffusivity);
+        ++edge_levels;
+      }
     }
-    const double implicit_diffusivity_mean_m2_s =
-        implicit_diffusivity_sum_m2_s / static_cast<double>(driver.grid().edge_count());
+    const double fast_proxy_mean_m2_s =
+        fast_proxy_sum_m2_s / static_cast<double>(driver.grid().edge_count());
+    const double jump_diffusivity_mean_m2_s =
+        jump_diffusivity_sum_m2_s / static_cast<double>(edge_levels);
     const bool target_met = updates_per_second >= kMinimumCellLevelUpdatesPerSecond &&
                             seconds_per_step <= kMaximumSecondsPerStep &&
                             allocations == 0;
@@ -133,18 +147,19 @@ int main(int argc, char** argv) {
               << "peak_rss_bytes_per_cell_level = "
               << static_cast<double>(rss_bytes) / static_cast<double>(cell_levels)
               << '\n'
-              << "initial_rusanov_wave_speed_m_s = " << initial_wave_speed_m_s << '\n'
-              << "implicit_diffusivity_min_m2_s = " << implicit_diffusivity_min_m2_s
+              << "initial_lamb_cfl_speed_m_s = " << initial_wave_speed_m_s << '\n'
+              << "inactive_fast_speed_diffusivity_proxy_m2_s = " << fast_proxy_mean_m2_s
               << '\n'
-              << "implicit_diffusivity_mean_m2_s = " << implicit_diffusivity_mean_m2_s
+              << "initial_jump_diffusivity_min_m2_s = " << jump_diffusivity_min_m2_s
               << '\n'
-              << "implicit_diffusivity_max_m2_s = " << implicit_diffusivity_max_m2_s
+              << "initial_jump_diffusivity_mean_m2_s = " << jump_diffusivity_mean_m2_s
+              << '\n'
+              << "initial_jump_diffusivity_max_m2_s = " << jump_diffusivity_max_m2_s
               << '\n'
               << "reference_explicit_diffusivity_m2_s = "
               << kReferenceExplicitDiffusivityM2S << '\n'
-              << "implicit_to_explicit_diffusivity_ratio = "
-              << implicit_diffusivity_mean_m2_s / kReferenceExplicitDiffusivityM2S
-              << '\n'
+              << "initial_jump_to_explicit_diffusivity_ratio = "
+              << jump_diffusivity_mean_m2_s / kReferenceExplicitDiffusivityM2S << '\n'
               << "allocations_per_rhs = " << allocations << '\n'
               << "registered_min_cell_level_updates_per_s = "
               << kMinimumCellLevelUpdatesPerSecond << '\n'

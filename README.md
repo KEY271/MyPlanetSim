@@ -38,6 +38,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [ベクトル演算子・時間刻み ADR](docs/adr/0011-vector-operators-and-time-step-normalization.md): 球面ベクトル Laplacian、cell 単位 CFL、地表 reservoir の安定性制約
 - [静的 cache・性能ゲート ADR](docs/adr/0012-static-grid-cache-and-performance-gates.md): 時間不変な格子量の前計算、RHS workspace、正しさと分離した性能ゲート
 - [平衡初期場 ADR](docs/adr/0013-balanced-benchmark-initial-states.md): `steady` の定義、UMJS14/JW06 の惑星整合、DCMIP 座標の修復
+- [低散逸・reference balance ADR](docs/adr/0014-low-dissipation-and-reference-balanced-dry-core.md): Lamb CFL と移流散逸の分離、DCMIP terrain rest の離散保存
 
 ## ビルドと実行
 
@@ -91,9 +92,9 @@ Phase 9 までの限定した実装・検証範囲は完了しています。球
 [Phase 9 検証報告](docs/validation/phase-9.md)を参照してください。
 
 本プロジェクトは研究・開発段階の実験的ソフトウェアです。Phase 5--7 の production 規模の
-長時間積分は未実施で、DCMIP 2-0-0 の terrain-following pressure-gradient error は格子細分化で
-収束しない既知の数値的制約があります。現時点の結果を production climate validation として
-扱わないでください。
+長時間の production climate matrix は未実施です。DCMIP 2-0-0 の terrain-following rest は
+reference-state pressure force で離散保存され、移流散逸は Lamb CFL から分離されましたが、
+現時点の結果を production climate validation として扱わないでください。
 
 ### Web UI と native gateway
 

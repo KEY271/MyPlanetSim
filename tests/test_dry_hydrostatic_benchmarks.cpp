@@ -203,5 +203,14 @@ MPS_TEST_CASE("DCMIP 2-0-0 initializes a lapse-rate atmosphere at rest") {
   const auto rhs = driver.rhs(state);
   for (const auto momentum : rhs.tendency.momentum)
     MPS_CHECK(std::isfinite(mps::norm(momentum)));
+  const auto sources = driver.diagnose_sources(derived);
+  for (const auto force : sources.pressure_gradient_kg_m_s2)
+    MPS_CHECK_EQ(mps::norm(force), 0.0);
+
+  auto advanced = state;
+  driver.advance(advanced, 1.0);
+  const auto advanced_derived = driver.diagnose(advanced);
+  for (const auto velocity : advanced_derived.velocity_m_s)
+    MPS_CHECK(mps::norm(velocity) < 1.0e-12);
 }
 int main() { return mps::test::run_all(); }

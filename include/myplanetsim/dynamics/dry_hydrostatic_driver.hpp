@@ -46,6 +46,8 @@ class DryHydrostaticDriver {
   explicit DryHydrostaticDriver(ExperimentConfig config);
   [[nodiscard]] DryHydrostaticState initial_state() const;
   [[nodiscard]] DryHydrostaticDerived diagnose(const DryHydrostaticState&) const;
+  [[nodiscard]] DryHydrostaticSources diagnose_sources(
+      const DryHydrostaticDerived&) const;
   [[nodiscard]] DryHydrostaticRhs rhs(const DryHydrostaticState&) const;
   void rhs(const DryHydrostaticState&, DryHydrostaticRhs& result) const;
   void advance(DryHydrostaticState&, Real end_time_s,
@@ -66,6 +68,7 @@ class DryHydrostaticDriver {
   AtmosphericHybridCoordinate coordinate_;
   SurfaceOrography orography_;
   std::optional<SurfaceBoundary> surface_boundary_;
+  std::optional<DryHydrostaticPressureReference> pressure_reference_;
   mutable DryHydrostaticWorkspace workspace_;
 };
 }  // namespace mps
