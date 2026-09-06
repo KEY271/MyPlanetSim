@@ -78,6 +78,7 @@ enum class VerticalTestCase {
 };
 enum class VerticalTransportScheme { kDonorCell, kLinear };
 enum class VerticalLimiterKind { kNone, kMinmod };
+enum class DryHydrostaticTimeIntegrator { kExplicitSspRk3, kSemiImplicit };
 enum class DryHydrostaticTestCase {
   kIsothermalRest,
   kSolidBodyTransport,
@@ -151,6 +152,24 @@ struct DryHydrostaticParameters {
   Real cfl = 0.45;
   DiffusionKind diffusion_kind = DiffusionKind::kNone;
   Real diffusion_coefficient = 0.0;
+  DryHydrostaticTimeIntegrator time_integrator =
+      DryHydrostaticTimeIntegrator::kExplicitSspRk3;
+  Real advective_cfl = 0.45;
+};
+
+struct SemiImplicitParameters {
+  Real reference_surface_pressure_pa = 0.0;
+  Real reference_temperature_k = 0.0;
+  Real implicit_weight = 0.5;
+  Real wave_cfl_threshold = 0.45;
+  Index maximum_implicit_modes = 0;
+  Real nonlinear_relative_tolerance = 0.0;
+  Index nonlinear_maximum_iterations = 0;
+  Real linear_relative_tolerance = 0.0;
+  Real linear_absolute_tolerance = 0.0;
+  Index linear_maximum_iterations = 0;
+  Index gmres_restart = 0;
+  Real minimum_time_step_s = 0.0;
 };
 
 struct OrographyParameters {
@@ -198,6 +217,7 @@ struct ExperimentConfig {
   ShallowWaterParameters shallow_water{};
   VerticalColumnParameters vertical{};
   DryHydrostaticParameters dry_hydrostatic{};
+  std::optional<SemiImplicitParameters> semi_implicit;
   OrographyParameters orography{};
   PhysicsParameters physics{};
   DiagnosticsParameters diagnostics{};
@@ -232,6 +252,8 @@ struct ExperimentConfig {
     VerticalLimiterKind limiter) noexcept;
 [[nodiscard]] std::string_view dry_hydrostatic_test_case_name(
     DryHydrostaticTestCase test_case) noexcept;
+[[nodiscard]] std::string_view dry_hydrostatic_time_integrator_name(
+    DryHydrostaticTimeIntegrator integrator) noexcept;
 [[nodiscard]] std::string_view orography_kind_name(OrographyKind kind) noexcept;
 [[nodiscard]] std::string_view physics_kind_name(PhysicsKind kind) noexcept;
 [[nodiscard]] std::string_view forcing_geometry_name(ForcingGeometry geometry) noexcept;

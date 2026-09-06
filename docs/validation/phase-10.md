@@ -89,3 +89,13 @@ pair preserves perturbation mass and quadratic wave energy within the registered
 roundoff/solver tolerance. The 0.4/0.2/0.1 Courant refinement sequence, compared with a
 0.025 reference, passes the second-order self-convergence gate. No production
 shallow-water integration path is changed.
+
+## P10.05 conditional configuration
+
+The semi-implicit schema is accepted only when
+`dry_hydrostatic.time_integrator = semi_implicit` is present. In that mode all reference
+state, mode-selection, nonlinear/linear tolerance, GMRES restart, and minimum-step keys
+are required and validated together. Semi-implicit keys are rejected for every other
+experiment kind. Legacy dry configurations emit no new keys; their canonical round trip
+and fingerprint remain unchanged. Active semi-implicit parameters are emitted
+canonically and therefore participate in the fingerprint and run metadata.

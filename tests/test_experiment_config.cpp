@@ -4,6 +4,7 @@
 #include <string>
 
 #include "myplanetsim/config/experiment_config.hpp"
+#include "myplanetsim/io/run_metadata.hpp"
 #include "support/test.hpp"
 
 namespace {
@@ -147,6 +148,23 @@ dry_hydrostatic.diffusion_kind = none
 dry_hydrostatic.diffusion_coefficient = 0
 diagnostics.interval_steps = 2
 output.directory = output
+)";
+
+constexpr std::string_view kValidSemiImplicitSuffix = R"(
+dry_hydrostatic.time_integrator = semi_implicit
+dry_hydrostatic.advective_cfl = 0.45
+semi_implicit.reference_surface_pressure_pa = 100000
+semi_implicit.reference_temperature_k = 280
+semi_implicit.implicit_weight = 0.5
+semi_implicit.wave_cfl_threshold = 0.45
+semi_implicit.maximum_implicit_modes = 2
+semi_implicit.nonlinear_relative_tolerance = 1e-8
+semi_implicit.nonlinear_maximum_iterations = 4
+semi_implicit.linear_relative_tolerance = 1e-8
+semi_implicit.linear_absolute_tolerance = 1e-12
+semi_implicit.linear_maximum_iterations = 40
+semi_implicit.gmres_restart = 20
+semi_implicit.minimum_time_step_s = 0.1
 )";
 
 [[nodiscard]] mps::ExperimentConfig parse(const std::string_view text) {
@@ -420,6 +438,44 @@ MPS_TEST_CASE("dry-hydrostatic configuration reuses vertical schema strictly") {
   const auto dcmip = parse(dcmip_text + "orography.kind = dcmip_2_0_0\n");
   MPS_CHECK(dcmip.dry_hydrostatic.test_case ==
             mps::DryHydrostaticTestCase::kDcmip200Rest);
+}
+
+MPS_TEST_CASE("semi-implicit configuration is conditional and canonical") {
+  const auto legacy = parse(kValidDryHydrostaticConfig);
+  MPS_CHECK(legacy.dry_hydrostatic.time_integrator ==
+            mps::DryHydrostaticTimeIntegrator::kExplicitSspRk3);
+  MPS_CHECK(!legacy.semi_implicit.has_value());
+  std::ostringstream legacy_text;
+  mps::write_experiment_config(legacy_text, legacy);
+  MPS_CHECK(legacy_text.str().find("semi_implicit") == std::string::npos);
+  MPS_CHECK_EQ(mps::config_fingerprint(legacy),
+               mps::config_fingerprint(parse(legacy_text.str())));
+
+  const auto configured = parse(std::string(kValidDryHydrostaticConfig) +
+                                std::string(kValidSemiImplicitSuffix));
+  MPS_CHECK(configured.dry_hydrostatic.time_integrator ==
+            mps::DryHydrostaticTimeIntegrator::kSemiImplicit);
+  MPS_CHECK(configured.semi_implicit.has_value());
+  MPS_CHECK_EQ(configured.semi_implicit->maximum_implicit_modes, 2);
+  std::ostringstream canonical;
+  mps::write_experiment_config(canonical, configured);
+  const auto round_trip = parse(canonical.str());
+  MPS_CHECK_EQ(round_trip.semi_implicit->gmres_restart, 20);
+  MPS_CHECK_EQ(mps::config_fingerprint(round_trip),
+               mps::config_fingerprint(configured));
+
+  auto missing =
+      std::string(kValidDryHydrostaticConfig) + std::string(kValidSemiImplicitSuffix);
+  const std::string missing_line = "semi_implicit.linear_absolute_tolerance = 1e-12\n";
+  missing.erase(missing.find(missing_line), missing_line.size());
+  MPS_CHECK_THROWS_AS(parse(missing), std::runtime_error);
+
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidDryHydrostaticConfig) +
+                            "semi_implicit.reference_temperature_k = 280\n"),
+                      std::runtime_error);
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidShallowWaterConfig) +
+                            "dry_hydrostatic.time_integrator = semi_implicit\n"),
+                      std::runtime_error);
 }
 
 MPS_TEST_CASE("Held-Suarez selection is additive and strictly paired") {

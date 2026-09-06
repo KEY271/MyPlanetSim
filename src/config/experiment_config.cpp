@@ -139,6 +139,20 @@ constexpr std::array<std::string_view, 24> kDryHydrostaticRequiredKeys{
     "diagnostics.interval_steps",
     "output.directory"};
 
+constexpr std::array<std::string_view, 12> kSemiImplicitRequiredKeys{
+    "semi_implicit.reference_surface_pressure_pa",
+    "semi_implicit.reference_temperature_k",
+    "semi_implicit.implicit_weight",
+    "semi_implicit.wave_cfl_threshold",
+    "semi_implicit.maximum_implicit_modes",
+    "semi_implicit.nonlinear_relative_tolerance",
+    "semi_implicit.nonlinear_maximum_iterations",
+    "semi_implicit.linear_relative_tolerance",
+    "semi_implicit.linear_absolute_tolerance",
+    "semi_implicit.linear_maximum_iterations",
+    "semi_implicit.gmres_restart",
+    "semi_implicit.minimum_time_step_s"};
+
 [[nodiscard]] std::string_view trim(const std::string_view value) {
   std::size_t first = 0;
   while (first < value.size() &&
@@ -510,6 +524,43 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
                         "unknown dry_hydrostatic.diffusion_kind " + std::string(value));
   } else if (key == "dry_hydrostatic.diffusion_coefficient") {
     config.dry_hydrostatic.diffusion_coefficient = parse_real(value, line, key);
+  } else if (key == "dry_hydrostatic.time_integrator") {
+    if (value != "semi_implicit")
+      throw parse_error(
+          line, "unknown dry_hydrostatic.time_integrator " + std::string(value));
+    config.dry_hydrostatic.time_integrator =
+        DryHydrostaticTimeIntegrator::kSemiImplicit;
+  } else if (key == "dry_hydrostatic.advective_cfl") {
+    config.dry_hydrostatic.advective_cfl = parse_real(value, line, key);
+  } else if (key.starts_with("semi_implicit.")) {
+    if (!config.semi_implicit.has_value()) config.semi_implicit.emplace();
+    auto& semi_implicit = *config.semi_implicit;
+    if (key == "semi_implicit.reference_surface_pressure_pa")
+      semi_implicit.reference_surface_pressure_pa = parse_real(value, line, key);
+    else if (key == "semi_implicit.reference_temperature_k")
+      semi_implicit.reference_temperature_k = parse_real(value, line, key);
+    else if (key == "semi_implicit.implicit_weight")
+      semi_implicit.implicit_weight = parse_real(value, line, key);
+    else if (key == "semi_implicit.wave_cfl_threshold")
+      semi_implicit.wave_cfl_threshold = parse_real(value, line, key);
+    else if (key == "semi_implicit.maximum_implicit_modes")
+      semi_implicit.maximum_implicit_modes = parse_index(value, line, key);
+    else if (key == "semi_implicit.nonlinear_relative_tolerance")
+      semi_implicit.nonlinear_relative_tolerance = parse_real(value, line, key);
+    else if (key == "semi_implicit.nonlinear_maximum_iterations")
+      semi_implicit.nonlinear_maximum_iterations = parse_index(value, line, key);
+    else if (key == "semi_implicit.linear_relative_tolerance")
+      semi_implicit.linear_relative_tolerance = parse_real(value, line, key);
+    else if (key == "semi_implicit.linear_absolute_tolerance")
+      semi_implicit.linear_absolute_tolerance = parse_real(value, line, key);
+    else if (key == "semi_implicit.linear_maximum_iterations")
+      semi_implicit.linear_maximum_iterations = parse_index(value, line, key);
+    else if (key == "semi_implicit.gmres_restart")
+      semi_implicit.gmres_restart = parse_index(value, line, key);
+    else if (key == "semi_implicit.minimum_time_step_s")
+      semi_implicit.minimum_time_step_s = parse_real(value, line, key);
+    else
+      throw parse_error(line, "unknown key " + std::string(key));
   } else if (key == "orography.kind") {
     if (value == "dcmip_2_0_0")
       config.orography.kind = OrographyKind::kDcmip200;
@@ -615,6 +666,11 @@ void require_keys(const std::set<std::string, std::less<>>& seen_keys,
 void ExperimentConfig::validate() const {
   planet.validate();
   if (orbit.has_value()) orbit->validate();
+  if (kind != ExperimentKind::kDryHydrostatic &&
+      (dry_hydrostatic.time_integrator == DryHydrostaticTimeIntegrator::kSemiImplicit ||
+       semi_implicit.has_value()))
+    throw std::invalid_argument(
+        "semi-implicit integration is valid only for dry_hydrostatic");
   require_non_negative(run.start_time_s, "run.start_time_s");
   require_finite(run.end_time_s, "run.end_time_s");
   require_positive(run.time_step_s, "run.time_step_s");
@@ -762,6 +818,65 @@ void ExperimentConfig::validate() const {
     require_finite(dry_hydrostatic.cfl, "dry_hydrostatic.cfl");
     if (!(dry_hydrostatic.cfl > 0.0 && dry_hydrostatic.cfl <= 1.0))
       throw std::invalid_argument("dry_hydrostatic.cfl must be in (0, 1]");
+    const bool uses_semi_implicit =
+        dry_hydrostatic.time_integrator == DryHydrostaticTimeIntegrator::kSemiImplicit;
+    if (uses_semi_implicit != semi_implicit.has_value())
+      throw std::invalid_argument(
+          "semi-implicit integrator and parameters must be configured together");
+    if (uses_semi_implicit) {
+      const auto& parameters = *semi_implicit;
+      require_finite(dry_hydrostatic.advective_cfl, "dry_hydrostatic.advective_cfl");
+      if (!(dry_hydrostatic.advective_cfl > 0.0 &&
+            dry_hydrostatic.advective_cfl <= 1.0))
+        throw std::invalid_argument("dry_hydrostatic.advective_cfl must be in (0, 1]");
+      require_positive(parameters.reference_surface_pressure_pa,
+                       "semi_implicit.reference_surface_pressure_pa");
+      if (parameters.reference_surface_pressure_pa <
+              vertical.minimum_surface_pressure_pa ||
+          parameters.reference_surface_pressure_pa >
+              vertical.maximum_surface_pressure_pa)
+        throw std::invalid_argument(
+            "semi-implicit reference surface pressure is outside configured bounds");
+      require_positive(parameters.reference_temperature_k,
+                       "semi_implicit.reference_temperature_k");
+      if (parameters.reference_temperature_k < vertical.temperature_floor_k)
+        throw std::invalid_argument(
+            "semi-implicit reference temperature is below the temperature floor");
+      require_finite(parameters.implicit_weight, "semi_implicit.implicit_weight");
+      if (parameters.implicit_weight < 0.5 || parameters.implicit_weight > 0.55)
+        throw std::invalid_argument(
+            "semi_implicit.implicit_weight must be in [0.5, 0.55]");
+      require_finite(parameters.wave_cfl_threshold, "semi_implicit.wave_cfl_threshold");
+      if (!(parameters.wave_cfl_threshold > 0.0 &&
+            parameters.wave_cfl_threshold <= 1.0))
+        throw std::invalid_argument(
+            "semi_implicit.wave_cfl_threshold must be in (0, 1]");
+      if (parameters.maximum_implicit_modes <= 0 ||
+          parameters.maximum_implicit_modes > vertical.levels)
+        throw std::invalid_argument(
+            "semi_implicit.maximum_implicit_modes must be in [1, vertical.levels]");
+      require_positive(parameters.nonlinear_relative_tolerance,
+                       "semi_implicit.nonlinear_relative_tolerance");
+      if (parameters.nonlinear_maximum_iterations <= 0)
+        throw std::invalid_argument(
+            "semi_implicit.nonlinear_maximum_iterations must be positive");
+      require_positive(parameters.linear_relative_tolerance,
+                       "semi_implicit.linear_relative_tolerance");
+      require_positive(parameters.linear_absolute_tolerance,
+                       "semi_implicit.linear_absolute_tolerance");
+      if (parameters.linear_maximum_iterations <= 0)
+        throw std::invalid_argument(
+            "semi_implicit.linear_maximum_iterations must be positive");
+      if (parameters.gmres_restart <= 0 ||
+          parameters.gmres_restart > parameters.linear_maximum_iterations)
+        throw std::invalid_argument(
+            "semi_implicit.gmres_restart must be in [1, linear maximum]");
+      require_positive(parameters.minimum_time_step_s,
+                       "semi_implicit.minimum_time_step_s");
+      if (parameters.minimum_time_step_s > run.time_step_s)
+        throw std::invalid_argument(
+            "semi_implicit.minimum_time_step_s must not exceed run.time_step_s");
+    }
     require_non_negative(dry_hydrostatic.diffusion_coefficient,
                          "dry_hydrostatic.diffusion_coefficient");
     if ((dry_hydrostatic.diffusion_kind == DiffusionKind::kNone) !=
@@ -1009,6 +1124,26 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     }
   }
 
+  const bool has_time_integrator =
+      seen_keys.contains("dry_hydrostatic.time_integrator");
+  const bool has_advective_cfl = seen_keys.contains("dry_hydrostatic.advective_cfl");
+  const bool has_semi_implicit_key = std::ranges::any_of(
+      seen_keys, [](const auto& key) { return key.starts_with("semi_implicit."); });
+  if (config.kind != ExperimentKind::kDryHydrostatic &&
+      (has_time_integrator || has_advective_cfl || has_semi_implicit_key))
+    throw std::runtime_error("semi-implicit keys are valid only for dry_hydrostatic");
+  if (config.kind == ExperimentKind::kDryHydrostatic) {
+    if (has_time_integrator) {
+      if (!has_advective_cfl)
+        throw std::runtime_error(
+            "semi-implicit integration requires dry_hydrostatic.advective_cfl");
+      require_keys(seen_keys, kSemiImplicitRequiredKeys);
+    } else if (has_advective_cfl || has_semi_implicit_key) {
+      throw std::runtime_error(
+          "semi-implicit options require dry_hydrostatic.time_integrator");
+    }
+  }
+
   const bool has_orography_kind = seen_keys.contains("orography.kind");
   const bool has_input_file = seen_keys.contains("orography.input_file");
   const bool has_input_fingerprint =
@@ -1222,6 +1357,40 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
              << diffusion_kind_name(config.dry_hydrostatic.diffusion_kind) << '\n'
              << "dry_hydrostatic.diffusion_coefficient = "
              << config.dry_hydrostatic.diffusion_coefficient << '\n';
+      if (config.dry_hydrostatic.time_integrator ==
+          DryHydrostaticTimeIntegrator::kSemiImplicit) {
+        const auto& semi_implicit = *config.semi_implicit;
+        output << "dry_hydrostatic.time_integrator = "
+               << dry_hydrostatic_time_integrator_name(
+                      config.dry_hydrostatic.time_integrator)
+               << '\n'
+               << "dry_hydrostatic.advective_cfl = "
+               << config.dry_hydrostatic.advective_cfl << '\n'
+               << "semi_implicit.reference_surface_pressure_pa = "
+               << semi_implicit.reference_surface_pressure_pa << '\n'
+               << "semi_implicit.reference_temperature_k = "
+               << semi_implicit.reference_temperature_k << '\n'
+               << "semi_implicit.implicit_weight = " << semi_implicit.implicit_weight
+               << '\n'
+               << "semi_implicit.wave_cfl_threshold = "
+               << semi_implicit.wave_cfl_threshold << '\n'
+               << "semi_implicit.maximum_implicit_modes = "
+               << semi_implicit.maximum_implicit_modes << '\n'
+               << "semi_implicit.nonlinear_relative_tolerance = "
+               << semi_implicit.nonlinear_relative_tolerance << '\n'
+               << "semi_implicit.nonlinear_maximum_iterations = "
+               << semi_implicit.nonlinear_maximum_iterations << '\n'
+               << "semi_implicit.linear_relative_tolerance = "
+               << semi_implicit.linear_relative_tolerance << '\n'
+               << "semi_implicit.linear_absolute_tolerance = "
+               << semi_implicit.linear_absolute_tolerance << '\n'
+               << "semi_implicit.linear_maximum_iterations = "
+               << semi_implicit.linear_maximum_iterations << '\n'
+               << "semi_implicit.gmres_restart = " << semi_implicit.gmres_restart
+               << '\n'
+               << "semi_implicit.minimum_time_step_s = "
+               << semi_implicit.minimum_time_step_s << '\n';
+      }
       if (config.physics.kind != PhysicsKind::kNone)
         output << "physics.kind = " << physics_kind_name(config.physics.kind) << '\n';
       if (config.physics.kind == PhysicsKind::kPlanetaryNewtonian)
@@ -1318,6 +1487,17 @@ std::string_view dry_hydrostatic_test_case_name(
       return "umjs14_baroclinic";
     case DryHydrostaticTestCase::kHeldSuarez:
       return "held_suarez";
+  }
+  return "unknown";
+}
+
+std::string_view dry_hydrostatic_time_integrator_name(
+    const DryHydrostaticTimeIntegrator integrator) noexcept {
+  switch (integrator) {
+    case DryHydrostaticTimeIntegrator::kExplicitSspRk3:
+      return "explicit_ssprk3";
+    case DryHydrostaticTimeIntegrator::kSemiImplicit:
+      return "semi_implicit";
   }
   return "unknown";
 }
