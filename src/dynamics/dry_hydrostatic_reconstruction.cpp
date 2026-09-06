@@ -4,10 +4,37 @@
 #include <cmath>
 #include <stdexcept>
 
+#if defined(MPS_ENABLE_OPENMP)
+#include <omp.h>
+#endif
+
 #include "myplanetsim/numerics/spherical_operators.hpp"
 
 namespace mps {
 namespace {
+
+#if defined(MPS_ENABLE_OPENMP)
+constexpr int kMaximumReconstructionThreads = 4;
+#endif
+
+[[nodiscard]] int reconstruction_thread_count(const std::size_t levels) noexcept {
+#if defined(MPS_ENABLE_OPENMP)
+  const int available = std::min(kMaximumReconstructionThreads, omp_get_max_threads());
+  return static_cast<int>(
+      std::min(levels, static_cast<std::size_t>(std::max(1, available))));
+#else
+  static_cast<void>(levels);
+  return 1;
+#endif
+}
+
+[[nodiscard]] int reconstruction_thread_index() noexcept {
+#if defined(MPS_ENABLE_OPENMP)
+  return omp_get_thread_num();
+#else
+  return 0;
+#endif
+}
 
 struct ScalarReconstruction {
   std::span<Vec3> gradient;
@@ -206,29 +233,39 @@ void reconstruct_dry_hydrostatic_face_states(
 
   result.levels = levels;
   result.edge_levels.resize(grid.edge_count() * levels);
-  result.limiter_activations = 0;
-  workspace.mass.resize(cells);
-  workspace.velocity.resize(cells);
-  workspace.potential_temperature.resize(cells);
-  workspace.tracer.resize(cells);
-  workspace.temperature.resize(cells);
-  for (auto& gradient : workspace.scalar_gradients) gradient.resize(cells);
-  for (auto& factor : workspace.limiter_factors) factor.resize(cells);
-  workspace.velocity_gradient.resize(cells);
+  std::uint64_t limiter_activations = 0;
+  const int thread_count = reconstruction_thread_count(levels);
+  if (workspace.workers.size() < static_cast<std::size_t>(thread_count))
+    workspace.workers.resize(static_cast<std::size_t>(thread_count));
+  for (int thread = 0; thread < thread_count; ++thread) {
+    auto& worker = workspace.workers[static_cast<std::size_t>(thread)];
+    worker.mass.resize(cells);
+    worker.velocity.resize(cells);
+    worker.potential_temperature.resize(cells);
+    worker.tracer.resize(cells);
+    worker.temperature.resize(cells);
+    for (auto& gradient : worker.scalar_gradients) gradient.resize(cells);
+    for (auto& factor : worker.limiter_factors) factor.resize(cells);
+    worker.velocity_gradient.resize(cells);
+  }
+#if defined(MPS_ENABLE_OPENMP)
+#pragma omp parallel for schedule(static) num_threads(thread_count) \
+    reduction(+ : limiter_activations)
+#endif
   for (std::size_t level = 0; level < levels; ++level) {
-    copy_level_scalar(derived.air_mass_kg_m2, cells, levels, level, workspace.mass);
-    copy_level_vector(derived.velocity_m_s, cells, levels, level, workspace.velocity);
+    auto& worker =
+        workspace.workers[static_cast<std::size_t>(reconstruction_thread_index())];
+    copy_level_scalar(derived.air_mass_kg_m2, cells, levels, level, worker.mass);
+    copy_level_vector(derived.velocity_m_s, cells, levels, level, worker.velocity);
     copy_level_scalar(derived.potential_temperature_k, cells, levels, level,
-                      workspace.potential_temperature);
-    copy_level_scalar(derived.tracer_mixing_ratio, cells, levels, level,
-                      workspace.tracer);
-    copy_level_scalar(derived.temperature_k, cells, levels, level,
-                      workspace.temperature);
-    const auto& mass = workspace.mass;
-    const auto& velocity = workspace.velocity;
-    const auto& theta = workspace.potential_temperature;
-    const auto& tracer = workspace.tracer;
-    const auto& temperature = workspace.temperature;
+                      worker.potential_temperature);
+    copy_level_scalar(derived.tracer_mixing_ratio, cells, levels, level, worker.tracer);
+    copy_level_scalar(derived.temperature_k, cells, levels, level, worker.temperature);
+    const auto& mass = worker.mass;
+    const auto& velocity = worker.velocity;
+    const auto& theta = worker.potential_temperature;
+    const auto& tracer = worker.tracer;
+    const auto& temperature = worker.temperature;
 
     if (reconstruction == ReconstructionKind::kPiecewiseConstant) {
       for (const auto& edge : grid.edges()) {
@@ -250,28 +287,24 @@ void reconstruct_dry_hydrostatic_face_states(
       continue;
     }
 
-    const auto mass_reconstruction =
-        prepare_scalar(grid, mass, limiter, workspace.scalar_gradients[0],
-                       workspace.limiter_factors[0]);
-    const auto theta_reconstruction =
-        prepare_scalar(grid, theta, limiter, workspace.scalar_gradients[1],
-                       workspace.limiter_factors[1]);
-    const auto tracer_reconstruction =
-        prepare_scalar(grid, tracer, limiter, workspace.scalar_gradients[2],
-                       workspace.limiter_factors[2]);
+    const auto mass_reconstruction = prepare_scalar(
+        grid, mass, limiter, worker.scalar_gradients[0], worker.limiter_factors[0]);
+    const auto theta_reconstruction = prepare_scalar(
+        grid, theta, limiter, worker.scalar_gradients[1], worker.limiter_factors[1]);
+    const auto tracer_reconstruction = prepare_scalar(
+        grid, tracer, limiter, worker.scalar_gradients[2], worker.limiter_factors[2]);
     const auto temperature_reconstruction =
-        prepare_scalar(grid, temperature, limiter, workspace.scalar_gradients[3],
-                       workspace.limiter_factors[3]);
-    const auto velocity_reconstruction =
-        prepare_velocity(grid, velocity, limiter, workspace.velocity_gradient,
-                         workspace.limiter_factors[4]);
+        prepare_scalar(grid, temperature, limiter, worker.scalar_gradients[3],
+                       worker.limiter_factors[3]);
+    const auto velocity_reconstruction = prepare_velocity(
+        grid, velocity, limiter, worker.velocity_gradient, worker.limiter_factors[4]);
     for (std::size_t cell = 0; cell < cells; ++cell) {
       if (mass_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
           theta_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
           tracer_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
           temperature_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
           velocity_reconstruction.factor[cell] < 1.0 - 1.0e-14)
-        ++result.limiter_activations;
+        ++limiter_activations;
     }
     for (const auto& edge : grid.edges()) {
       const auto& cached_edge = grid.edge_cache()[edge.id];
@@ -297,6 +330,7 @@ void reconstruct_dry_hydrostatic_face_states(
                                                       .right = face(right)};
     }
   }
+  result.limiter_activations = limiter_activations;
 }
 
 }  // namespace mps

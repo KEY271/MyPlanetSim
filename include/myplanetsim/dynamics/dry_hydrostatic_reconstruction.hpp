@@ -26,7 +26,7 @@ struct DryHydrostaticReconstruction {
                                                    std::size_t level) const;
 };
 
-struct DryHydrostaticReconstructionWorkspace {
+struct DryHydrostaticReconstructionLevelWorkspace {
   std::array<std::vector<Vec3>, 4> scalar_gradients;
   std::array<std::vector<Real>, 5> limiter_factors;
   std::vector<TangentVectorGradient> velocity_gradient;
@@ -35,6 +35,10 @@ struct DryHydrostaticReconstructionWorkspace {
   std::vector<Real> tracer;
   std::vector<Real> temperature;
   std::vector<Vec3> velocity;
+};
+
+struct DryHydrostaticReconstructionWorkspace {
+  std::vector<DryHydrostaticReconstructionLevelWorkspace> workers;
 };
 
 [[nodiscard]] DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(

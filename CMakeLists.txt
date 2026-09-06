@@ -11,6 +11,11 @@ include(cmake/MyPlanetSimWarnings.cmake)
 include(cmake/MyPlanetSimSanitizers.cmake)
 include(cmake/MyPlanetSimFormatting.cmake)
 
+option(MPS_ENABLE_OPENMP "Parallelize dry-core face reconstruction with OpenMP" OFF)
+if(MPS_ENABLE_OPENMP)
+  find_package(OpenMP REQUIRED COMPONENTS CXX)
+endif()
+
 find_package(Git QUIET)
 set(MPS_GIT_REVISION "unknown")
 set(MPS_GIT_DIRTY_VALUE 0)
@@ -107,6 +112,10 @@ target_link_libraries(
   myplanetsim_core
   PRIVATE myplanetsim_warnings myplanetsim_sanitizers
 )
+if(MPS_ENABLE_OPENMP)
+  target_compile_definitions(myplanetsim_core PRIVATE MPS_ENABLE_OPENMP=1)
+  target_link_libraries(myplanetsim_core PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 add_executable(my_planet_sim apps/my_planet_sim.cpp)
 target_link_libraries(
