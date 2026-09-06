@@ -75,3 +75,17 @@ cycle. Tests cover a nonsymmetric matrix, exact diagonal preconditioning, a zero
 residual, Arnoldi breakdown, iteration exhaustion, invalid/non-finite inputs, and zero
 heap allocations after workspace warm-up. The dry solver is not connected to GMRES at
 this milestone.
+
+## P10.04 linear shallow-water Helmholtz fixture
+
+The matrix-free cell-centred Helmholtz operator uses one conservative edge flux for its
+finite-volume Laplacian and an area-aware Jacobi diagonal. Constants are preserved and
+the area-weighted global Laplacian integral is roundoff zero. A known nonsymmetric-GMRES
+path recovers a manufactured Helmholtz solution.
+
+The independent linear shallow-water Crank--Nicolson fixture remains stable at wave
+Courant 0.5, 1, 2, 4, and 8 for 20 steps. Its compatible edge-gradient/cell-divergence
+pair preserves perturbation mass and quadratic wave energy within the registered
+roundoff/solver tolerance. The 0.4/0.2/0.1 Courant refinement sequence, compared with a
+0.025 reference, passes the second-order self-convergence gate. No production
+shallow-water integration path is changed.

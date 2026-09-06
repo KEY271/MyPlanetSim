@@ -95,6 +95,7 @@ add_library(
   src/physics/surface_energy_balance.cpp
   src/numerics/compatible_operators.cpp
   src/numerics/gmres.cpp
+  src/numerics/helmholtz_solver.cpp
   src/numerics/spherical_operators.cpp
   src/transport/spherical_transport.cpp
   src/thermodynamics/dry_thermodynamics.cpp
