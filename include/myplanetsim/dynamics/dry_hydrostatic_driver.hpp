@@ -15,8 +15,13 @@ namespace mps {
 struct DryHydrostaticRhs {
   std::vector<Real> surface_pressure_pa_s;
   DryHydrostaticTransportTendency tendency;
-  Real horizontal_stable_time_step_s;
-  Real vertical_stable_time_step_s;
+  // Legacy explicit limit. This remains min(fast-wave, diffusion) so the SSP-RK3
+  // path is unchanged while Phase 10 can inspect the split constraints below.
+  Real horizontal_stable_time_step_s = std::numeric_limits<Real>::infinity();
+  Real horizontal_fast_wave_stable_time_step_s = std::numeric_limits<Real>::infinity();
+  Real horizontal_advective_stable_time_step_s = std::numeric_limits<Real>::infinity();
+  Real diffusion_stable_time_step_s = std::numeric_limits<Real>::infinity();
+  Real vertical_stable_time_step_s = std::numeric_limits<Real>::infinity();
   Real surface_stable_time_step_s = std::numeric_limits<Real>::infinity();
   Real maximum_continuity_residual_pa_s;
   HeldSuarezDiagnostics physics_diagnostics{};

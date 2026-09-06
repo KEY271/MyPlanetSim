@@ -206,8 +206,10 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
   // Per-cell Courant condition (ADR 0011): dt * sum_f(lambda_f * L_f) / A_cell <= cfl,
   // the same definition the transport and shallow-water solvers already use. The
   // previous per-edge form was about four times weaker on a quadrilateral cell.
-  workspace.face_speed_length.assign(C * K, 0.0);
-  auto& face_speed_length = workspace.face_speed_length;
+  workspace.face_fast_wave_speed_length.assign(C * K, 0.0);
+  workspace.face_advective_speed_length.assign(C * K, 0.0);
+  auto& face_fast_wave_speed_length = workspace.face_fast_wave_speed_length;
+  auto& face_advective_speed_length = workspace.face_advective_speed_length;
   reconstruct_dry_hydrostatic_face_states(
       grid_, d, config_.dry_hydrostatic.reconstruction, config_.dry_hydrostatic.limiter,
       workspace.reconstruction, workspace.reconstruction_workspace);
@@ -230,19 +232,28 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
         h.potential_temperature_mass[n] +=
             scale * f.potential_temperature_mass_k_kg_m_s;
         h.tracer_mass[n] += scale * f.tracer_mass_kg_m_s;
-        face_speed_length[n] += e.length_m * f.maximum_wave_speed_m_s;
+        face_fast_wave_speed_length[n] += e.length_m * f.maximum_wave_speed_m_s;
+        face_advective_speed_length[n] += e.length_m * f.maximum_dissipation_speed_m_s;
       };
       add(l, -1);
       add(r, 1);
     }
   }
-  Real dt = std::numeric_limits<Real>::infinity();
+  Real fast_wave_dt = std::numeric_limits<Real>::infinity();
+  Real advective_dt = std::numeric_limits<Real>::infinity();
   for (std::size_t c = 0; c < C; ++c) {
     for (std::size_t k = 0; k < K; ++k) {
-      const Real denominator = face_speed_length[dry_hydrostatic_offset(c, k, K)];
-      if (denominator > 0.0)
-        dt = std::min(
-            dt, config_.dry_hydrostatic.cfl * grid_.cells()[c].area_m2 / denominator);
+      const auto n = dry_hydrostatic_offset(c, k, K);
+      const Real fast_wave_denominator = face_fast_wave_speed_length[n];
+      if (fast_wave_denominator > 0.0)
+        fast_wave_dt = std::min(fast_wave_dt, config_.dry_hydrostatic.cfl *
+                                                  grid_.cells()[c].area_m2 /
+                                                  fast_wave_denominator);
+      const Real advective_denominator = face_advective_speed_length[n];
+      if (advective_denominator > 0.0)
+        advective_dt = std::min(advective_dt, config_.dry_hydrostatic.cfl *
+                                                  grid_.cells()[c].area_m2 /
+                                                  advective_denominator);
     }
   }
   couple_dry_hydrostatic_columns(
@@ -279,6 +290,7 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
                                    sources.pressure_gradient_kg_m_s2[n] +
                                    sources.coriolis_kg_m_s2[n];
   Real diffusion_rate = 0.0;
+  Real diffusion_dt = std::numeric_limits<Real>::infinity();
   if (config_.dry_hydrostatic.diffusion_kind != DiffusionKind::kNone) {
     const auto diffusion = dry_hydrostatic_diffusion_tendency(
         grid_, d, config_.dry_hydrostatic.diffusion_kind,
@@ -291,10 +303,9 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
       coupled.tendency.tracer_mass[n] += diffusion.tracer_mass[n];
     }
     diffusion_rate = diffusion.kinetic_energy_rate_w;
-    dt = std::min(
-        dt, stable_diffusion_time_step(grid_, config_.dry_hydrostatic.diffusion_kind,
-                                       config_.dry_hydrostatic.diffusion_coefficient,
-                                       config_.run.time_step_s));
+    diffusion_dt = stable_diffusion_time_step(
+        grid_, config_.dry_hydrostatic.diffusion_kind,
+        config_.dry_hydrostatic.diffusion_coefficient, config_.run.time_step_s);
   }
   HeldSuarezDiagnostics physics_diagnostics{};
   SurfaceEnergyDiagnostics surface_diagnostics{};
@@ -349,7 +360,10 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
   }
   result.surface_pressure_pa_s = coupled.surface_pressure_pa_s;
   result.tendency = coupled.tendency;
-  result.horizontal_stable_time_step_s = dt;
+  result.horizontal_fast_wave_stable_time_step_s = fast_wave_dt;
+  result.horizontal_advective_stable_time_step_s = advective_dt;
+  result.diffusion_stable_time_step_s = diffusion_dt;
+  result.horizontal_stable_time_step_s = std::min(fast_wave_dt, diffusion_dt);
   result.vertical_stable_time_step_s = vertical_dt;
   result.surface_stable_time_step_s = surface_dt;
   result.maximum_continuity_residual_pa_s = coupled.maximum_continuity_residual_pa_s;

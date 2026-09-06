@@ -107,6 +107,10 @@ MPS_TEST_CASE("advance limits the step to the stable CFL and lands on the end ti
   // The Rusanov external-mode estimate is well below the requested maximum step, so the
   // run below is CFL limited rather than limited by run.time_step_s.
   MPS_CHECK(rhs.horizontal_stable_time_step_s < c.run.time_step_s);
+  MPS_CHECK_EQ(rhs.horizontal_stable_time_step_s,
+               rhs.horizontal_fast_wave_stable_time_step_s);
+  MPS_CHECK(std::isinf(rhs.horizontal_advective_stable_time_step_s));
+  MPS_CHECK(std::isinf(rhs.diffusion_stable_time_step_s));
   MPS_CHECK(rhs.vertical_stable_time_step_s > 0.0);
 
   constexpr double end = 0.05;
@@ -117,6 +121,28 @@ MPS_TEST_CASE("advance limits the step to the stable CFL and lands on the end ti
     MPS_CHECK(pressure >= c.vertical.minimum_surface_pressure_pa);
     MPS_CHECK(pressure <= c.vertical.maximum_surface_pressure_pa);
   }
+}
+
+MPS_TEST_CASE("dry RHS separates material and fast-wave horizontal limits") {
+  const auto c = config();
+  mps::DryHydrostaticDriver driver(c);
+  auto state = driver.initial_state();
+  const auto derived = driver.diagnose(state);
+  for (std::size_t n = 0; n < state.horizontal_momentum_mass_kg_m_s.size(); ++n) {
+    const auto cell = n / static_cast<std::size_t>(c.vertical.levels);
+    const auto velocity =
+        25.0 * mps::normalize(mps::project_tangent(mps::Vec3{0, 0, 1},
+                                                   driver.grid().cells()[cell].center));
+    state.horizontal_momentum_mass_kg_m_s[n] = derived.air_mass_kg_m2[n] * velocity;
+  }
+
+  const auto rhs = driver.rhs(state);
+  MPS_CHECK(std::isfinite(rhs.horizontal_fast_wave_stable_time_step_s));
+  MPS_CHECK(std::isfinite(rhs.horizontal_advective_stable_time_step_s));
+  MPS_CHECK(rhs.horizontal_fast_wave_stable_time_step_s <
+            rhs.horizontal_advective_stable_time_step_s);
+  MPS_CHECK_EQ(rhs.horizontal_stable_time_step_s,
+               rhs.horizontal_fast_wave_stable_time_step_s);
 }
 
 MPS_TEST_CASE("advance reevaluates the complete RHS at all SSP-RK3 stages") {

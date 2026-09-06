@@ -15,7 +15,8 @@ struct DryHydrostaticWorkspace {
   std::vector<Real> column_potential_temperature;
 
   DryHydrostaticTransportTendency horizontal_tendency;
-  std::vector<Real> face_speed_length;
+  std::vector<Real> face_fast_wave_speed_length;
+  std::vector<Real> face_advective_speed_length;
   DryHydrostaticReconstruction reconstruction;
   DryHydrostaticReconstructionWorkspace reconstruction_workspace;
   DryHydrostaticCoupling coupling;
