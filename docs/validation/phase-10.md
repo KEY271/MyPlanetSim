@@ -66,3 +66,12 @@ The operational limit is the largest passing step below that failure, not simply
 largest run that remains finite. Held--Suarez retains the Phase 10 completion requirement
 of median accepted step >=1,200 s and the delivery target of 1,800 s even if simpler dry
 dynamics admits a longer step.
+
+## P10.03 restarted GMRES
+
+The standalone solver uses right preconditioning, modified Gram--Schmidt with one
+reorthogonalization pass, Givens rotations, and a true-residual check after every restart
+cycle. Tests cover a nonsymmetric matrix, exact diagonal preconditioning, a zero initial
+residual, Arnoldi breakdown, iteration exhaustion, invalid/non-finite inputs, and zero
+heap allocations after workspace warm-up. The dry solver is not connected to GMRES at
+this milestone.
