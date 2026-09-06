@@ -5,6 +5,7 @@
 
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_coupling.hpp"
+#include "myplanetsim/dynamics/dry_hydrostatic_fast_modes.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_workspace.hpp"
 #include "myplanetsim/dynamics/surface_boundary.hpp"
 #include "myplanetsim/dynamics/surface_orography.hpp"
@@ -83,6 +84,14 @@ class DryHydrostaticDriver {
       const noexcept {
     return surface_boundary_;
   }
+  [[nodiscard]] const std::optional<DryHydrostaticReferenceColumn>&
+  semi_implicit_reference_column() const noexcept {
+    return semi_implicit_reference_column_;
+  }
+  [[nodiscard]] const std::optional<DryHydrostaticVerticalModes>&
+  semi_implicit_vertical_modes() const noexcept {
+    return semi_implicit_vertical_modes_;
+  }
 
  private:
   ExperimentConfig config_;
@@ -91,6 +100,8 @@ class DryHydrostaticDriver {
   SurfaceOrography orography_;
   std::optional<SurfaceBoundary> surface_boundary_;
   std::optional<DryHydrostaticPressureReference> pressure_reference_;
+  std::optional<DryHydrostaticReferenceColumn> semi_implicit_reference_column_;
+  std::optional<DryHydrostaticVerticalModes> semi_implicit_vertical_modes_;
   mutable DryHydrostaticWorkspace workspace_;
 
   void rhs_with_components(const DryHydrostaticState&, DryHydrostaticRhs&,

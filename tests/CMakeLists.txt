@@ -43,6 +43,8 @@ mps_add_test(unit.dry_hydrostatic_coupling test_dry_hydrostatic_coupling.cpp)
 mps_add_test(unit.dry_hydrostatic_driver test_dry_hydrostatic_driver.cpp)
 mps_add_test(unit.rhs_allocation test_rhs_allocation.cpp)
 mps_add_test(unit.dry_hydrostatic_diffusion test_dry_hydrostatic_diffusion.cpp)
+mps_add_test(unit.dry_hydrostatic_fast_modes test_dry_hydrostatic_fast_modes.cpp)
+set_tests_properties(unit.dry_hydrostatic_fast_modes PROPERTIES LABELS phase10_gate)
 mps_add_test(unit.time_step_normalization test_time_step_normalization.cpp)
 mps_add_test(smoke.presets test_preset_smoke.cpp)
 target_compile_definitions(

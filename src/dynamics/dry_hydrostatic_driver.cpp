@@ -178,6 +178,16 @@ DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
     pressure_reference_ = make_dry_hydrostatic_pressure_reference(
         grid_, diagnose(reference_state), config_.planet);
   }
+  if (config_.dry_hydrostatic.time_integrator ==
+      DryHydrostaticTimeIntegrator::kSemiImplicit) {
+    if (!config_.semi_implicit.has_value())
+      throw std::invalid_argument(
+          "semi-implicit dry driver requires semi-implicit parameters");
+    semi_implicit_reference_column_ = make_dry_hydrostatic_reference_column(
+        coordinate_, config_.planet, *config_.semi_implicit);
+    semi_implicit_vertical_modes_ = make_dry_hydrostatic_external_mode(
+        *semi_implicit_reference_column_, config_.planet);
+  }
 }
 DryHydrostaticState DryHydrostaticDriver::initial_state() const {
   auto state =

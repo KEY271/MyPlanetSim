@@ -99,3 +99,17 @@ are required and validated together. Semi-implicit keys are rejected for every o
 experiment kind. Legacy dry configurations emit no new keys; their canonical round trip
 and fingerprint remain unchanged. Active semi-implicit parameters are emitted
 canonically and therefore participate in the fingerprint and run metadata.
+
+## P10.06 hydrostatic reference and external mode
+
+The configured pressure and temperature now build a horizontally uniform, isothermal
+reference column through the production hybrid-coordinate and hydrostatic integration
+paths. Tests recover the configured temperature from `theta * Exner`, close the layer
+pressure sum, and verify zero hydrostatic reconstruction residual.
+
+The first registered vertical basis contains the normalized external mode with phase
+speed `sqrt(gamma * Rd * T_ref)`. Projection/reconstruction round-trips an external
+profile. Per-cell perimeter/area Courant selection leaves it explicit at 100 s and
+selects it at 1,800 s on `N=12`; exceeding the configured mode cap is an error. The dry
+driver constructs and owns this immutable reference data only for active semi-implicit
+configuration. Internal eigenmodes remain the explicit P10.09 extension.
