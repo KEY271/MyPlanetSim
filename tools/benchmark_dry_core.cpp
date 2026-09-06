@@ -92,6 +92,8 @@ int main(int argc, char** argv) {
     const auto start = std::chrono::steady_clock::now();
     driver.advance(state, end_time);
     const auto stop = std::chrono::steady_clock::now();
+    mps::DryHydrostaticRhs final_rhs;
+    driver.rhs(state, final_rhs);
 
     const std::uint64_t completed_steps = state.step - initial_step;
     const double elapsed_s = std::chrono::duration<double>(stop - start).count();
@@ -137,34 +139,49 @@ int main(int argc, char** argv) {
                             seconds_per_step <= kMaximumSecondsPerStep &&
                             allocations == 0;
 
-    std::cout << std::setprecision(10) << "benchmark = phase7_held_suarez\n"
-              << "steps = " << completed_steps << '\n'
-              << "cell_levels = " << cell_levels << '\n'
-              << "elapsed_s = " << elapsed_s << '\n'
-              << "seconds_per_step = " << seconds_per_step << '\n'
-              << "cell_level_updates_per_s = " << updates_per_second << '\n'
-              << "peak_rss_bytes = " << rss_bytes << '\n'
-              << "peak_rss_bytes_per_cell_level = "
-              << static_cast<double>(rss_bytes) / static_cast<double>(cell_levels)
-              << '\n'
-              << "initial_lamb_cfl_speed_m_s = " << initial_wave_speed_m_s << '\n'
-              << "inactive_fast_speed_diffusivity_proxy_m2_s = " << fast_proxy_mean_m2_s
-              << '\n'
-              << "initial_jump_diffusivity_min_m2_s = " << jump_diffusivity_min_m2_s
-              << '\n'
-              << "initial_jump_diffusivity_mean_m2_s = " << jump_diffusivity_mean_m2_s
-              << '\n'
-              << "initial_jump_diffusivity_max_m2_s = " << jump_diffusivity_max_m2_s
-              << '\n'
-              << "reference_explicit_diffusivity_m2_s = "
-              << kReferenceExplicitDiffusivityM2S << '\n'
-              << "initial_jump_to_explicit_diffusivity_ratio = "
-              << jump_diffusivity_mean_m2_s / kReferenceExplicitDiffusivityM2S << '\n'
-              << "allocations_per_rhs = " << allocations << '\n'
-              << "registered_min_cell_level_updates_per_s = "
-              << kMinimumCellLevelUpdatesPerSecond << '\n'
-              << "registered_max_seconds_per_step = " << kMaximumSecondsPerStep << '\n'
-              << "registered_target_met = " << std::boolalpha << target_met << '\n';
+    std::cout
+        << std::setprecision(10) << "benchmark = phase7_held_suarez\n"
+        << "steps = " << completed_steps << '\n'
+        << "cell_levels = " << cell_levels << '\n'
+        << "elapsed_s = " << elapsed_s << '\n'
+        << "seconds_per_step = " << seconds_per_step << '\n'
+        << "cell_level_updates_per_s = " << updates_per_second << '\n'
+        << "peak_rss_bytes = " << rss_bytes << '\n'
+        << "peak_rss_bytes_per_cell_level = "
+        << static_cast<double>(rss_bytes) / static_cast<double>(cell_levels) << '\n'
+        << "initial_lamb_cfl_speed_m_s = " << initial_wave_speed_m_s << '\n'
+        << "initial_fast_wave_stable_dt_s = "
+        << rhs.horizontal_fast_wave_stable_time_step_s << '\n'
+        << "initial_advective_stable_dt_s = "
+        << rhs.horizontal_advective_stable_time_step_s << '\n'
+        << "initial_vertical_stable_dt_s = " << rhs.vertical_stable_time_step_s << '\n'
+        << "initial_diffusion_stable_dt_s = " << rhs.diffusion_stable_time_step_s
+        << '\n'
+        << "initial_surface_stable_dt_s = " << rhs.surface_stable_time_step_s << '\n'
+        << "final_fast_wave_stable_dt_s = "
+        << final_rhs.horizontal_fast_wave_stable_time_step_s << '\n'
+        << "final_advective_stable_dt_s = "
+        << final_rhs.horizontal_advective_stable_time_step_s << '\n'
+        << "final_vertical_stable_dt_s = " << final_rhs.vertical_stable_time_step_s
+        << '\n'
+        << "final_diffusion_stable_dt_s = " << final_rhs.diffusion_stable_time_step_s
+        << '\n'
+        << "final_surface_stable_dt_s = " << final_rhs.surface_stable_time_step_s
+        << '\n'
+        << "inactive_fast_speed_diffusivity_proxy_m2_s = " << fast_proxy_mean_m2_s
+        << '\n'
+        << "initial_jump_diffusivity_min_m2_s = " << jump_diffusivity_min_m2_s << '\n'
+        << "initial_jump_diffusivity_mean_m2_s = " << jump_diffusivity_mean_m2_s << '\n'
+        << "initial_jump_diffusivity_max_m2_s = " << jump_diffusivity_max_m2_s << '\n'
+        << "reference_explicit_diffusivity_m2_s = " << kReferenceExplicitDiffusivityM2S
+        << '\n'
+        << "initial_jump_to_explicit_diffusivity_ratio = "
+        << jump_diffusivity_mean_m2_s / kReferenceExplicitDiffusivityM2S << '\n'
+        << "allocations_per_rhs = " << allocations << '\n'
+        << "registered_min_cell_level_updates_per_s = "
+        << kMinimumCellLevelUpdatesPerSecond << '\n'
+        << "registered_max_seconds_per_step = " << kMaximumSecondsPerStep << '\n'
+        << "registered_target_met = " << std::boolalpha << target_met << '\n';
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "benchmark error: " << error.what() << '\n';

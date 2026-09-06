@@ -111,7 +111,7 @@ MPS_TEST_CASE("advance limits the step to the stable CFL and lands on the end ti
                rhs.horizontal_fast_wave_stable_time_step_s);
   MPS_CHECK(std::isinf(rhs.horizontal_advective_stable_time_step_s));
   MPS_CHECK(std::isinf(rhs.diffusion_stable_time_step_s));
-  MPS_CHECK(rhs.vertical_stable_time_step_s > 0.0);
+  MPS_CHECK(std::isinf(rhs.vertical_stable_time_step_s));
 
   constexpr double end = 0.05;
   driver.advance(state, end);

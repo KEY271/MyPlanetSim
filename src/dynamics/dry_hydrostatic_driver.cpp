@@ -265,7 +265,7 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
       // reconstruction. Stage validation still rejects non-positive temperatures.
       VerticalLimiterKind::kNone, workspace.coupling, workspace.coupling_workspace);
   auto& coupled = workspace.coupling;
-  Real vertical_dt = config_.run.time_step_s;
+  Real vertical_dt = std::numeric_limits<Real>::infinity();
   for (std::size_t c = 0; c < C; ++c) {
     const auto begin = c * K;
     const auto interface_begin = c * (K + 1);
@@ -273,10 +273,10 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
     const std::span<const Real> interface_flux(
         coupled.interface_mass_flux_kg_m2_s.data() + interface_begin, K + 1);
     const std::span<const Real> horizontal_air_mass(h.air_mass.data() + begin, K);
-    vertical_dt = std::min(
-        vertical_dt,
-        vertical_stable_time_step(air_mass, interface_flux, horizontal_air_mass,
-                                  config_.vertical.cfl, config_.run.time_step_s));
+    const Real unit_step_cfl =
+        vertical_maximum_cfl(air_mass, interface_flux, horizontal_air_mass, 1.0);
+    if (unit_step_cfl > 0.0)
+      vertical_dt = std::min(vertical_dt, config_.vertical.cfl / unit_step_cfl);
   }
   if (pressure_reference_.has_value())
     dry_hydrostatic_sources(grid_, d, config_.planet, *pressure_reference_,
@@ -303,9 +303,10 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
       coupled.tendency.tracer_mass[n] += diffusion.tracer_mass[n];
     }
     diffusion_rate = diffusion.kinetic_energy_rate_w;
-    diffusion_dt = stable_diffusion_time_step(
-        grid_, config_.dry_hydrostatic.diffusion_kind,
-        config_.dry_hydrostatic.diffusion_coefficient, config_.run.time_step_s);
+    diffusion_dt =
+        stable_diffusion_time_step(grid_, config_.dry_hydrostatic.diffusion_kind,
+                                   config_.dry_hydrostatic.diffusion_coefficient,
+                                   std::numeric_limits<Real>::max());
   }
   HeldSuarezDiagnostics physics_diagnostics{};
   SurfaceEnergyDiagnostics surface_diagnostics{};

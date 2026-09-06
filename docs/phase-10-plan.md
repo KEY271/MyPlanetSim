@@ -23,6 +23,11 @@ Phase 10 の到達点を次に固定する。
 5. flat、terrain-following、baroclinic、forced climate の順に検証し、30 分を単なる「落ちない値」では
    なく、位相誤差・保存量・solver cost を伴う登録済み能力にする。
 
+30 分は必達の運用目標であって hard ceiling ではない。1800/900/450 s の精度 gate を通した後、
+2400、3600、5400、7200 s を順に探索し、安定性、位相・振幅、balance、climate envelope、retry、cost の
+いずれかが最初に外れる点を case ごとの実用上限として記録する。単純な乾燥力学が30分超を許しても、
+physics を結合した preset は独立により短い上限を持ち得る。
+
 ```text
 Phase 9 explicit baseline
         |
@@ -357,6 +362,7 @@ production shallow-water driverの integratorは変更せず、同じ cubed-sphe
 - dry mass、`M*theta`、tracer mass driftが既存 explicit gateと同じ order
 - pressure、temperature、layer thickness、tangencyが全 accepted stepで有効
 - external-only と multi-mode の差を記録し、必要 internal mode数を事前基準から選ぶ
+- 上記 gate 通過後に2400/3600/5400/7200 sを順次試し、最初の不合格理由と最後の合格 stepを記録する
 
 ### 5.4 balance、terrain、baroclinic gate
 
@@ -493,7 +499,7 @@ configs/phase10_held_suarez_semi_implicit.cfg
 12. P10.12 test: gate flat, balanced, terrain, and baroclinic dynamics
       DCMIP rest、mountain wave、UMJS14/JW06、GCC/Clang、sanitizers
 13. P10.13 config: register Phase 10 long-step presets
-      1800/900/450 s comparison。既存 Phase 5--8 presetは変更しない
+      1800/900/450 s comparisonと30分超の上限探索。既存 Phase 5--8 presetは変更しない
 14. P10.14 perf: meet the model-day speed and memory envelope
       profile、preconditioner改善、30日 explicit/semi-implicit比較
 15. P10.15 validation: run the 1200-day pilot and close Phase 10
@@ -542,6 +548,7 @@ baseline更新を混ぜず、旧 explicit結果と新 semi-implicit結果を別�
 ### Dynamics
 
 - [ ] flat linear waveが1800 sを受理し、wave Courant 3以上で振幅・位相 gateを満たす。
+- [ ] 2400/3600/5400/7200 s探索でcase別の最大合格stepと最初の不合格理由が記録される。
 - [ ] isothermal restとDCMIP terrain restが既存の静止性を失わない。
 - [ ] linear mountain waveとUMJS14/JW06 baroclinic caseがstep細分化で収束する。
 - [ ] pressure、temperature、layer thickness、tracer、tangency違反をclipせず拒否する。

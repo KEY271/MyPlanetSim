@@ -29,6 +29,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 7 検証報告](docs/validation/phase-7.md): Held--Suarez forcing、online 統計、CI gate と保留中の production matrix
 - [Phase 8 検証報告](docs/validation/phase-8.md): 惑星・軌道、fractional surface、結合熱収支の bounded gate と production gap
 - [Phase 9 検証報告](docs/validation/phase-9.md): 正しさの修正、平衡 benchmark、性能 gate と既知の数値的制約
+- [Phase 10 検証報告](docs/validation/phase-10.md): semi-implicit 実装の固定 baseline と段階的検証結果
 - [cubed-sphere panel ADR](docs/adr/0001-cubed-sphere-panel-conventions.md): panel、edge、向き、flux 符号規約
 - [shallow-water state ADR](docs/adr/0002-shallow-water-state-and-staggering.md): 予報変数、staggering、flux/source 分割
 - [水平離散化 ADR](docs/adr/0003-shallow-water-horizontal-discretization.md): 基準 Rusanov 法と compatible 候補の比較と採否
@@ -40,6 +41,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [静的 cache・性能ゲート ADR](docs/adr/0012-static-grid-cache-and-performance-gates.md): 時間不変な格子量の前計算、RHS workspace、正しさと分離した性能ゲート
 - [平衡初期場 ADR](docs/adr/0013-balanced-benchmark-initial-states.md): `steady` の定義、UMJS14/JW06 の惑星整合、DCMIP 座標の修復
 - [低散逸・reference balance ADR](docs/adr/0014-low-dissipation-and-reference-balanced-dry-core.md): Lamb CFL と移流散逸の分離、DCMIP terrain rest の離散保存
+- [重力波 semi-implicit ADR](docs/adr/0016-semi-implicit-gravity-wave-integration.md): fast/slow 分割、反復法、solver failure、30分超の探索契約
 
 ## ビルドと実行
 
