@@ -17,6 +17,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 7 実装計画](docs/phase-7-plan.md): Held--Suarez 型の理想化乾燥物理、source budget、長時間気候統計の限定実装
 - [Phase 8 実装計画](docs/phase-8-plan.md): 惑星・軌道設定、Earth 地形、fractional land--ocean surface と理想化熱強制
 - [Phase 9 実装計画](docs/phase-9-plan.md): 演算子・CFL・平衡ベンチマークの修正、静的 cache と性能ゲート、production gate の unblock
+- [Phase 10 実装計画](docs/phase-10-plan.md): 高速な Lamb・重力波の semi-implicit 化、鉛直 mode 分解、30 分時間刻みの精度・性能ゲート
 - [科学・数値規約](docs/conventions.md): 単位、座標、添字、符号、誤差・保存量の共通定義
 - [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
 - [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果
@@ -93,6 +94,10 @@ Phase 9 までの限定した実装・検証範囲は完了しています。球
 乾燥 3D 静水圧コア、固定地形、理想化乾燥物理、惑星・軌道・陸海 surface、Web 可視化に加え、
 演算子・CFL・平衡初期場の修正と静的 cache・性能 gate を実装しています。詳細と再現手順は
 [Phase 9 検証報告](docs/validation/phase-9.md)を参照してください。
+
+次の Phase 10 では、乾燥静水圧コアの高速な Lamb・重力波だけを semi-implicit に扱い、
+陽に残る移流 CFL を守りながら通常 1200--1800 秒の時間刻みを可能にする計画です。設計、実装順、
+精度・地形・長時間・性能の完了条件は [Phase 10 実装計画](docs/phase-10-plan.md) に定めています。
 
 本プロジェクトは研究・開発段階の実験的ソフトウェアです。Phase 5--7 の production 規模の
 長時間の production climate matrix は未実施です。DCMIP 2-0-0 の terrain-following rest は

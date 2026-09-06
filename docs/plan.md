@@ -326,7 +326,25 @@ production gap を、新しい物理を追加せずに閉じる。詳細な設�
 
 完了ゲート: production matrix が MPI/OpenMP なしで実行可能であり、1 run の pilot コストが実測されている。
 
-### Phase 10 — 物理拡張と性能（基本コア完成後）
+### Phase 10 — 重力波 semi-implicit 時間積分
+
+乾燥静水圧コアで CFL を支配する水平 Lamb 波と高速な内部重力波を reference-linear
+semi-implicit 法で解き、既存 SSP-RK3 を比較基準として残したまま通常 1200--1800 s の時間刻みを
+可能にする。詳細な方式、段階的実装、精度・地形・長時間・性能 gate は
+[Phase 10 実装計画](phase-10-plan.md) に定める。
+
+実装するもの:
+
+- full nonlinear RHS と保存的 reference-linear fast-wave operator の add--subtract 分割
+- iterative Crank--Nicolson、鉛直重力波 mode 分解、2-D Helmholtz solve
+- matrix-free GMRES と preconditioner、solver residual・iteration・retry 診断
+- explicit/implicit/vertical/surface CFL の分離と conditional config
+- flat wave、DCMIP terrain rest、mountain wave、baroclinic、Held--Suarez の段階的 gate
+
+完了ゲート: `N=12`, `K=20` の Held--Suarez で median accepted step が 1200 s 以上、同じモデル期間の
+explicit 200 s run より 3 倍以上速く、1 本の 1200 日 run が保存量・solver 診断付きで完走する。
+
+### Phase 11 以後 — 物理拡張と並列性能
 
 候補:
 
@@ -334,8 +352,10 @@ production gap を、新しい物理を追加せずに閉じる。詳細な設�
 - 水蒸気・凝結・簡易雲、その後に詳細放射
 - 非静水圧方程式（必要な惑星・解像度が明確になった場合）
 - OpenMP/MPI、並列 halo exchange、並列 I/O、accelerator 対応
+- advective CFL が実測上の次の支配項になった場合の semi-Lagrangian または別の長時間刻み輸送
 
-各物理過程は単一 column test と process budget を先に作る。並列化は serial 結果との許容誤差内一致、領域分割不変性、strong/weak scaling を検証し、科学的回帰試験を通過させる。
+各物理過程は単一 column test と process budget を先に作る。並列化は serial 結果との許容誤差内一致、
+領域分割不変性、strong/weak scaling を検証し、科学的回帰試験を通過させる。
 
 ## 4. 横断的な品質基準
 
@@ -364,18 +384,18 @@ production gap を、新しい物理を追加せずに閉じる。詳細な設�
 
 ## 5. 直近の実装順
 
-Phase 8 までの C++ 実装列は完了したが、全体レビューは誤った演算子、solver ごとに意味の異なる CFL、
-定常でない「定常」ベンチマークを見つけ、Phase 5--7 検証報告には production 規模の定量的 gap が残る。
-次のスプリントは新しい physics を追加する前にこれを閉じる。順序と根拠は
-[Phase 9 実装計画](phase-9-plan.md) に定める。
+Phase 9 までの基盤修正と性能改善は完了した。次は、新しい物理を積む前に explicit Lamb CFL による
+200 s 制約を外し、長時間 climate integration の step 数そのものを減らす。順序と根拠は
+[Phase 10 実装計画](phase-10-plan.md) に定める。
 
-1. ADR 0011/0012/0013 と ADR 0009 amendment で契約を確定する。
-2. 球面ベクトル Laplacian を修正し、その上で乾燥コアの水平拡散を配線する。
-3. CFL 定義を cell 単位へ統一し、DCMIP 座標と平衡初期場を修復する。
-4. 静的 geometry cache、workspace、observer 間隔化を bit-exact / 登録許容差の別で進める。
-5. 平衡性・収束 gate と診断の健全性を強化し、gateway と ingest の衛生を閉じる。
-6. Phase 5--7 production gate の blocker が外れたことを 1 本の pilot で示す。
-7. 放射・湿潤・非静水圧・並列化は Phase 10 として、上記の完了後に着手する。
+1. ADR 0016 と explicit baseline測定で fast/slow split、保存、solver、精度・性能閾値を固定する。
+2. total RHSを変えずに componentとCourant診断を分離する。
+3. GMRES/Helmholtz solverを線形 shallow-water fixtureで独立に検証する。
+4. hydrostatic reference column、鉛直mode、保存的 tangent-linear fast operatorを実装する。
+5. external modeから始め、必要なinternal modesへ iterative Crank--Nicolson solveを拡張する。
+6. flat、terrain、baroclinic、Held--Suarezの順に1200--1800 sを検証する。
+7. 30日比較で3倍以上のspeedupを確認してから、1本の1200日pilotを実行する。
+8. 放射・湿潤・非静水圧・本格的並列化はPhase 11以後とする。
 
 ## 6. 調査資料と計画への反映
 
