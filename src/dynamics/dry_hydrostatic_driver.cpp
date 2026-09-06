@@ -121,6 +121,27 @@ void halve_time_step(const DryHydrostaticState& state, Real& time_step_s) {
                    rhs.surface_stable_time_step_s});
 }
 
+void resize_zero_rhs_term(DryHydrostaticRhsTerm& term, const std::size_t cells,
+                          const std::size_t levels) {
+  const auto cell_levels = cells * levels;
+  term.surface_pressure_pa_s.assign(cells, 0.0);
+  term.tendency.air_mass.assign(cell_levels, 0.0);
+  term.tendency.momentum.assign(cell_levels, {});
+  term.tendency.potential_temperature_mass.assign(cell_levels, 0.0);
+  term.tendency.tracer_mass.assign(cell_levels, 0.0);
+  term.surface_temperature_k_s.assign(cells, 0.0);
+}
+
+void resize_zero_rhs_components(DryHydrostaticRhsComponents& components,
+                                const std::size_t cells, const std::size_t levels) {
+  resize_zero_rhs_term(components.horizontal_transport, cells, levels);
+  resize_zero_rhs_term(components.vertical_transport, cells, levels);
+  resize_zero_rhs_term(components.pressure_gradient, cells, levels);
+  resize_zero_rhs_term(components.coriolis, cells, levels);
+  resize_zero_rhs_term(components.diffusion, cells, levels);
+  resize_zero_rhs_term(components.physics, cells, levels);
+}
+
 [[nodiscard]] bool surface_temperature_is_positive(const DryHydrostaticState& state) {
   return std::ranges::all_of(state.surface_temperature_k, [](const Real value) {
     return value > 0.0 && std::isfinite(value);
@@ -190,6 +211,20 @@ DryHydrostaticRhs DryHydrostaticDriver::rhs(const DryHydrostaticState& s) const 
 
 void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
                                DryHydrostaticRhs& result) const {
+  rhs_with_components(s, result, nullptr);
+}
+
+DryHydrostaticRhsComponents DryHydrostaticDriver::rhs_components(
+    const DryHydrostaticState& s) const {
+  DryHydrostaticRhs result;
+  DryHydrostaticRhsComponents components;
+  rhs_with_components(s, result, &components);
+  return components;
+}
+
+void DryHydrostaticDriver::rhs_with_components(
+    const DryHydrostaticState& s, DryHydrostaticRhs& result,
+    DryHydrostaticRhsComponents* const components) const {
   auto& workspace = workspace_;
   workspace.column_potential_temperature.resize(coordinate_.levels());
   diagnose_dry_hydrostatic_state(
@@ -198,6 +233,7 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
       workspace.column_potential_temperature);
   const auto& d = workspace.derived;
   auto C = d.cells, K = d.levels;
+  if (components != nullptr) resize_zero_rhs_components(*components, C, K);
   auto& h = workspace.horizontal_tendency;
   h.air_mass.assign(C * K, 0.0);
   h.momentum.assign(C * K, {});
@@ -265,6 +301,22 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
       // reconstruction. Stage validation still rejects non-positive temperatures.
       VerticalLimiterKind::kNone, workspace.coupling, workspace.coupling_workspace);
   auto& coupled = workspace.coupling;
+  if (components != nullptr) {
+    components->horizontal_transport.tendency = h;
+    components->vertical_transport.surface_pressure_pa_s =
+        coupled.surface_pressure_pa_s;
+    for (std::size_t n = 0; n < C * K; ++n) {
+      components->vertical_transport.tendency.air_mass[n] =
+          coupled.tendency.air_mass[n] - h.air_mass[n];
+      components->vertical_transport.tendency.momentum[n] =
+          coupled.tendency.momentum[n] - h.momentum[n];
+      components->vertical_transport.tendency.potential_temperature_mass[n] =
+          coupled.tendency.potential_temperature_mass[n] -
+          h.potential_temperature_mass[n];
+      components->vertical_transport.tendency.tracer_mass[n] =
+          coupled.tendency.tracer_mass[n] - h.tracer_mass[n];
+    }
+  }
   Real vertical_dt = std::numeric_limits<Real>::infinity();
   for (std::size_t c = 0; c < C; ++c) {
     const auto begin = c * K;
@@ -285,6 +337,10 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
     dry_hydrostatic_sources(grid_, d, config_.planet, workspace.sources,
                             workspace.sources_workspace);
   const auto& sources = workspace.sources;
+  if (components != nullptr) {
+    components->pressure_gradient.tendency.momentum = sources.pressure_gradient_kg_m_s2;
+    components->coriolis.tendency.momentum = sources.coriolis_kg_m_s2;
+  }
   for (std::size_t n = 0; n < C * K; ++n)
     coupled.tendency.momentum[n] = coupled.tendency.momentum[n] +
                                    sources.pressure_gradient_kg_m_s2[n] +
@@ -303,6 +359,12 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
       coupled.tendency.tracer_mass[n] += diffusion.tracer_mass[n];
     }
     diffusion_rate = diffusion.kinetic_energy_rate_w;
+    if (components != nullptr) {
+      components->diffusion.tendency.momentum = diffusion.momentum;
+      components->diffusion.tendency.potential_temperature_mass =
+          diffusion.potential_temperature_mass;
+      components->diffusion.tendency.tracer_mass = diffusion.tracer_mass;
+    }
     diffusion_dt =
         stable_diffusion_time_step(grid_, config_.dry_hydrostatic.diffusion_kind,
                                    config_.dry_hydrostatic.diffusion_coefficient,
@@ -317,6 +379,11 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
                          workspace.atmospheric_physics,
                          workspace.atmospheric_physics_workspace);
     const auto& physics = workspace.atmospheric_physics;
+    if (components != nullptr) {
+      components->physics.tendency.momentum = physics.horizontal_momentum_mass_kg_m_s2;
+      components->physics.tendency.potential_temperature_mass =
+          physics.potential_temperature_mass_k_kg_m2_s;
+    }
     for (std::size_t n = 0; n < C * K; ++n) {
       coupled.tendency.momentum[n] =
           coupled.tendency.momentum[n] + physics.horizontal_momentum_mass_kg_m_s2[n];
@@ -332,6 +399,12 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
                             s.surface_pressure_pa, config_.planet, *config_.surface,
                             orbit_state, workspace.surface_physics);
     const auto& physics = workspace.surface_physics;
+    if (components != nullptr) {
+      components->physics.tendency.momentum = physics.horizontal_momentum_mass_kg_m_s2;
+      components->physics.tendency.potential_temperature_mass =
+          physics.potential_temperature_mass_k_kg_m2_s;
+      components->physics.surface_temperature_k_s = physics.surface_temperature_k_s;
+    }
     for (std::size_t n = 0; n < C * K; ++n) {
       coupled.tendency.momentum[n] =
           coupled.tendency.momentum[n] + physics.horizontal_momentum_mass_kg_m_s2[n];
@@ -351,6 +424,11 @@ void DryHydrostaticDriver::rhs(const DryHydrostaticState& s,
         config_.physics.geometry, orbit_state ? &*orbit_state : nullptr,
         workspace.atmospheric_physics, workspace.atmospheric_physics_workspace);
     const auto& physics = workspace.atmospheric_physics;
+    if (components != nullptr) {
+      components->physics.tendency.momentum = physics.horizontal_momentum_mass_kg_m_s2;
+      components->physics.tendency.potential_temperature_mass =
+          physics.potential_temperature_mass_k_kg_m2_s;
+    }
     for (std::size_t n = 0; n < C * K; ++n) {
       coupled.tendency.momentum[n] =
           coupled.tendency.momentum[n] + physics.horizontal_momentum_mass_kg_m_s2[n];

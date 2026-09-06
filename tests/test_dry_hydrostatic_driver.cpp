@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -143,6 +144,61 @@ MPS_TEST_CASE("dry RHS separates material and fast-wave horizontal limits") {
             rhs.horizontal_advective_stable_time_step_s);
   MPS_CHECK_EQ(rhs.horizontal_stable_time_step_s,
                rhs.horizontal_fast_wave_stable_time_step_s);
+}
+
+MPS_TEST_CASE("dry RHS components reconstruct the complete tendency") {
+  auto c = held_suarez_config();
+  c.dry_hydrostatic.diffusion_kind = mps::DiffusionKind::kLaplacian;
+  c.dry_hydrostatic.diffusion_coefficient = 1.0e5;
+  mps::DryHydrostaticDriver driver(c);
+  auto state = driver.initial_state();
+  const auto derived = driver.diagnose(state);
+  const auto tangent = mps::normalize(
+      mps::project_tangent(mps::Vec3{0, 0, 1}, driver.grid().cells()[0].center));
+  state.horizontal_momentum_mass_kg_m_s[0] = 20.0 * derived.air_mass_kg_m2[0] * tangent;
+  state.potential_temperature_mass_k_kg_m2[0] *= 1.001;
+  state.tracer_mass_kg_m2[0] *= 0.999;
+
+  const auto rhs = driver.rhs(state);
+  const auto components = driver.rhs_components(state);
+  const std::array<const mps::DryHydrostaticRhsTerm*, 6> terms{
+      &components.horizontal_transport,
+      &components.vertical_transport,
+      &components.pressure_gradient,
+      &components.coriolis,
+      &components.diffusion,
+      &components.physics};
+
+  for (std::size_t cell = 0; cell < rhs.surface_pressure_pa_s.size(); ++cell) {
+    mps::Real sum = 0.0;
+    for (const auto* term : terms) sum += term->surface_pressure_pa_s[cell];
+    MPS_CHECK_NEAR(sum, rhs.surface_pressure_pa_s[cell],
+                   2.0e-13 * std::max(1.0, std::abs(rhs.surface_pressure_pa_s[cell])));
+  }
+  for (std::size_t n = 0; n < rhs.tendency.air_mass.size(); ++n) {
+    mps::Real air_mass = 0.0;
+    mps::Vec3 momentum{};
+    mps::Real potential_temperature_mass = 0.0;
+    mps::Real tracer_mass = 0.0;
+    for (const auto* term : terms) {
+      air_mass += term->tendency.air_mass[n];
+      momentum = momentum + term->tendency.momentum[n];
+      potential_temperature_mass += term->tendency.potential_temperature_mass[n];
+      tracer_mass += term->tendency.tracer_mass[n];
+    }
+    const auto scalar_tolerance = [](const mps::Real value) {
+      return 2.0e-12 * std::max(1.0, std::abs(value));
+    };
+    MPS_CHECK_NEAR(air_mass, rhs.tendency.air_mass[n],
+                   scalar_tolerance(rhs.tendency.air_mass[n]));
+    MPS_CHECK_NEAR(mps::norm(momentum - rhs.tendency.momentum[n]), 0.0,
+                   2.0e-12 * std::max(1.0, mps::norm(rhs.tendency.momentum[n])));
+    MPS_CHECK_NEAR(potential_temperature_mass,
+                   rhs.tendency.potential_temperature_mass[n],
+                   scalar_tolerance(rhs.tendency.potential_temperature_mass[n]));
+    MPS_CHECK_NEAR(tracer_mass, rhs.tendency.tracer_mass[n],
+                   scalar_tolerance(rhs.tendency.tracer_mass[n]));
+  }
 }
 
 MPS_TEST_CASE("advance reevaluates the complete RHS at all SSP-RK3 stages") {

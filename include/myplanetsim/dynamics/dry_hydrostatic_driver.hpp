@@ -32,6 +32,21 @@ struct DryHydrostaticRhs {
   Real diffusion_kinetic_energy_rate_w = 0.0;
 };
 
+struct DryHydrostaticRhsTerm {
+  std::vector<Real> surface_pressure_pa_s;
+  DryHydrostaticTransportTendency tendency;
+  std::vector<Real> surface_temperature_k_s;
+};
+
+struct DryHydrostaticRhsComponents {
+  DryHydrostaticRhsTerm horizontal_transport;
+  DryHydrostaticRhsTerm vertical_transport;
+  DryHydrostaticRhsTerm pressure_gradient;
+  DryHydrostaticRhsTerm coriolis;
+  DryHydrostaticRhsTerm diffusion;
+  DryHydrostaticRhsTerm physics;
+};
+
 struct DryHydrostaticStepDiagnostics {
   HeldSuarezDiagnostics physics_rates{};
   Real thermal_energy_contribution_j = 0.0;
@@ -55,6 +70,8 @@ class DryHydrostaticDriver {
       const DryHydrostaticDerived&) const;
   [[nodiscard]] DryHydrostaticRhs rhs(const DryHydrostaticState&) const;
   void rhs(const DryHydrostaticState&, DryHydrostaticRhs& result) const;
+  [[nodiscard]] DryHydrostaticRhsComponents rhs_components(
+      const DryHydrostaticState&) const;
   void advance(DryHydrostaticState&, Real end_time_s,
                const DryHydrostaticObserver& observer = {},
                const DryHydrostaticCancel& cancel = {}) const;
@@ -75,5 +92,8 @@ class DryHydrostaticDriver {
   std::optional<SurfaceBoundary> surface_boundary_;
   std::optional<DryHydrostaticPressureReference> pressure_reference_;
   mutable DryHydrostaticWorkspace workspace_;
+
+  void rhs_with_components(const DryHydrostaticState&, DryHydrostaticRhs&,
+                           DryHydrostaticRhsComponents*) const;
 };
 }  // namespace mps
