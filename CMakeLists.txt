@@ -97,6 +97,7 @@ add_library(
   src/physics/held_suarez.cpp
   src/physics/moist_thermodynamics.cpp
   src/physics/saturation_adjustment.cpp
+  src/physics/surface_hydrology.cpp
   src/physics/boundary_layer.cpp
   src/physics/dry_convective_adjustment.cpp
   src/physics/dry_mixing_coupling.cpp

@@ -7,6 +7,7 @@
 #include <stdexcept>
 
 #include "myplanetsim/core/validation.hpp"
+#include "myplanetsim/physics/surface_hydrology.hpp"
 
 namespace mps {
 namespace {
@@ -260,6 +261,10 @@ void diagnose_boundary_layer_column(const BoundaryLayerBulkInput& input,
       effective_speed * input.surface_exner;
   result.surface_drag_conductance_kg_m2_s =
       surface_density * drag_coefficient * effective_speed;
+  result.surface_water_conductance_land_kg_m2_s =
+      surface_density * land.heat_coefficient * effective_speed;
+  result.surface_water_conductance_ocean_kg_m2_s =
+      surface_density * ocean.heat_coefficient * effective_speed;
   const Real sensible_heat =
       result.surface_heat_conductance_w_m2_k * (theta_surface - theta_air);
   const Vec3 stress =
@@ -312,6 +317,19 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
                        "surface drag conductance");
   require_positive(input.heat_capacity_cp_j_kg_k, "heat capacity cp");
   require_positive(input.time_step_s, "boundary-layer time step");
+  if (input.enable_surface_water_exchange) {
+    input.moist_thermodynamics.validate();
+    require_positive(input.surface_pressure_pa, "surface pressure");
+    require_finite(input.land_fraction, "land fraction");
+    if (input.land_fraction < 0.0 || input.land_fraction > 1.0)
+      throw std::invalid_argument("land fraction must be in [0, 1]");
+    require_non_negative(input.land_water_kg_m2, "land water");
+    require_non_negative(input.bucket_capacity_kg_m2, "bucket capacity");
+    require_non_negative(input.surface_water_conductance_land_kg_m2_s,
+                         "land water conductance");
+    require_non_negative(input.surface_water_conductance_ocean_kg_m2_s,
+                         "ocean water conductance");
+  }
   if (input.eddy_diffusivity_momentum_m2_s.front() != 0.0 ||
       input.eddy_diffusivity_momentum_m2_s.back() != 0.0 ||
       input.eddy_diffusivity_heat_m2_s.front() != 0.0 ||
@@ -478,12 +496,125 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
                          (input.potential_temperature_k.back() - old_surface_theta);
   solve_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper, workspace.rhs,
                     workspace.solution);
+  workspace.heat_increment = workspace.solution;
   result.potential_temperature_k.resize(levels);
   for (std::size_t level = 0; level < levels; ++level)
     result.potential_temperature_k[level] =
         input.potential_temperature_k[level] + workspace.solution[level];
   result.surface_temperature_k =
       input.surface_temperature_k + input.surface_exner * workspace.solution.back();
+
+  SurfaceEvaporationPartition surface_water;
+  std::size_t surface_water_iterations = 0;
+  if (input.enable_surface_water_exchange) {
+    workspace.tracer_surface_response.resize(levels);
+    build_closed_matrix(workspace.tracer_capacity, workspace.tracer_conductance,
+                        input.time_step_s, workspace.lower, workspace.diagonal,
+                        workspace.upper);
+    workspace.rhs.assign(levels, 0.0);
+    workspace.rhs.back() = input.time_step_s;
+    solve_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper,
+                      workspace.rhs, workspace.tracer_surface_response);
+
+    workspace.heat_surface_response.resize(levels + 1);
+    build_closed_matrix(workspace.heat_capacity, workspace.heat_conductance,
+                        input.time_step_s, workspace.lower, workspace.diagonal,
+                        workspace.upper);
+    workspace.rhs.assign(levels + 1, 0.0);
+    workspace.rhs.back() =
+        -input.time_step_s * input.moist_thermodynamics.latent_heat_vaporization_j_kg;
+    solve_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper,
+                      workspace.rhs, workspace.heat_surface_response);
+
+    const auto partition = [&](const Real cell_flux) {
+      const Real surface_temperature =
+          result.surface_temperature_k +
+          input.surface_exner * workspace.heat_surface_response.back() * cell_flux;
+      const Real bottom_vapor = result.tracer_mixing_ratio.back() +
+                                workspace.tracer_surface_response.back() * cell_flux;
+      const Real deficit =
+          saturation_mixing_ratio(surface_temperature, input.surface_pressure_pa,
+                                  input.moist_thermodynamics) -
+          bottom_vapor;
+      return partition_surface_evaporation(
+          deficit, input.surface_water_conductance_land_kg_m2_s,
+          input.surface_water_conductance_ocean_kg_m2_s, input.land_fraction,
+          input.land_water_kg_m2, input.bucket_capacity_kg_m2,
+          input.bucket_wet_threshold_fraction, input.time_step_s);
+    };
+    const auto residual = [&](const Real cell_flux) {
+      return cell_flux - partition(cell_flux).cell_flux_kg_m2_s;
+    };
+
+    Real lower = -std::numeric_limits<Real>::infinity();
+    Real upper = std::numeric_limits<Real>::infinity();
+    for (std::size_t level = 0; level < levels; ++level) {
+      const Real tracer_response = workspace.tracer_surface_response[level];
+      if (tracer_response > 0.0)
+        lower = std::max(lower,
+                         -0.999 * result.tracer_mixing_ratio[level] / tracer_response);
+      if (tracer_response > 0.0)
+        upper =
+            std::min(upper, 0.999 *
+                                (input.moist_thermodynamics.maximum_vapor_mixing_ratio -
+                                 result.tracer_mixing_ratio[level]) /
+                                tracer_response);
+      const Real heat_response = workspace.heat_surface_response[level];
+      if (heat_response < 0.0)
+        upper = std::min(
+            upper, -0.999 * result.potential_temperature_k[level] / heat_response);
+    }
+    const Real surface_temperature_response =
+        input.surface_exner * workspace.heat_surface_response.back();
+    if (surface_temperature_response < 0.0)
+      upper = std::min(
+          upper, -0.999 * result.surface_temperature_k / surface_temperature_response);
+    if (!std::isfinite(lower)) lower = -1.0;
+    if (!std::isfinite(upper)) upper = 1.0;
+    lower = std::min(lower, 0.0);
+    upper = std::max(upper, 0.0);
+
+    Real solved_flux = 0.0;
+    const Real at_zero = residual(0.0);
+    if (std::abs(at_zero) > 1e-15) {
+      Real bracket_lower = at_zero > 0.0 ? lower : 0.0;
+      Real bracket_upper = at_zero > 0.0 ? 0.0 : upper;
+      Real value_lower = residual(bracket_lower);
+      Real value_upper = residual(bracket_upper);
+      if (!(value_lower <= 0.0 && value_upper >= 0.0))
+        throw std::runtime_error("implicit surface-water flux is not bracketed");
+      for (std::size_t iteration = 0; iteration < 100; ++iteration) {
+        solved_flux = 0.5 * (bracket_lower + bracket_upper);
+        const Real value = residual(solved_flux);
+        ++surface_water_iterations;
+        if (std::abs(value) <= 1e-14 + 1e-11 * std::abs(solved_flux)) break;
+        if (value < 0.0)
+          bracket_lower = solved_flux;
+        else
+          bracket_upper = solved_flux;
+        if (iteration == 99)
+          throw std::runtime_error("implicit surface-water flux did not converge");
+      }
+    }
+    surface_water = partition(solved_flux);
+    for (std::size_t level = 0; level < levels; ++level) {
+      result.tracer_mixing_ratio[level] +=
+          workspace.tracer_surface_response[level] * solved_flux;
+      const Real heat_increment = workspace.heat_surface_response[level] * solved_flux;
+      result.potential_temperature_k[level] += heat_increment;
+      workspace.heat_increment[level] += heat_increment;
+    }
+    const Real surface_theta_increment =
+        workspace.heat_surface_response.back() * solved_flux;
+    result.surface_temperature_k += input.surface_exner * surface_theta_increment;
+    workspace.heat_increment.back() += surface_theta_increment;
+    result.land_water_kg_m2 = surface_water.final_land_water_kg_m2;
+    result.surface_water_flux_kg_m2_s = solved_flux;
+    result.land_water_flux_kg_m2_s = surface_water.land_flux_kg_m2_s;
+    result.ocean_water_flux_kg_m2_s = surface_water.ocean_flux_kg_m2_s;
+  } else {
+    result.land_water_kg_m2 = input.land_water_kg_m2;
+  }
 
   result.heat_flux_w_m2.assign(levels + 1, 0.0);
   result.momentum_flux_kg_m_s2.assign(levels + 1, {});
@@ -504,13 +635,15 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
                                   result.potential_temperature_k.back());
   result.momentum_flux_kg_m_s2.back() =
       -input.surface_drag_conductance_kg_m2_s * result.velocity_m_s.back();
+  if (input.enable_surface_water_exchange)
+    result.tracer_flux_kg_m2_s.back() = result.surface_water_flux_kg_m2_s;
 
   Real atmospheric_heat_change = 0.0;
   Vec3 momentum_change{};
   Real tracer_change = 0.0;
   for (std::size_t level = 0; level < levels; ++level) {
     atmospheric_heat_change +=
-        workspace.heat_capacity[level] * workspace.solution[level];
+        workspace.heat_capacity[level] * workspace.heat_increment[level];
     momentum_change =
         momentum_change + input.air_mass_kg_m2[level] *
                               (result.velocity_m_s[level] - input.velocity_m_s[level]);
@@ -518,9 +651,24 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
                                                     input.tracer_mixing_ratio[level]);
   }
   const Real surface_heat_change =
-      workspace.heat_capacity.back() * workspace.solution.back();
+      workspace.heat_capacity.back() * workspace.heat_increment.back();
   const Vec3 surface_impulse = input.time_step_s * result.momentum_flux_kg_m_s2.back();
   const Real kinetic_change = final_kinetic_energy - initial_kinetic_energy;
+  const Real evaporation = input.time_step_s * result.surface_water_flux_kg_m2_s;
+  const Real land_evaporation = input.time_step_s * result.land_water_flux_kg_m2_s;
+  const Real ocean_evaporation = input.time_step_s * result.ocean_water_flux_kg_m2_s;
+  const Real cell_runoff = input.land_fraction * surface_water.runoff_kg_m2_land;
+  const Real ocean_water_change =
+      input.enable_surface_water_exchange && input.land_fraction < 1.0
+          ? -(1.0 - input.land_fraction) * ocean_evaporation + cell_runoff
+          : 0.0;
+  const Real external_outflow =
+      input.enable_surface_water_exchange && input.land_fraction == 1.0 ? cell_runoff
+                                                                        : 0.0;
+  const Real land_water_change =
+      input.land_fraction * (result.land_water_kg_m2 - input.land_water_kg_m2);
+  const Real latent_surface_heat =
+      -input.moist_thermodynamics.latent_heat_vaporization_j_kg * evaporation;
   result.diagnostics = {
       .atmospheric_heat_change_j_m2 = atmospheric_heat_change,
       .surface_heat_change_j_m2 = surface_heat_change,
@@ -528,14 +676,28 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
       .physical_surface_drag_dissipation_j_m2 = physical_surface,
       .backward_euler_dissipation_j_m2 = numerical_dissipation,
       .returned_dissipation_heat_j_m2 = returned_heat,
-      .heat_budget_residual_j_m2 =
-          atmospheric_heat_change + surface_heat_change - returned_heat,
+      .heat_budget_residual_j_m2 = atmospheric_heat_change + surface_heat_change -
+                                   returned_heat - latent_surface_heat,
       .kinetic_energy_change_j_m2 = kinetic_change,
       .kinetic_energy_identity_residual_j_m2 = -kinetic_change - returned_heat,
       .atmospheric_momentum_change_kg_m_s = momentum_change,
       .surface_stress_impulse_kg_m_s = surface_impulse,
       .momentum_budget_residual_kg_m_s = momentum_change - surface_impulse,
       .tracer_mass_change_kg_m2 = tracer_change,
+      .evaporation_kg_m2 = evaporation,
+      .land_evaporation_kg_m2_land = land_evaporation,
+      .ocean_evaporation_kg_m2_ocean = ocean_evaporation,
+      .runoff_kg_m2_land = surface_water.runoff_kg_m2_land,
+      .ocean_water_change_kg_m2 = ocean_water_change,
+      .external_outflow_kg_m2 = external_outflow,
+      .latent_surface_heat_change_j_m2 = latent_surface_heat,
+      .moist_enthalpy_budget_residual_j_m2 =
+          atmospheric_heat_change +
+          input.moist_thermodynamics.latent_heat_vaporization_j_kg * tracer_change +
+          surface_heat_change - returned_heat,
+      .water_budget_residual_kg_m2 =
+          tracer_change + land_water_change + ocean_water_change + external_outflow,
+      .surface_water_iterations = surface_water_iterations,
   };
 }
 

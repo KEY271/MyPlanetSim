@@ -5,6 +5,7 @@
 
 #include "myplanetsim/core/types.hpp"
 #include "myplanetsim/geometry/vec3.hpp"
+#include "myplanetsim/physics/moist_thermodynamics.hpp"
 
 namespace mps {
 
@@ -55,6 +56,8 @@ struct BoundaryLayerBulkResult {
   std::vector<Real> eddy_diffusivity_tracer_m2_s;
   Real surface_heat_conductance_w_m2_k = 0.0;
   Real surface_drag_conductance_kg_m2_s = 0.0;
+  Real surface_water_conductance_land_kg_m2_s = 0.0;
+  Real surface_water_conductance_ocean_kg_m2_s = 0.0;
   BoundaryLayerBulkDiagnostics diagnostics;
 };
 
@@ -83,6 +86,15 @@ struct BoundaryLayerColumnInput {
   Real surface_drag_conductance_kg_m2_s = 0.0;
   Real heat_capacity_cp_j_kg_k = 0.0;
   Real time_step_s = 0.0;
+  bool enable_surface_water_exchange = false;
+  Real surface_pressure_pa = 0.0;
+  Real land_fraction = 0.0;
+  Real land_water_kg_m2 = 0.0;
+  Real bucket_capacity_kg_m2 = 0.0;
+  Real bucket_wet_threshold_fraction = 0.75;
+  Real surface_water_conductance_land_kg_m2_s = 0.0;
+  Real surface_water_conductance_ocean_kg_m2_s = 0.0;
+  DiluteMoistThermodynamics moist_thermodynamics;
 };
 
 struct BoundaryLayerColumnDiagnostics {
@@ -99,6 +111,16 @@ struct BoundaryLayerColumnDiagnostics {
   Vec3 surface_stress_impulse_kg_m_s{};
   Vec3 momentum_budget_residual_kg_m_s{};
   Real tracer_mass_change_kg_m2 = 0.0;
+  Real evaporation_kg_m2 = 0.0;
+  Real land_evaporation_kg_m2_land = 0.0;
+  Real ocean_evaporation_kg_m2_ocean = 0.0;
+  Real runoff_kg_m2_land = 0.0;
+  Real ocean_water_change_kg_m2 = 0.0;
+  Real external_outflow_kg_m2 = 0.0;
+  Real latent_surface_heat_change_j_m2 = 0.0;
+  Real moist_enthalpy_budget_residual_j_m2 = 0.0;
+  Real water_budget_residual_kg_m2 = 0.0;
+  std::size_t surface_water_iterations = 0;
 };
 
 struct BoundaryLayerColumnResult {
@@ -110,6 +132,10 @@ struct BoundaryLayerColumnResult {
   std::vector<Vec3> momentum_flux_kg_m_s2;
   std::vector<Real> tracer_flux_kg_m2_s;
   std::vector<Real> dissipated_heat_j_m2;
+  Real land_water_kg_m2 = 0.0;
+  Real surface_water_flux_kg_m2_s = 0.0;
+  Real land_water_flux_kg_m2_s = 0.0;
+  Real ocean_water_flux_kg_m2_s = 0.0;
   BoundaryLayerColumnDiagnostics diagnostics;
 };
 
@@ -126,6 +152,9 @@ struct BoundaryLayerColumnWorkspace {
   std::vector<Real> momentum_capacity;
   std::vector<Real> heat_capacity;
   std::vector<Real> tracer_capacity;
+  std::vector<Real> heat_increment;
+  std::vector<Real> tracer_surface_response;
+  std::vector<Real> heat_surface_response;
 };
 
 void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
