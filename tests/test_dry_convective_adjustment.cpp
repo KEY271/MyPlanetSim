@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <random>
 #include <stdexcept>
 #include <vector>
 
@@ -133,6 +135,99 @@ MPS_TEST_CASE("dry-energy attribution matches hydrostatic re-diagnosis") {
   MPS_CHECK(std::abs(diagnosed_change) > 1e5);
   MPS_CHECK_NEAR(result.diagnostics.dry_energy_attributed_change_j_m2, diagnosed_change,
                  1e-6 * std::abs(diagnosed_change));
+}
+
+// A deliberately naive comparator: find the first unstable interface, grow the block
+// around it until both neighbours are stable against its weighted mean, flatten it, and
+// start over. It is O(K^2) and shares no code with the stack-based merge under test.
+[[nodiscard]] std::vector<mps::Real> iterative_reference(
+    std::vector<mps::Real> theta, const std::vector<mps::Real>& weight,
+    const mps::Real tolerance) {
+  for (std::size_t sweep = 0; sweep <= theta.size() * theta.size(); ++sweep) {
+    std::size_t seed = theta.size();
+    for (std::size_t level = 0; level + 1 < theta.size(); ++level)
+      if (theta[level] + tolerance < theta[level + 1]) {
+        seed = level;
+        break;
+      }
+    if (seed == theta.size()) return theta;
+    std::size_t begin = seed;
+    std::size_t end = seed + 2;
+    while (true) {
+      mps::Real total = 0.0;
+      mps::Real weighted = 0.0;
+      for (std::size_t level = begin; level < end; ++level) {
+        total += weight[level];
+        weighted += weight[level] * theta[level];
+      }
+      const mps::Real mean = weighted / total;
+      if (begin > 0 && theta[begin - 1] + tolerance < mean) {
+        --begin;
+        continue;
+      }
+      if (end < theta.size() && mean + tolerance < theta[end]) {
+        ++end;
+        continue;
+      }
+      for (std::size_t level = begin; level < end; ++level) theta[level] = mean;
+      break;
+    }
+  }
+  throw std::runtime_error("iterative reference did not converge");
+}
+
+MPS_TEST_CASE("random columns match an independent iterative merger") {
+  // A fixed seed and std::mt19937 keep the columns identical across standard libraries.
+  std::mt19937 generator(11);
+  const auto uniform = [&generator](const mps::Real low, const mps::Real high) {
+    return low + (high - low) * static_cast<mps::Real>(generator() - generator.min()) /
+                     static_cast<mps::Real>(generator.max() - generator.min());
+  };
+  std::size_t all_unstable = 0;
+  std::size_t thin_layers = 0;
+  for (int trial = 0; trial < 200; ++trial) {
+    const auto levels = static_cast<std::size_t>(2 + (generator() % 24));
+    std::vector<mps::Real> theta(levels), mass(levels), exner_full(levels);
+    std::vector<mps::Real> exner_half(levels + 1);
+    // Every fourth column is monotonically increasing downward, so the whole column is
+    // unstable; every fifth carries a very thin layer against thick neighbours.
+    const bool inverted = trial % 4 == 0;
+    const bool thin = trial % 5 == 0;
+    for (std::size_t level = 0; level < levels; ++level) {
+      theta[level] = inverted ? 250.0 + 4.0 * static_cast<mps::Real>(level)
+                              : uniform(250.0, 350.0);
+      mass[level] =
+          (thin && level == levels / 2) ? uniform(0.05, 0.5) : uniform(50.0, 2000.0);
+    }
+    if (inverted) ++all_unstable;
+    if (thin) ++thin_layers;
+    exner_half.front() = uniform(0.05, 0.2);
+    for (std::size_t level = 0; level < levels; ++level) {
+      exner_half[level + 1] = exner_half[level] + uniform(0.01, 0.1);
+      exner_full[level] = 0.5 * (exner_half[level] + exner_half[level + 1]);
+    }
+    std::vector<mps::Real> weight(levels);
+    for (std::size_t level = 0; level < levels; ++level)
+      weight[level] = 1004.0 * mass[level] * exner_full[level];
+    const auto result =
+        mps::dry_convective_adjustment(input(theta, mass, exner_full, exner_half));
+    const auto expected = iterative_reference(theta, weight, 1e-10);
+    for (std::size_t level = 0; level < levels; ++level)
+      MPS_CHECK_NEAR(result.adjusted_potential_temperature_k[level], expected[level],
+                     1e-9);
+    const auto before = enthalpy(theta, mass, exner_full);
+    const auto after =
+        enthalpy(result.adjusted_potential_temperature_k, mass, exner_full);
+    MPS_CHECK(std::abs(after - before) / before <= 1e-12);
+    MPS_CHECK(result.diagnostics.minimum_theta_difference_after_k >= -1e-10);
+    const auto again = mps::dry_convective_adjustment(
+        input(result.adjusted_potential_temperature_k, mass, exner_full, exner_half));
+    for (std::size_t level = 0; level < levels; ++level)
+      MPS_CHECK(std::abs(again.adjusted_potential_temperature_k[level] -
+                         result.adjusted_potential_temperature_k[level]) <= 1e-10);
+  }
+  MPS_CHECK(all_unstable >= 40);
+  MPS_CHECK(thin_layers >= 30);
 }
 
 MPS_TEST_CASE("invalid adjustment inputs are rejected") {
