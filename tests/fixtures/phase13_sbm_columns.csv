@@ -1,0 +1,15 @@
+# P13.01 fixture; Isca behavioural reference d1321ac372698bcbe054da1cc5b4eef9f998a096
+# Storage and equations follow ADR 0019 (dilute dry-air mixing ratio, no virtual T).
+# case,level_top_to_bottom,p_half_top_pa,p_half_bottom_pa,p_full_pa,temperature_k,qv_kg_kg,expected_branch
+dry_neutral,0,10000,32500,21250,193.299538,0,none
+dry_neutral,1,32500,57500,45000,238.768137,0,none
+dry_neutral,2,57500,82500,70000,270.902882,0,none
+dry_neutral,3,82500,100000,91250,292.229349,0,none
+deep_warm_moist,0,10000,32500,21250,205.0,0.00020,deep
+deep_warm_moist,1,32500,57500,45000,235.0,0.00100,deep
+deep_warm_moist,2,57500,82500,70000,258.0,0.00400,deep
+deep_warm_moist,3,82500,100000,91250,296.0,0.01400,deep
+shallow_dry_aloft,0,10000,32500,21250,198.0,0.00002,shallow
+shallow_dry_aloft,1,32500,57500,45000,232.0,0.00010,shallow
+shallow_dry_aloft,2,57500,82500,70000,260.0,0.00100,shallow
+shallow_dry_aloft,3,82500,100000,91250,294.0,0.00900,shallow
