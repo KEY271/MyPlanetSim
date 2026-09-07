@@ -1345,17 +1345,33 @@ int main(const int argc, const char* const argv[]) {
         const bool has_surface =
             config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance ||
             config.physics.kind == mps::PhysicsKind::kGrayRadiation;
-        const auto layout = has_surface ? mps::kDryHydrostaticSurfaceCheckpointLayout
-                                        : mps::kDryHydrostaticCheckpointLayout;
-        const auto state_size = cells + 5 * cells * levels + (has_surface ? cells : 0);
+        const bool multitracer = !config.tracers.empty();
+        const mps::TracerRegistry registry = multitracer
+                                                 ? mps::TracerRegistry(config.tracers)
+                                                 : mps::TracerRegistry::legacy();
+        const std::string layout =
+            multitracer
+                ? mps::dry_hydrostatic_multitracer_checkpoint_layout(registry,
+                                                                     has_surface)
+                : std::string(has_surface ? mps::kDryHydrostaticSurfaceCheckpointLayout
+                                          : mps::kDryHydrostaticCheckpointLayout);
+        const auto state_size =
+            multitracer ? cells + (4 + registry.size()) * cells * levels +
+                              (has_surface ? cells : 0)
+                        : cells + 5 * cells * levels + (has_surface ? cells : 0);
         auto checkpoint = mps::read_checkpoint_file(*command_line.restart_path,
                                                     fingerprint, layout, state_size);
-        state = has_surface ? mps::unflatten_dry_hydrostatic_surface_state(
-                                  checkpoint.time_s, checkpoint.step, checkpoint.state,
-                                  cells, levels)
-                            : mps::unflatten_dry_hydrostatic_state(
-                                  checkpoint.time_s, checkpoint.step, checkpoint.state,
-                                  cells, levels);
+        if (multitracer)
+          state = mps::unflatten_dry_hydrostatic_multitracer_state(
+              checkpoint.time_s, checkpoint.step, checkpoint.state, cells, levels,
+              registry.size(), has_surface);
+        else
+          state = has_surface ? mps::unflatten_dry_hydrostatic_surface_state(
+                                    checkpoint.time_s, checkpoint.step,
+                                    checkpoint.state, cells, levels)
+                              : mps::unflatten_dry_hydrostatic_state(
+                                    checkpoint.time_s, checkpoint.step,
+                                    checkpoint.state, cells, levels);
       }
       std::optional<PhysicsDiagnosticsAccumulator> physics_diagnostics;
       std::optional<mps::ClimateStatisticsAccumulator> climate_statistics;
@@ -1549,20 +1565,32 @@ int main(const int argc, const char* const argv[]) {
         const bool has_surface =
             config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance ||
             config.physics.kind == mps::PhysicsKind::kGrayRadiation;
+        const bool multitracer = !config.tracers.empty();
+        const mps::TracerRegistry registry = multitracer
+                                                 ? mps::TracerRegistry(config.tracers)
+                                                 : mps::TracerRegistry::legacy();
         mps::write_checkpoint_file(
             *command_line.checkpoint_path,
             {.time_s = state.time_s,
              .step = state.step,
              .state =
-                 has_surface
+                 multitracer
+                     ? mps::flatten_dry_hydrostatic_multitracer_state(
+                           state, static_cast<std::size_t>(config.vertical.levels),
+                           has_surface)
+                 : has_surface
                      ? mps::flatten_dry_hydrostatic_surface_state(
                            state, static_cast<std::size_t>(config.vertical.levels))
                      : mps::flatten_dry_hydrostatic_state(
                            state, static_cast<std::size_t>(config.vertical.levels)),
              .config_fingerprint = fingerprint,
              .layout_id =
-                 std::string(has_surface ? mps::kDryHydrostaticSurfaceCheckpointLayout
-                                         : mps::kDryHydrostaticCheckpointLayout)});
+                 multitracer
+                     ? mps::dry_hydrostatic_multitracer_checkpoint_layout(registry,
+                                                                          has_surface)
+                     : std::string(has_surface
+                                       ? mps::kDryHydrostaticSurfaceCheckpointLayout
+                                       : mps::kDryHydrostaticCheckpointLayout)});
       }
       const auto derived = driver.diagnose(state);
       if (config.physics.kind == mps::PhysicsKind::kGrayRadiation)

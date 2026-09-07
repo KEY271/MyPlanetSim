@@ -9,13 +9,16 @@ namespace mps {
 
 DryHydrostaticDiffusionTendency dry_hydrostatic_diffusion_tendency(
     const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
-    const DiffusionKind kind, const Real diffusion_coefficient) {
+    const DiffusionKind kind, const Real diffusion_coefficient,
+    const std::span<const TracerDescriptor> tracers) {
   require_non_negative(diffusion_coefficient, "dry_hydrostatic.diffusion_coefficient");
   const std::size_t cells = derived.cells;
   const std::size_t levels = derived.levels;
   if (cells != grid.cell_count()) {
     throw std::invalid_argument("dry diffusion cell count does not match grid");
   }
+  if (!tracers.empty() && tracers.size() != derived.tracer_count)
+    throw std::invalid_argument("dry diffusion tracer registry shape mismatch");
   DryHydrostaticDiffusionTendency tendency{
       .momentum = std::vector<Vec3>(cells * levels),
       .potential_temperature_mass = std::vector<Real>(cells * levels),
@@ -64,14 +67,40 @@ DryHydrostaticDiffusionTendency dry_hydrostatic_diffusion_tendency(
   std::vector<Real> tracer(cells);
   for (std::size_t tracer_index = 0; tracer_index < derived.tracer_count;
        ++tracer_index) {
+    if (!tracers.empty() && !tracers[tracer_index].horizontal_diffusion) continue;
     for (std::size_t level = 0; level < levels; ++level) {
       for (std::size_t cell = 0; cell < cells; ++cell) {
         const auto q =
             dry_hydrostatic_tracer_offset(tracer_index, cell, level, cells, levels);
         tracer[cell] = derived.tracer_mixing_ratio[q];
       }
+      if (!biharmonic) {
+        // Assemble a single integrated flux on every shared edge. Applying a cell
+        // Laplacian and multiplying afterwards by local M is not conservative when
+        // adjacent hybrid layers have different masses.
+        for (const auto& edge : grid.edges()) {
+          const auto& cached = grid.edge_cache()[edge.id];
+          const auto left = cached.left_cell;
+          const auto right = cached.right_cell;
+          const auto left_n = dry_hydrostatic_offset(left, level, levels);
+          const auto right_n = dry_hydrostatic_offset(right, level, levels);
+          const Real face_mass =
+              0.5 * (derived.air_mass_kg_m2[left_n] + derived.air_mass_kg_m2[right_n]);
+          const Real integrated_flux = diffusion_coefficient * face_mass *
+                                       edge.length_m / cached.center_distance_m *
+                                       (tracer[right] - tracer[left]);
+          const auto left_q =
+              dry_hydrostatic_tracer_offset(tracer_index, left, level, cells, levels);
+          const auto right_q =
+              dry_hydrostatic_tracer_offset(tracer_index, right, level, cells, levels);
+          tendency.tracer_mass[left_q] += integrated_flux / grid.cells()[left].area_m2;
+          tendency.tracer_mass[right_q] -=
+              integrated_flux / grid.cells()[right].area_m2;
+        }
+        continue;
+      }
       auto tracer_operator = finite_volume_laplacian(grid, tracer);
-      if (biharmonic) tracer_operator = finite_volume_laplacian(grid, tracer_operator);
+      tracer_operator = finite_volume_laplacian(grid, tracer_operator);
       for (std::size_t cell = 0; cell < cells; ++cell) {
         const auto n = dry_hydrostatic_offset(cell, level, levels);
         const auto q =

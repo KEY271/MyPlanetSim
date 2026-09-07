@@ -1075,6 +1075,12 @@ void ExperimentConfig::validate() const {
       throw std::invalid_argument(
           "dry_hydrostatic diffusion coefficient must be zero exactly when kind is "
           "none");
+    if (dry_hydrostatic.diffusion_kind == DiffusionKind::kBiharmonic &&
+        std::ranges::any_of(tracers, [](const auto& tracer) {
+          return tracer.role == TracerRole::kWaterVapor && tracer.horizontal_diffusion;
+        }))
+      throw std::invalid_argument(
+          "water-vapor horizontal diffusion requires laplacian diffusion");
     if ((dry_hydrostatic.test_case == DryHydrostaticTestCase::kDcmip200Rest) !=
         (orography.kind == OrographyKind::kDcmip200))
       throw std::invalid_argument(

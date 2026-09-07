@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 namespace mps {
 namespace {
@@ -126,6 +127,88 @@ DryHydrostaticState unflatten_dry_hydrostatic_surface_state(
       time_s, step, values.first(atmospheric_size), cells, levels);
   state.surface_temperature_k.assign(
       values.begin() + static_cast<std::ptrdiff_t>(atmospheric_size), values.end());
+  return state;
+}
+
+std::string dry_hydrostatic_multitracer_checkpoint_layout(
+    const TracerRegistry& registry, const bool include_surface) {
+  std::string result(include_surface ? kDryHydrostaticMultitracerSurfaceCheckpointLayout
+                                     : kDryHydrostaticMultitracerCheckpointLayout);
+  result += '|';
+  for (std::size_t index = 0; index < registry.size(); ++index) {
+    if (index != 0) result += ',';
+    result += registry[index].name;
+    result += ':';
+    result += tracer_role_name(registry[index].role);
+  }
+  return result;
+}
+
+std::vector<Real> flatten_dry_hydrostatic_multitracer_state(
+    const DryHydrostaticState& state, const std::size_t levels,
+    const bool include_surface) {
+  require_shape(state, levels);
+  const auto cells = state.surface_pressure_pa.size();
+  if (include_surface && state.surface_temperature_k.size() != cells)
+    throw std::invalid_argument(
+        "multi-tracer surface checkpoint requires one temperature per cell");
+  if (!include_surface && !state.surface_temperature_k.empty())
+    throw std::invalid_argument(
+        "atmosphere-only multi-tracer checkpoint rejects a surface state");
+  const auto volume = cells * levels;
+  std::vector<Real> values(cells + (4 + state.tracer_count) * volume +
+                           (include_surface ? cells : 0));
+  std::copy(state.surface_pressure_pa.begin(), state.surface_pressure_pa.end(),
+            values.begin());
+  std::size_t cursor = cells;
+  for (const auto value : state.horizontal_momentum_mass_kg_m_s) {
+    values[cursor++] = value.x;
+    values[cursor++] = value.y;
+    values[cursor++] = value.z;
+  }
+  std::copy(state.potential_temperature_mass_k_kg_m2.begin(),
+            state.potential_temperature_mass_k_kg_m2.end(),
+            values.begin() + static_cast<std::ptrdiff_t>(cursor));
+  cursor += volume;
+  std::copy(state.tracer_mass_kg_m2.begin(), state.tracer_mass_kg_m2.end(),
+            values.begin() + static_cast<std::ptrdiff_t>(cursor));
+  cursor += state.tracer_count * volume;
+  if (include_surface)
+    std::copy(state.surface_temperature_k.begin(), state.surface_temperature_k.end(),
+              values.begin() + static_cast<std::ptrdiff_t>(cursor));
+  return values;
+}
+
+DryHydrostaticState unflatten_dry_hydrostatic_multitracer_state(
+    const Real time_s, const std::uint64_t step, const std::span<const Real> values,
+    const std::size_t cells, const std::size_t levels, const std::size_t tracer_count,
+    const bool include_surface) {
+  const auto volume = cells * levels;
+  const auto expected =
+      cells + (4 + tracer_count) * volume + (include_surface ? cells : 0);
+  if (cells == 0 || levels == 0 || tracer_count == 0 || values.size() != expected)
+    throw std::invalid_argument(
+        "multi-tracer flat state size does not match registry and shape");
+  DryHydrostaticState state{
+      .time_s = time_s, .step = step, .tracer_count = tracer_count};
+  state.surface_pressure_pa.assign(values.begin(),
+                                   values.begin() + static_cast<std::ptrdiff_t>(cells));
+  state.horizontal_momentum_mass_kg_m_s.resize(volume);
+  std::size_t cursor = cells;
+  for (auto& value : state.horizontal_momentum_mass_kg_m_s)
+    value = {values[cursor++], values[cursor++], values[cursor++]};
+  state.potential_temperature_mass_k_kg_m2.assign(
+      values.begin() + static_cast<std::ptrdiff_t>(cursor),
+      values.begin() + static_cast<std::ptrdiff_t>(cursor + volume));
+  cursor += volume;
+  state.tracer_mass_kg_m2.assign(
+      values.begin() + static_cast<std::ptrdiff_t>(cursor),
+      values.begin() + static_cast<std::ptrdiff_t>(cursor + tracer_count * volume));
+  cursor += tracer_count * volume;
+  if (include_surface)
+    state.surface_temperature_k.assign(
+        values.begin() + static_cast<std::ptrdiff_t>(cursor), values.end());
+  require_shape(state, levels);
   return state;
 }
 

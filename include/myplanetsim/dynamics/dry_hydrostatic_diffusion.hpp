@@ -1,9 +1,11 @@
 #pragma once
 
+#include <span>
 #include <vector>
 
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_state.hpp"
+#include "myplanetsim/dynamics/tracer_registry.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
 
 namespace mps {
@@ -24,6 +26,7 @@ struct DryHydrostaticDiffusionTendency {
 
 [[nodiscard]] DryHydrostaticDiffusionTendency dry_hydrostatic_diffusion_tendency(
     const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
-    DiffusionKind kind, Real diffusion_coefficient);
+    DiffusionKind kind, Real diffusion_coefficient,
+    std::span<const TracerDescriptor> tracers = {});
 
 }  // namespace mps

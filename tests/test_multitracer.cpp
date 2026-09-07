@@ -4,8 +4,10 @@
 #include <stdexcept>
 #include <vector>
 
+#include "myplanetsim/dynamics/dry_hydrostatic_diffusion.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
 #include "myplanetsim/dynamics/tracer_registry.hpp"
+#include "myplanetsim/io/checkpoint.hpp"
 #include "myplanetsim/io/run_metadata.hpp"
 #include "support/test.hpp"
 
@@ -143,6 +145,139 @@ MPS_TEST_CASE("both integrators accept one two and four tracer states") {
       }));
     }
   }
+}
+
+MPS_TEST_CASE("sharp wet-dry transport remains conservative and nonnegative") {
+  for (const bool semi_implicit : {false, true}) {
+    auto config = base_config(semi_implicit);
+    config.run.end_time_s = 0.001;
+    config.run.time_step_s = 0.001;
+    config.tracers.resize(2);
+    config.validate();
+    const mps::DryHydrostaticDriver driver(config);
+    auto state = driver.initial_state();
+    const auto cells = driver.grid().cell_count();
+    const auto levels = static_cast<std::size_t>(config.vertical.levels);
+    const auto derived = driver.diagnose(state);
+    std::vector<double> initial_mass(2, 0.0);
+    for (std::size_t cell = 0; cell < cells; ++cell) {
+      for (std::size_t level = 0; level < levels; ++level) {
+        const auto n = mps::dry_hydrostatic_offset(cell, level, levels);
+        state.horizontal_momentum_mass_kg_m_s[n] =
+            derived.air_mass_kg_m2[n] * 0.05 *
+            mps::cross(mps::Vec3{0.0, 0.0, 1.0}, driver.grid().cells()[cell].center);
+        for (std::size_t tracer = 0; tracer < 2; ++tracer) {
+          const auto q =
+              mps::dry_hydrostatic_tracer_offset(tracer, cell, level, cells, levels);
+          const bool wet = (cell % 2) == tracer;
+          state.tracer_mass_kg_m2[q] = derived.air_mass_kg_m2[n] * (wet ? 0.01 : 0.0);
+          initial_mass[tracer] +=
+              driver.grid().cells()[cell].area_m2 * state.tracer_mass_kg_m2[q];
+        }
+      }
+    }
+    driver.advance(state, config.run.end_time_s);
+    for (std::size_t tracer = 0; tracer < 2; ++tracer) {
+      double final_mass = 0.0;
+      for (std::size_t cell = 0; cell < cells; ++cell)
+        for (std::size_t level = 0; level < levels; ++level) {
+          const auto q =
+              mps::dry_hydrostatic_tracer_offset(tracer, cell, level, cells, levels);
+          MPS_CHECK(state.tracer_mass_kg_m2[q] >= -1e-12);
+          final_mass +=
+              driver.grid().cells()[cell].area_m2 * state.tracer_mass_kg_m2[q];
+        }
+      MPS_CHECK_NEAR(final_mass, initial_mass[tracer],
+                     1e-11 * std::max(1.0, initial_mass[tracer]));
+    }
+  }
+}
+
+MPS_TEST_CASE("shared-edge tracer diffusion conserves variable-mass columns") {
+  auto config = base_config();
+  config.dry_hydrostatic.diffusion_kind = mps::DiffusionKind::kLaplacian;
+  config.dry_hydrostatic.diffusion_coefficient = 0.01;
+  config.tracers = {{.name = "water", .role = mps::TracerRole::kWaterVapor},
+                    {.name = "fixed", .horizontal_diffusion = false}};
+  config.validate();
+  const mps::DryHydrostaticDriver driver(config);
+  auto state = driver.initial_state();
+  const auto cells = driver.grid().cell_count();
+  const auto levels = static_cast<std::size_t>(config.vertical.levels);
+  const auto volume = cells * levels;
+  for (std::size_t cell = 0; cell < cells; ++cell) {
+    state.surface_pressure_pa[cell] += 1000.0 * static_cast<double>(cell % 3);
+    for (std::size_t level = 0; level < levels; ++level) {
+      const auto q = mps::dry_hydrostatic_tracer_offset(0, cell, level, cells, levels);
+      state.tracer_mass_kg_m2[q] =
+          (cell == 0 ? 1.0 : 0.0) * state.tracer_mass_kg_m2[volume + q];
+    }
+  }
+  const auto derived = driver.diagnose(state);
+  const auto tendency = mps::dry_hydrostatic_diffusion_tendency(
+      driver.grid(), derived, mps::DiffusionKind::kLaplacian, 0.01, config.tracers);
+  for (std::size_t tracer = 0; tracer < 2; ++tracer) {
+    double total = 0.0;
+    for (std::size_t cell = 0; cell < cells; ++cell)
+      for (std::size_t level = 0; level < levels; ++level) {
+        const auto q =
+            mps::dry_hydrostatic_tracer_offset(tracer, cell, level, cells, levels);
+        total += driver.grid().cells()[cell].area_m2 * tendency.tracer_mass[q];
+      }
+    MPS_CHECK_NEAR(total, 0.0, 1e-12);
+  }
+  for (std::size_t n = volume; n < 2 * volume; ++n)
+    MPS_CHECK_EQ(tendency.tracer_mass[n], 0.0);
+
+  config.dry_hydrostatic.diffusion_kind = mps::DiffusionKind::kBiharmonic;
+  MPS_CHECK_THROWS_AS(config.validate(), std::invalid_argument);
+}
+
+MPS_TEST_CASE("multi-tracer checkpoint binds ordered registry metadata") {
+  const auto config = base_config();
+  const mps::DryHydrostaticDriver driver(config);
+  const auto state = driver.initial_state();
+  const mps::TracerRegistry registry(config.tracers);
+  const auto values = mps::flatten_dry_hydrostatic_multitracer_state(state, 2, false);
+  const auto layout =
+      mps::dry_hydrostatic_multitracer_checkpoint_layout(registry, false);
+  std::stringstream stream;
+  mps::write_checkpoint(stream, {.time_s = state.time_s,
+                                 .step = state.step,
+                                 .state = values,
+                                 .config_fingerprint = "fingerprint",
+                                 .layout_id = layout});
+  const auto text = stream.str();
+  MPS_CHECK(text.find("first:passive,second:passive") != std::string::npos);
+  std::istringstream input(text);
+  const auto checkpoint =
+      mps::read_checkpoint(input, "fingerprint", layout, values.size());
+  const auto restored = mps::unflatten_dry_hydrostatic_multitracer_state(
+      checkpoint.time_s, checkpoint.step, checkpoint.state, driver.grid().cell_count(),
+      2, registry.size(), false);
+  MPS_CHECK(restored.tracer_mass_kg_m2 == state.tracer_mass_kg_m2);
+
+  auto reordered = config.tracers;
+  std::swap(reordered[0], reordered[1]);
+  const auto wrong_layout = mps::dry_hydrostatic_multitracer_checkpoint_layout(
+      mps::TracerRegistry(reordered), false);
+  std::istringstream wrong_order(text);
+  MPS_CHECK_THROWS_AS(
+      mps::read_checkpoint(wrong_order, "fingerprint", wrong_layout, values.size()),
+      std::runtime_error);
+  MPS_CHECK_THROWS_AS(
+      mps::unflatten_dry_hydrostatic_multitracer_state(
+          0.0, 0, values, driver.grid().cell_count(), 2, registry.size() + 1, false),
+      std::invalid_argument);
+}
+
+MPS_TEST_CASE("run metadata exposes ordered tracer names and roles") {
+  const auto config = base_config();
+  std::ostringstream output;
+  mps::write_run_metadata(output, mps::make_run_metadata(config), config);
+  MPS_CHECK(output.str().find("metadata.tracer_count = 4") != std::string::npos);
+  MPS_CHECK(output.str().find("metadata.tracer.1.name = second") != std::string::npos);
+  MPS_CHECK(output.str().find("metadata.tracer.1.role = passive") != std::string::npos);
 }
 
 int main() { return mps::test::run_all(); }

@@ -715,7 +715,7 @@ void DryHydrostaticDriver::rhs_with_components(
   if (config_.dry_hydrostatic.diffusion_kind != DiffusionKind::kNone) {
     const auto diffusion = dry_hydrostatic_diffusion_tendency(
         grid_, d, config_.dry_hydrostatic.diffusion_kind,
-        config_.dry_hydrostatic.diffusion_coefficient);
+        config_.dry_hydrostatic.diffusion_coefficient, config_.tracers);
     for (std::size_t n = 0; n < C * K; ++n) {
       coupled.tendency.momentum[n] =
           coupled.tendency.momentum[n] + diffusion.momentum[n];

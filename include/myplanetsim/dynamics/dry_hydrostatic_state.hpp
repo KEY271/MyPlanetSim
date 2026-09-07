@@ -2,10 +2,12 @@
 
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include "myplanetsim/core/planet_parameters.hpp"
+#include "myplanetsim/dynamics/tracer_registry.hpp"
 #include "myplanetsim/geometry/vec3.hpp"
 #include "myplanetsim/vertical/hybrid_pressure_coordinate.hpp"
 #include "myplanetsim/vertical/hydrostatic_column.hpp"
@@ -16,6 +18,10 @@ inline constexpr std::string_view kDryHydrostaticCheckpointLayout =
     "dry_hydrostatic_cell_column_v1";
 inline constexpr std::string_view kDryHydrostaticSurfaceCheckpointLayout =
     "dry_hydrostatic_surface_v1";
+inline constexpr std::string_view kDryHydrostaticMultitracerCheckpointLayout =
+    "dry_hydrostatic_multitracer_v1";
+inline constexpr std::string_view kDryHydrostaticMultitracerSurfaceCheckpointLayout =
+    "dry_hydrostatic_multitracer_surface_v1";
 
 struct DryHydrostaticState {
   Real time_s = 0.0;
@@ -69,6 +75,13 @@ struct DryHydrostaticDerived {
 [[nodiscard]] DryHydrostaticState unflatten_dry_hydrostatic_surface_state(
     Real time_s, std::uint64_t step, std::span<const Real> values, std::size_t cells,
     std::size_t levels);
+[[nodiscard]] std::string dry_hydrostatic_multitracer_checkpoint_layout(
+    const TracerRegistry& registry, bool include_surface);
+[[nodiscard]] std::vector<Real> flatten_dry_hydrostatic_multitracer_state(
+    const DryHydrostaticState& state, std::size_t levels, bool include_surface);
+[[nodiscard]] DryHydrostaticState unflatten_dry_hydrostatic_multitracer_state(
+    Real time_s, std::uint64_t step, std::span<const Real> values, std::size_t cells,
+    std::size_t levels, std::size_t tracer_count, bool include_surface);
 [[nodiscard]] DryHydrostaticDerived diagnose_dry_hydrostatic_state(
     const DryHydrostaticState& state, const AtmosphericHybridCoordinate& coordinate,
     const PlanetParameters& planet);
