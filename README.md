@@ -18,6 +18,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 8 実装計画](docs/phase-8-plan.md): 惑星・軌道設定、Earth 地形、fractional land--ocean surface と理想化熱強制
 - [Phase 9 実装計画](docs/phase-9-plan.md): 演算子・CFL・平衡ベンチマークの修正、静的 cache と性能ゲート、production gate の unblock
 - [Phase 10 実装計画](docs/phase-10-plan.md): 高速な Lamb・重力波の semi-implicit 化、鉛直 mode 分解、30 分時間刻みの精度・性能ゲート
+- [Phase 11 実装計画](docs/phase-11-plan.md): 短波・長波の灰色放射、大気・地表の熱収支、column から全球結合への実装・検証順序（計画案）
 - [科学・数値規約](docs/conventions.md): 単位、座標、添字、符号、誤差・保存量の共通定義
 - [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
 - [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果
