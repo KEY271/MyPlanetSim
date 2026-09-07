@@ -69,6 +69,8 @@ mps_add_test(unit.planetary_newtonian test_planetary_newtonian.cpp)
 mps_add_test(unit.surface_energy_balance test_surface_energy_balance.cpp)
 mps_add_test(unit.gray_radiation test_gray_radiation.cpp)
 mps_add_test(unit.radiative_column test_radiative_column.cpp)
+mps_add_test(phase11.radiative_dry_core test_radiative_dry_core.cpp)
+set_tests_properties(phase11.radiative_dry_core PROPERTIES LABELS phase11_gate)
 mps_add_test(phase8.planetary_core test_phase8_planetary_core.cpp)
 set_tests_properties(phase8.planetary_core PROPERTIES LABELS phase8_gate)
 set_tests_properties(

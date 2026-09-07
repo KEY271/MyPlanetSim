@@ -15,6 +15,7 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_reconstruction.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
 #include "myplanetsim/dynamics/shallow_water_diffusion.hpp"
+#include "myplanetsim/physics/gray_radiation_coupling.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
 #include "myplanetsim/physics/planetary_newtonian.hpp"
 #include "myplanetsim/physics/surface_energy_balance.hpp"
@@ -122,7 +123,7 @@ void halve_time_step(const DryHydrostaticState& state, Real& time_step_s) {
 
 [[nodiscard]] Real stable_time_step(const DryHydrostaticRhs& rhs) {
   return std::min({rhs.horizontal_stable_time_step_s, rhs.vertical_stable_time_step_s,
-                   rhs.surface_stable_time_step_s});
+                   rhs.surface_stable_time_step_s, rhs.radiation_stable_time_step_s});
 }
 
 void resize_zero_rhs_term(DryHydrostaticRhsTerm& term, const std::size_t cells,
@@ -285,7 +286,8 @@ void add_semi_implicit_correction(DryHydrostaticState& state,
                          config.dry_hydrostatic.advective_cfl /
                          config.dry_hydrostatic.cfl;
   return std::min({advective, rhs.diffusion_stable_time_step_s,
-                   rhs.vertical_stable_time_step_s, rhs.surface_stable_time_step_s});
+                   rhs.vertical_stable_time_step_s, rhs.surface_stable_time_step_s,
+                   rhs.radiation_stable_time_step_s});
 }
 
 [[nodiscard]] Real courant_from_stable_time_step(const Real time_step_s,
@@ -316,6 +318,49 @@ void add_semi_implicit_correction(DryHydrostaticState& state,
           << "modal linear solve did not converge: equation_residual="
           << equation_residual;
   return message.str();
+}
+
+[[nodiscard]] GrayRadiationDiagnostics weighted_radiation_diagnostics(
+    const GrayRadiationDiagnostics& first, const Real first_weight,
+    const GrayRadiationDiagnostics& second, const Real second_weight,
+    const GrayRadiationDiagnostics& third = {}, const Real third_weight = 0.0) {
+  const auto weighted = [&](const Real GrayRadiationDiagnostics::* member) {
+    return first_weight * first.*member + second_weight * second.*member +
+           third_weight * third.*member;
+  };
+  return {
+      .toa_incoming_shortwave_power_w =
+          weighted(&GrayRadiationDiagnostics::toa_incoming_shortwave_power_w),
+      .toa_reflected_shortwave_power_w =
+          weighted(&GrayRadiationDiagnostics::toa_reflected_shortwave_power_w),
+      .toa_outgoing_longwave_power_w =
+          weighted(&GrayRadiationDiagnostics::toa_outgoing_longwave_power_w),
+      .toa_net_upward_power_w =
+          weighted(&GrayRadiationDiagnostics::toa_net_upward_power_w),
+      .surface_down_shortwave_power_w =
+          weighted(&GrayRadiationDiagnostics::surface_down_shortwave_power_w),
+      .surface_up_shortwave_power_w =
+          weighted(&GrayRadiationDiagnostics::surface_up_shortwave_power_w),
+      .surface_down_longwave_power_w =
+          weighted(&GrayRadiationDiagnostics::surface_down_longwave_power_w),
+      .surface_up_longwave_power_w =
+          weighted(&GrayRadiationDiagnostics::surface_up_longwave_power_w),
+      .atmospheric_shortwave_heating_power_w =
+          weighted(&GrayRadiationDiagnostics::atmospheric_shortwave_heating_power_w),
+      .atmospheric_longwave_heating_power_w =
+          weighted(&GrayRadiationDiagnostics::atmospheric_longwave_heating_power_w),
+      .surface_storage_rate_w =
+          weighted(&GrayRadiationDiagnostics::surface_storage_rate_w),
+      .sensible_to_atmosphere_power_w =
+          weighted(&GrayRadiationDiagnostics::sensible_to_atmosphere_power_w),
+      .internal_heat_power_w =
+          weighted(&GrayRadiationDiagnostics::internal_heat_power_w),
+      .interface_conservation_residual_w =
+          weighted(&GrayRadiationDiagnostics::interface_conservation_residual_w),
+      .dry_thermal_energy_rate_w =
+          weighted(&GrayRadiationDiagnostics::dry_thermal_energy_rate_w),
+      .rayleigh_drag_work_w = weighted(&GrayRadiationDiagnostics::rayleigh_drag_work_w),
+  };
 }
 
 }  // namespace
@@ -404,7 +449,8 @@ void DryHydrostaticDriver::update_semi_implicit_reference(
 DryHydrostaticState DryHydrostaticDriver::initial_state() const {
   auto state =
       initialize_dry_hydrostatic_benchmark(config_, grid_, coordinate_, orography_);
-  if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance)
+  if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance ||
+      config_.physics.kind == PhysicsKind::kGrayRadiation)
     state.surface_temperature_k.assign(grid_.cell_count(),
                                        config_.surface->initial_temperature_k);
   return state;
@@ -599,7 +645,9 @@ void DryHydrostaticDriver::rhs_with_components(
   }
   HeldSuarezDiagnostics physics_diagnostics{};
   SurfaceEnergyDiagnostics surface_diagnostics{};
+  GrayRadiationDiagnostics radiation_diagnostics{};
   Real surface_dt = std::numeric_limits<Real>::infinity();
+  Real radiation_dt = std::numeric_limits<Real>::infinity();
   result.surface_temperature_k_s.clear();
   if (config_.physics.kind == PhysicsKind::kHeldSuarez) {
     held_suarez_tendency(grid_, coordinate_, d, s.surface_pressure_pa, config_.planet,
@@ -663,6 +711,34 @@ void DryHydrostaticDriver::rhs_with_components(
           physics.potential_temperature_mass_k_kg_m2_s[n];
     }
     physics_diagnostics = physics.diagnostics;
+  } else if (config_.physics.kind == PhysicsKind::kGrayRadiation) {
+    const auto orbit_state =
+        evaluate_orbit(*config_.orbit, config_.planet.rotation_rate_rad_s,
+                       s.time_s - config_.run.start_time_s);
+    gray_radiation_tendency(grid_, coordinate_, *surface_boundary_,
+                            s.surface_temperature_k, d, s.surface_pressure_pa,
+                            config_.planet, *config_.surface, *config_.radiation,
+                            orbit_state, workspace.gray_radiation_physics,
+                            workspace.gray_radiation_workspace);
+    const auto& physics = workspace.gray_radiation_physics;
+    if (components != nullptr) {
+      components->physics.tendency.momentum = physics.horizontal_momentum_mass_kg_m_s2;
+      components->physics.tendency.potential_temperature_mass =
+          physics.potential_temperature_mass_k_kg_m2_s;
+      components->physics.surface_temperature_k_s = physics.surface_temperature_k_s;
+    }
+    for (std::size_t n = 0; n < C * K; ++n) {
+      coupled.tendency.momentum[n] =
+          coupled.tendency.momentum[n] + physics.horizontal_momentum_mass_kg_m_s2[n];
+      coupled.tendency.potential_temperature_mass[n] +=
+          physics.potential_temperature_mass_k_kg_m2_s[n];
+    }
+    result.surface_temperature_k_s = physics.surface_temperature_k_s;
+    radiation_diagnostics = physics.diagnostics;
+    radiation_dt = physics.stable_time_step_s;
+    physics_diagnostics.thermal_energy_rate_w =
+        physics.diagnostics.dry_thermal_energy_rate_w;
+    physics_diagnostics.rayleigh_drag_work_w = physics.diagnostics.rayleigh_drag_work_w;
   }
   result.surface_pressure_pa_s = coupled.surface_pressure_pa_s;
   result.tendency = coupled.tendency;
@@ -672,9 +748,11 @@ void DryHydrostaticDriver::rhs_with_components(
   result.horizontal_stable_time_step_s = std::min(fast_wave_dt, diffusion_dt);
   result.vertical_stable_time_step_s = vertical_dt;
   result.surface_stable_time_step_s = surface_dt;
+  result.radiation_stable_time_step_s = radiation_dt;
   result.maximum_continuity_residual_pa_s = coupled.maximum_continuity_residual_pa_s;
   result.physics_diagnostics = physics_diagnostics;
   result.surface_diagnostics = surface_diagnostics;
+  result.radiation_diagnostics = radiation_diagnostics;
   result.diffusion_kinetic_energy_rate_w = diffusion_rate;
 }
 void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
@@ -722,6 +800,16 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                               *config_.surface, orbit_state,
                               workspace_.surface_physics);
       sampled.surface_rates = workspace_.surface_physics.diagnostics;
+    } else if (config_.physics.kind == PhysicsKind::kGrayRadiation) {
+      const auto orbit_state =
+          evaluate_orbit(*config_.orbit, config_.planet.rotation_rate_rad_s,
+                         state.time_s - config_.run.start_time_s);
+      gray_radiation_tendency(
+          grid_, coordinate_, *surface_boundary_, state.surface_temperature_k, derived,
+          state.surface_pressure_pa, config_.planet, *config_.surface,
+          *config_.radiation, orbit_state, workspace_.gray_radiation_physics,
+          workspace_.gray_radiation_workspace);
+      sampled.radiation_rates = workspace_.gray_radiation_physics.diagnostics;
     }
     obs(state, &derived, sampled);
   };
@@ -763,7 +851,8 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     bool initial_rhs_is_current = false;
     const bool rhs_is_time_independent =
         config_.physics.kind != PhysicsKind::kPlanetaryNewtonian &&
-        config_.physics.kind != PhysicsKind::kSurfaceEnergyBalance;
+        config_.physics.kind != PhysicsKind::kSurfaceEnergyBalance &&
+        config_.physics.kind != PhysicsKind::kGrayRadiation;
     while (s.time_s < end) {
       if (cancel && cancel()) return;
       const auto step_wall_start = std::chrono::steady_clock::now();
@@ -944,6 +1033,10 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           .retry_count = retry_count,
           .wall_seconds_rhs = rhs_wall_seconds,
           .wall_seconds_linear_solve = linear_solve_wall_seconds};
+      if (config_.physics.kind == PhysicsKind::kGrayRadiation)
+        step.radiation_rates = weighted_radiation_diagnostics(
+            initial_rhs.radiation_diagnostics, explicit_weight,
+            candidate_rhs.radiation_diagnostics, parameters.implicit_weight);
       if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
         const auto weighted = [&](const Real first, const Real second) {
           return explicit_weight * first + parameters.implicit_weight * second;
@@ -1052,6 +1145,10 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
               dt * (rhs1.diffusion_kinetic_energy_rate_w / 6.0 +
                     rhs2.diffusion_kinetic_energy_rate_w / 6.0 +
                     2.0 * rhs3.diffusion_kinetic_energy_rate_w / 3.0)};
+      if (config_.physics.kind == PhysicsKind::kGrayRadiation)
+        step.radiation_rates = weighted_radiation_diagnostics(
+            rhs1.radiation_diagnostics, 1.0 / 6.0, rhs2.radiation_diagnostics,
+            1.0 / 6.0, rhs3.radiation_diagnostics, 2.0 / 3.0);
       if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
         step.surface_budget = integrate_surface_energy_budget(
             grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,

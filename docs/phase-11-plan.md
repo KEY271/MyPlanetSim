@@ -221,7 +221,7 @@ CLI の CSV dispatch にある physics kind の分岐をすべて点検する。
 | P11.03 | 長波 sweep、透明短波、地表境界 | 完了: 等温柱の解析 flux、透明・厚い極限、`epsilon<1` の反射と保存 |
 | P11.04 | 短波吸収・地表反射の再吸収 | 完了: Beer--Lambert、昼夜・terminator、柱ごとの入射＝反射＋吸収 |
 | P11.05 | 独立 column の熱源・surface 結合、安定刻み | 完了: 一層平衡、過渡冷却、顕熱相殺、source-only 時間収束、retry bound |
-| P11.06 | dry driver/workspace、SSP-RK3 と semi-implicit | 同時刻 RHS、質量非干渉、積分重み、反復数・刻み感度、旧経路回帰 |
+| P11.06 | dry driver/workspace、SSP-RK3 と semi-implicit | 完了: 同時刻 RHS、質量非干渉、積分重み、反復数・刻み感度、旧経路回帰 |
 | P11.07 | CLI/CSV、checkpoint、統計、理由別 counter | 再開時の温度・flux・orbit・積算値一致、棄却分の二重計上なし |
 | P11.08 | 全球 preset と比較・性能測定 | 透明大気回帰、地形・陸海・同期回転、水平/鉛直/時間解像度感度 |
 | P11.09 | 長時間 pilot、検証報告、README 更新 | 登録した数値ゲートの結果・再現コマンド・未解決範囲を記録 |

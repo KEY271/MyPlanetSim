@@ -3,6 +3,7 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_coupling.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_reconstruction.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
+#include "myplanetsim/physics/gray_radiation_coupling.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
 #include "myplanetsim/physics/surface_energy_balance.hpp"
 
@@ -26,6 +27,8 @@ struct DryHydrostaticWorkspace {
   HeldSuarezTendency atmospheric_physics;
   HeldSuarezWorkspace atmospheric_physics_workspace;
   SurfaceEnergyTendency surface_physics;
+  GrayRadiationTendency gray_radiation_physics;
+  GrayRadiationCouplingWorkspace gray_radiation_workspace;
 };
 
 }  // namespace mps

@@ -200,12 +200,20 @@ void gray_radiation_column(const GrayRadiationColumnInput& input,
 GrayRadiativeColumnTendency gray_radiative_column_tendency(
     const GrayRadiativeColumnSourceInput& input) {
   GrayRadiativeColumnTendency result;
-  gray_radiative_column_tendency(input, result);
+  GrayRadiativeColumnWorkspace workspace;
+  gray_radiative_column_tendency(input, result, workspace);
   return result;
 }
 
 void gray_radiative_column_tendency(const GrayRadiativeColumnSourceInput& input,
                                     GrayRadiativeColumnTendency& result) {
+  GrayRadiativeColumnWorkspace workspace;
+  gray_radiative_column_tendency(input, result, workspace);
+}
+
+void gray_radiative_column_tendency(const GrayRadiativeColumnSourceInput& input,
+                                    GrayRadiativeColumnTendency& result,
+                                    GrayRadiativeColumnWorkspace& workspace) {
   const std::size_t levels = input.radiation.temperature_k.size();
   if (levels == 0 || input.exner_full.size() != levels)
     throw std::invalid_argument("gray radiative source shape mismatch");
@@ -238,8 +246,10 @@ void gray_radiative_column_tendency(const GrayRadiativeColumnSourceInput& input,
   // Propagate L1 norms of temperature sensitivities through the positive-coefficient
   // longwave sweeps. Triangle inequalities at net-flux differences make this a
   // conservative O(K) bound on every temperature-tendency Jacobian row.
-  std::vector<Real> downward_sensitivity(levels + 1, 0.0);
-  std::vector<Real> upward_sensitivity(levels + 1, 0.0);
+  workspace.downward_temperature_sensitivity_w_m2_k.assign(levels + 1, 0.0);
+  workspace.upward_temperature_sensitivity_w_m2_k.assign(levels + 1, 0.0);
+  auto& downward_sensitivity = workspace.downward_temperature_sensitivity_w_m2_k;
+  auto& upward_sensitivity = workspace.upward_temperature_sensitivity_w_m2_k;
   for (std::size_t level = 0; level < levels; ++level) {
     const Real path = input.radiation.parameters.longwave_diffusivity_factor *
                       result.fluxes.optical_depth.longwave[level];

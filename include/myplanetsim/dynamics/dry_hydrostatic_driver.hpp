@@ -11,6 +11,7 @@
 #include "myplanetsim/dynamics/surface_boundary.hpp"
 #include "myplanetsim/dynamics/surface_orography.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
+#include "myplanetsim/physics/gray_radiation_coupling.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
 #include "myplanetsim/physics/surface_energy_balance.hpp"
 namespace mps {
@@ -25,10 +26,12 @@ struct DryHydrostaticRhs {
   Real diffusion_stable_time_step_s = std::numeric_limits<Real>::infinity();
   Real vertical_stable_time_step_s = std::numeric_limits<Real>::infinity();
   Real surface_stable_time_step_s = std::numeric_limits<Real>::infinity();
+  Real radiation_stable_time_step_s = std::numeric_limits<Real>::infinity();
   Real maximum_continuity_residual_pa_s;
   HeldSuarezDiagnostics physics_diagnostics{};
   std::vector<Real> surface_temperature_k_s;
   SurfaceEnergyDiagnostics surface_diagnostics{};
+  GrayRadiationDiagnostics radiation_diagnostics{};
   // Explicit horizontal diffusion, kept out of the advection, pressure-gradient,
   // Coriolis, and vertical-transport terms so its dissipation is attributable.
   Real diffusion_kinetic_energy_rate_w = 0.0;
@@ -55,6 +58,7 @@ struct DryHydrostaticStepDiagnostics {
   Real rayleigh_drag_energy_contribution_j = 0.0;
   SurfaceEnergyDiagnostics surface_rates{};
   SurfaceEnergyBudget surface_budget{};
+  GrayRadiationDiagnostics radiation_rates{};
   Real diffusion_energy_contribution_j = 0.0;
   Real requested_time_step_s = 0.0;
   Real accepted_time_step_s = 0.0;

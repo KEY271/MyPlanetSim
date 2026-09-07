@@ -59,6 +59,11 @@ struct GrayRadiativeColumnTendency {
   Real stable_time_step_s = 0.0;
 };
 
+struct GrayRadiativeColumnWorkspace {
+  std::vector<Real> downward_temperature_sensitivity_w_m2_k;
+  std::vector<Real> upward_temperature_sensitivity_w_m2_k;
+};
+
 // Computes physical vertical optical depths only. Angular diffusivity factors are
 // applied later by the transport sweeps and are deliberately absent here.
 [[nodiscard]] GrayRadiationOpticalDepth gray_radiation_optical_depth(
@@ -78,5 +83,8 @@ void gray_radiation_column(const GrayRadiationColumnInput& input,
     const GrayRadiativeColumnSourceInput& input);
 void gray_radiative_column_tendency(const GrayRadiativeColumnSourceInput& input,
                                     GrayRadiativeColumnTendency& result);
+void gray_radiative_column_tendency(const GrayRadiativeColumnSourceInput& input,
+                                    GrayRadiativeColumnTendency& result,
+                                    GrayRadiativeColumnWorkspace& workspace);
 
 }  // namespace mps
