@@ -43,5 +43,14 @@ struct GrayRadiationColumn {
 [[nodiscard]] GrayRadiationOpticalDepth gray_radiation_optical_depth(
     std::span<const Real> pressure_half_pa, Real gravity_m_s2,
     const RadiationParameters& parameters);
+void gray_radiation_optical_depth(std::span<const Real> pressure_half_pa,
+                                  Real gravity_m_s2,
+                                  const RadiationParameters& parameters,
+                                  GrayRadiationOpticalDepth& result);
+
+[[nodiscard]] GrayRadiationColumn gray_radiation_column(
+    const GrayRadiationColumnInput& input);
+void gray_radiation_column(const GrayRadiationColumnInput& input,
+                           GrayRadiationColumn& result);
 
 }  // namespace mps

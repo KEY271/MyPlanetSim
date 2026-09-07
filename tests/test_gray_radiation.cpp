@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "myplanetsim/physics/gray_radiation.hpp"
+#include "myplanetsim/physics/surface_energy_balance.hpp"
 #include "support/test.hpp"
 
 namespace {
@@ -20,6 +21,22 @@ namespace {
 }
 
 }  // namespace
+
+[[nodiscard]] mps::GrayRadiationColumnInput column_input(
+    const std::vector<mps::Real>& pressure, const std::vector<mps::Real>& temperature,
+    const mps::RadiationParameters& p) {
+  return mps::GrayRadiationColumnInput{
+      .pressure_half_pa = pressure,
+      .temperature_k = temperature,
+      .surface_temperature_k = 300.0,
+      .gravity_m_s2 = 10.0,
+      .stellar_flux_w_m2 = 1000.0,
+      .cosine_solar_zenith = 0.5,
+      .surface_albedo = 0.25,
+      .surface_emissivity = 1.0,
+      .parameters = p,
+  };
+}
 
 MPS_TEST_CASE("gray optical depth follows mass path and telescopes") {
   constexpr mps::Real gravity = 10.0;
@@ -93,6 +110,109 @@ MPS_TEST_CASE("gray optical depth rejects invalid columns and parameters") {
   MPS_CHECK_THROWS_AS(
       mps::gray_radiation_optical_depth(std::vector<mps::Real>{0.0, 100000.0}, 10.0, p),
       std::invalid_argument);
+}
+
+MPS_TEST_CASE("transparent gray column preserves directional fluxes") {
+  auto p = parameters();
+  p.shortwave_absorption_m2_kg = 0.0;
+  p.longwave_absorption_ref_m2_kg = 0.0;
+  const std::vector<mps::Real> pressure{1000.0, 30000.0, 100000.0};
+  const std::vector<mps::Real> temperature{220.0, 280.0};
+  const auto result =
+      mps::gray_radiation_column(column_input(pressure, temperature, p));
+  const mps::Real surface_emission = mps::kStefanBoltzmannWm2K4 * std::pow(300.0, 4.0);
+  for (std::size_t interface = 0; interface < pressure.size(); ++interface) {
+    MPS_CHECK_NEAR(result.shortwave_down_w_m2[interface], 500.0, 0.0);
+    MPS_CHECK_NEAR(result.shortwave_up_w_m2[interface], 125.0, 0.0);
+    MPS_CHECK_NEAR(result.longwave_down_w_m2[interface], 0.0, 0.0);
+    MPS_CHECK_NEAR(result.longwave_up_w_m2[interface], surface_emission, 1e-12);
+  }
+  for (const mps::Real convergence : result.radiative_convergence_w_m2)
+    MPS_CHECK_NEAR(convergence, 0.0, 1e-12);
+}
+
+MPS_TEST_CASE("isothermal longwave sweep matches the analytic attenuation") {
+  auto p = parameters();
+  p.shortwave_absorption_m2_kg = 0.0;
+  p.longwave_absorption_ref_m2_kg = 2e-4;
+  p.longwave_pressure_exponent = 1.0;
+  const std::vector<mps::Real> pressure{0.0, 25000.0, 60000.0, 100000.0};
+  const std::vector<mps::Real> temperature{250.0, 250.0, 250.0};
+  auto input = column_input(pressure, temperature, p);
+  input.stellar_flux_w_m2 = 0.0;
+  input.surface_temperature_k = 310.0;
+  const auto result = mps::gray_radiation_column(input);
+  const mps::Real source = mps::kStefanBoltzmannWm2K4 * std::pow(250.0, 4.0);
+  const mps::Real boundary = mps::kStefanBoltzmannWm2K4 * std::pow(310.0, 4.0);
+
+  mps::Real path_from_top = 0.0;
+  for (std::size_t interface = 0; interface < pressure.size(); ++interface) {
+    MPS_CHECK_NEAR(result.longwave_down_w_m2[interface],
+                   source * (1.0 - std::exp(-path_from_top)), 1e-10);
+    if (interface + 1 < pressure.size())
+      path_from_top +=
+          p.longwave_diffusivity_factor * result.optical_depth.longwave[interface];
+  }
+  mps::Real path_from_surface = 0.0;
+  for (std::size_t reverse = pressure.size(); reverse > 0; --reverse) {
+    const std::size_t interface = reverse - 1;
+    MPS_CHECK_NEAR(result.longwave_up_w_m2[interface],
+                   source + (boundary - source) * std::exp(-path_from_surface), 1e-10);
+    if (interface > 0)
+      path_from_surface +=
+          p.longwave_diffusivity_factor * result.optical_depth.longwave[interface - 1];
+  }
+}
+
+MPS_TEST_CASE("longwave surface reflects its unabsorbed downward flux") {
+  auto p = parameters();
+  p.shortwave_absorption_m2_kg = 0.0;
+  p.longwave_absorption_ref_m2_kg = 5e-4;
+  const std::vector<mps::Real> pressure{0.0, 100000.0};
+  const std::vector<mps::Real> temperature{280.0};
+  auto input = column_input(pressure, temperature, p);
+  input.stellar_flux_w_m2 = 0.0;
+  input.surface_emissivity = 0.3;
+  const auto result = mps::gray_radiation_column(input);
+  const mps::Real emitted = input.surface_emissivity * mps::kStefanBoltzmannWm2K4 *
+                            std::pow(input.surface_temperature_k, 4.0);
+  MPS_CHECK_NEAR(
+      result.longwave_up_w_m2.back(),
+      emitted + (1.0 - input.surface_emissivity) * result.longwave_down_w_m2.back(),
+      1e-12);
+}
+
+MPS_TEST_CASE("opaque longwave layers approach their local source") {
+  auto p = parameters();
+  p.shortwave_absorption_m2_kg = 0.0;
+  p.longwave_absorption_ref_m2_kg = 1e6;
+  const std::vector<mps::Real> pressure{0.0, 50000.0, 100000.0};
+  const std::vector<mps::Real> temperature{200.0, 260.0};
+  auto input = column_input(pressure, temperature, p);
+  input.stellar_flux_w_m2 = 0.0;
+  const auto result = mps::gray_radiation_column(input);
+  MPS_CHECK_NEAR(result.longwave_down_w_m2[1],
+                 mps::kStefanBoltzmannWm2K4 * std::pow(200.0, 4.0), 1e-12);
+  MPS_CHECK_NEAR(result.longwave_down_w_m2[2],
+                 mps::kStefanBoltzmannWm2K4 * std::pow(260.0, 4.0), 1e-12);
+  MPS_CHECK_NEAR(result.longwave_up_w_m2[0],
+                 mps::kStefanBoltzmannWm2K4 * std::pow(200.0, 4.0), 1e-12);
+  MPS_CHECK_NEAR(result.longwave_up_w_m2[1],
+                 mps::kStefanBoltzmannWm2K4 * std::pow(260.0, 4.0), 1e-12);
+}
+
+MPS_TEST_CASE("gray column flux convergence telescopes exactly") {
+  auto p = parameters();
+  p.shortwave_absorption_m2_kg = 0.0;
+  const std::vector<mps::Real> pressure{1000.0, 12000.0, 50000.0, 100000.0};
+  const std::vector<mps::Real> temperature{210.0, 245.0, 285.0};
+  const auto result =
+      mps::gray_radiation_column(column_input(pressure, temperature, p));
+  mps::Real sum = 0.0;
+  for (const mps::Real convergence : result.radiative_convergence_w_m2)
+    sum += convergence;
+  MPS_CHECK_NEAR(sum, result.net_flux_w_m2.back() - result.net_flux_w_m2.front(),
+                 1e-12);
 }
 
 int main() { return mps::test::run_all(); }
