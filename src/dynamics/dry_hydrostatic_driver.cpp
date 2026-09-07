@@ -15,6 +15,7 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_reconstruction.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
 #include "myplanetsim/dynamics/shallow_water_diffusion.hpp"
+#include "myplanetsim/physics/dry_convective_adjustment.hpp"
 #include "myplanetsim/physics/gray_radiation_coupling.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
 #include "myplanetsim/physics/planetary_newtonian.hpp"
@@ -124,6 +125,71 @@ void halve_time_step(const DryHydrostaticState& state, Real& time_step_s) {
 [[nodiscard]] Real stable_time_step(const DryHydrostaticRhs& rhs) {
   return std::min({rhs.horizontal_stable_time_step_s, rhs.vertical_stable_time_step_s,
                    rhs.surface_stable_time_step_s, rhs.radiation_stable_time_step_s});
+}
+
+[[nodiscard]] DryConvectionDiagnostics apply_dry_convection(
+    const ExperimentConfig& config, const CubedSphereGrid& grid,
+    DryHydrostaticState& state, const DryHydrostaticDerived& derived,
+    DryConvectiveAdjustmentResult& column_result,
+    DryConvectiveAdjustmentWorkspace& column_workspace) {
+  if (config.convection.kind == ConvectionKind::kNone) return {};
+  const std::size_t cells = derived.cells;
+  const std::size_t levels = derived.levels;
+  if (cells != grid.cell_count() || levels == 0)
+    throw std::invalid_argument("dry convection coupling shape mismatch");
+  DryConvectionDiagnostics result{
+      .minimum_theta_difference_before_k =
+          levels > 1 ? std::numeric_limits<Real>::infinity() : 0.0,
+      .minimum_theta_difference_after_k =
+          levels > 1 ? std::numeric_limits<Real>::infinity() : 0.0};
+  Real total_area = 0.0;
+  for (std::size_t cell = 0; cell < cells; ++cell) {
+    const std::size_t begin = cell * levels;
+    const std::size_t half_begin = cell * (levels + 1);
+    const DryConvectiveAdjustmentInput input{
+        .potential_temperature_k =
+            std::span<const Real>(derived.potential_temperature_k)
+                .subspan(begin, levels),
+        .air_mass_kg_m2 =
+            std::span<const Real>(derived.air_mass_kg_m2).subspan(begin, levels),
+        .exner_full = std::span<const Real>(derived.exner_full).subspan(begin, levels),
+        .exner_half =
+            std::span<const Real>(derived.exner_half).subspan(half_begin, levels + 1),
+        .heat_capacity_cp_j_kg_k = config.planet.heat_capacity_cp_j_kg_k,
+        .heat_capacity_cv_j_kg_k = config.planet.heat_capacity_cv_j_kg_k(),
+        .stability_tolerance_k = config.convection.stability_tolerance_k};
+    dry_convective_adjustment(input, column_result, column_workspace);
+    const auto& column = column_result.diagnostics;
+    for (std::size_t level = 0; level < levels; ++level)
+      state.potential_temperature_mass_k_kg_m2[begin + level] =
+          derived.air_mass_kg_m2[begin + level] *
+          column_result.adjusted_potential_temperature_k[level];
+    const Real area = grid.cells()[cell].area_m2;
+    total_area += area;
+    result.minimum_theta_difference_before_k =
+        std::min(result.minimum_theta_difference_before_k,
+                 column.minimum_theta_difference_before_k);
+    result.minimum_theta_difference_after_k =
+        std::min(result.minimum_theta_difference_after_k,
+                 column.minimum_theta_difference_after_k);
+    result.unstable_interface_fraction_before +=
+        area * column.unstable_interface_fraction_before;
+    result.unstable_interface_fraction_after +=
+        area * column.unstable_interface_fraction_after;
+    if (column.adjusted_layer_count > 0) ++result.adjusted_column_count;
+    result.adjusted_layer_count += column.adjusted_layer_count;
+    result.adjusted_block_count += column.adjusted_block_count;
+    result.maximum_temperature_increment_k = std::max(
+        result.maximum_temperature_increment_k, column.maximum_temperature_increment_k);
+    result.enthalpy_change_j += area * column.enthalpy_change_j_m2;
+    result.dry_energy_attributed_change_j +=
+        area * column.dry_energy_attributed_change_j_m2;
+  }
+  if (!(total_area > 0.0))
+    throw std::runtime_error("dry convection grid area is invalid");
+  result.unstable_interface_fraction_before /= total_area;
+  result.unstable_interface_fraction_after /= total_area;
+  return result;
 }
 
 void resize_zero_rhs_term(DryHydrostaticRhsTerm& term, const std::size_t cells,
@@ -894,7 +960,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       std::size_t invariant_retry_count = 0;
       std::size_t solver_retry_count = 0;
       std::size_t radiation_column_call_count = 0;
+      std::size_t convection_column_call_count = 0;
       Real radiation_wall_seconds = 0.0;
+      DryConvectionDiagnostics accepted_convection{};
       const DryHydrostaticState initial = s;
       if (reference_is_per_step) update_semi_implicit_reference(initial);
       const auto& reference = *semi_implicit_reference_column_;
@@ -1001,6 +1069,14 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
               final_scaled.component, attempted_dt));
         candidate.step = initial.step + 1;
         diagnose_and_validate(candidate);
+        accepted_convection =
+            apply_dry_convection(config_, grid_, candidate, workspace_.derived,
+                                 workspace_.convective_adjustment,
+                                 workspace_.convective_adjustment_workspace);
+        if (config_.convection.kind != ConvectionKind::kNone) {
+          convection_column_call_count += grid_.cell_count();
+          diagnose_and_validate(candidate);
+        }
         return candidate;
       };
 
@@ -1044,6 +1120,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
               (explicit_weight * initial_rhs.physics_diagnostics.rayleigh_drag_work_w +
                parameters.implicit_weight *
                    candidate_rhs.physics_diagnostics.rayleigh_drag_work_w),
+          .convection = accepted_convection,
           .diffusion_energy_contribution_j =
               dt * (explicit_weight * initial_rhs.diffusion_kinetic_energy_rate_w +
                     parameters.implicit_weight *
@@ -1078,6 +1155,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           .invariant_retry_count = invariant_retry_count,
           .solver_retry_count = solver_retry_count,
           .radiation_column_call_count = radiation_column_call_count,
+          .convection_column_call_count = convection_column_call_count,
           .radiation_wall_seconds = radiation_wall_seconds,
           .wall_seconds_rhs = rhs_wall_seconds,
           .wall_seconds_linear_solve = linear_solve_wall_seconds};
@@ -1113,8 +1191,12 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
             grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,
             s.surface_temperature_k, dt, rates, rates, rates);
       }
-      std::swap(initial_rhs, candidate_rhs);
-      initial_rhs_is_current = true;
+      if (config_.convection.kind == ConvectionKind::kNone) {
+        std::swap(initial_rhs, candidate_rhs);
+        initial_rhs_is_current = true;
+      } else {
+        initial_rhs_is_current = false;
+      }
       step.wall_seconds_total = std::chrono::duration<Real>(
                                     std::chrono::steady_clock::now() - step_wall_start)
                                     .count();
@@ -1138,6 +1220,8 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     const Real requested_dt = std::min(config_.run.time_step_s, end - initial.time_s);
     std::size_t cfl_retry_count = 0;
     std::size_t invariant_retry_count = 0;
+    std::size_t convection_column_call_count = 0;
+    DryConvectionDiagnostics accepted_convection{};
     rhs(initial, rhs1);
     std::size_t radiation_column_call_count = rhs1.radiation_column_call_count;
     Real radiation_wall_seconds = rhs1.radiation_wall_seconds;
@@ -1203,7 +1287,20 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         continue;
       }
       project_momentum(next);
-      diagnose_and_validate(next);
+      try {
+        diagnose_and_validate(next);
+        accepted_convection = apply_dry_convection(
+            config_, grid_, next, workspace_.derived, workspace_.convective_adjustment,
+            workspace_.convective_adjustment_workspace);
+        if (config_.convection.kind != ConvectionKind::kNone) {
+          convection_column_call_count += grid_.cell_count();
+          diagnose_and_validate(next);
+        }
+      } catch (const std::runtime_error&) {
+        ++invariant_retry_count;
+        halve_time_step(initial, dt);
+        continue;
+      }
       s = std::move(next);
       DryHydrostaticStepDiagnostics step{
           .thermal_energy_contribution_j =
@@ -1214,6 +1311,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
               dt * (rhs1.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
                     rhs2.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
                     2.0 * rhs3.physics_diagnostics.rayleigh_drag_work_w / 3.0),
+          .convection = accepted_convection,
           .diffusion_energy_contribution_j =
               dt * (rhs1.diffusion_kinetic_energy_rate_w / 6.0 +
                     rhs2.diffusion_kinetic_energy_rate_w / 6.0 +
@@ -1227,6 +1325,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           .cfl_retry_count = cfl_retry_count,
           .invariant_retry_count = invariant_retry_count,
           .radiation_column_call_count = radiation_column_call_count,
+          .convection_column_call_count = convection_column_call_count,
           .radiation_wall_seconds = radiation_wall_seconds};
       if (config_.physics.kind == PhysicsKind::kGrayRadiation)
         step.radiation_rates = weighted_radiation_diagnostics(

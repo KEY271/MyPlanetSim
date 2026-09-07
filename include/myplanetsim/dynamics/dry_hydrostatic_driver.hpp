@@ -54,6 +54,19 @@ struct DryHydrostaticRhsComponents {
   DryHydrostaticRhsTerm physics;
 };
 
+struct DryConvectionDiagnostics {
+  Real minimum_theta_difference_before_k = 0.0;
+  Real minimum_theta_difference_after_k = 0.0;
+  Real unstable_interface_fraction_before = 0.0;
+  Real unstable_interface_fraction_after = 0.0;
+  std::size_t adjusted_column_count = 0;
+  std::size_t adjusted_layer_count = 0;
+  std::size_t adjusted_block_count = 0;
+  Real maximum_temperature_increment_k = 0.0;
+  Real enthalpy_change_j = 0.0;
+  Real dry_energy_attributed_change_j = 0.0;
+};
+
 struct DryHydrostaticStepDiagnostics {
   HeldSuarezDiagnostics physics_rates{};
   Real thermal_energy_contribution_j = 0.0;
@@ -62,6 +75,7 @@ struct DryHydrostaticStepDiagnostics {
   SurfaceEnergyBudget surface_budget{};
   GrayRadiationDiagnostics radiation_rates{};
   GrayRadiationBudget radiation_budget{};
+  DryConvectionDiagnostics convection{};
   Real diffusion_energy_contribution_j = 0.0;
   Real requested_time_step_s = 0.0;
   Real accepted_time_step_s = 0.0;
@@ -80,6 +94,7 @@ struct DryHydrostaticStepDiagnostics {
   std::size_t invariant_retry_count = 0;
   std::size_t solver_retry_count = 0;
   std::size_t radiation_column_call_count = 0;
+  std::size_t convection_column_call_count = 0;
   Real radiation_wall_seconds = 0.0;
   Real wall_seconds_rhs = 0.0;
   Real wall_seconds_linear_solve = 0.0;

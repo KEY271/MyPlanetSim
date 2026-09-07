@@ -108,6 +108,29 @@ namespace {
   return config;
 }
 
+[[nodiscard]] mps::ExperimentConfig convection_config(const bool semi_implicit) {
+  auto config = semi_implicit ? semi_implicit_config(10.0, 5) : gray_config();
+  config.run.end_time_s = 20.0;
+  config.run.time_step_s = 10.0;
+  config.convection.kind = mps::ConvectionKind::kDryAdjustment;
+  config.convection.stability_tolerance_k = 1e-10;
+  config.validate();
+  return config;
+}
+
+void impose_unstable_columns(const mps::DryHydrostaticDriver& driver,
+                             mps::DryHydrostaticState& state) {
+  const auto derived = driver.diagnose(state);
+  for (std::size_t cell = 0; cell < derived.cells; ++cell) {
+    const auto upper = mps::dry_hydrostatic_offset(cell, 0, derived.levels);
+    const auto lower = mps::dry_hydrostatic_offset(cell, 1, derived.levels);
+    state.potential_temperature_mass_k_kg_m2[upper] =
+        derived.air_mass_kg_m2[upper] * 280.0;
+    state.potential_temperature_mass_k_kg_m2[lower] =
+        derived.air_mass_kg_m2[lower] * 340.0;
+  }
+}
+
 [[nodiscard]] mps::DryHydrostaticState run(const mps::ExperimentConfig& config) {
   const mps::DryHydrostaticDriver driver(config);
   auto state = driver.initial_state();
@@ -335,6 +358,54 @@ MPS_TEST_CASE("cancellation flushes an unsampled radiative interval once") {
     MPS_CHECK_EQ(samples, 2U);
     MPS_CHECK_NEAR(pending_energy, 0.0, 0.0);
     MPS_CHECK(written_energy > 0.0);
+  }
+}
+
+MPS_TEST_CASE("dry convection runs only after accepted explicit and implicit steps") {
+  for (const bool implicit : {false, true}) {
+    const auto config = convection_config(implicit);
+    const mps::DryHydrostaticDriver driver(config);
+    auto state = driver.initial_state();
+    impose_unstable_columns(driver, state);
+    const auto before_rhs = state.potential_temperature_mass_k_kg_m2;
+    static_cast<void>(driver.rhs(state));
+    MPS_CHECK(state.potential_temperature_mass_k_kg_m2 == before_rhs);
+
+    mps::DryHydrostaticStepDiagnostics accepted;
+    driver.advance(
+        state, 10.0,
+        [&](const mps::DryHydrostaticState&, const mps::DryHydrostaticDerived*,
+            const mps::DryHydrostaticStepDiagnostics& step) {
+          if (step.accepted_time_step_s > 0.0) accepted = step;
+        });
+    MPS_CHECK_EQ(state.step, 1U);
+    MPS_CHECK(accepted.convection.adjusted_column_count > 0);
+    MPS_CHECK(accepted.convection.unstable_interface_fraction_before > 0.0);
+    MPS_CHECK_EQ(accepted.convection.unstable_interface_fraction_after, 0.0);
+    MPS_CHECK(accepted.convection.minimum_theta_difference_after_k >= -1e-10);
+    MPS_CHECK(accepted.convection_column_call_count >= driver.grid().cell_count());
+    const auto adjusted = driver.diagnose(state);
+    for (std::size_t cell = 0; cell < adjusted.cells; ++cell) {
+      const auto upper = mps::dry_hydrostatic_offset(cell, 0, adjusted.levels);
+      const auto lower = mps::dry_hydrostatic_offset(cell, 1, adjusted.levels);
+      MPS_CHECK(adjusted.potential_temperature_k[upper] + 1e-10 >=
+                adjusted.potential_temperature_k[lower]);
+    }
+  }
+}
+
+MPS_TEST_CASE("convective restart segmentation reproduces uninterrupted steps") {
+  for (const bool implicit : {false, true}) {
+    const auto config = convection_config(implicit);
+    const mps::DryHydrostaticDriver full_driver(config);
+    auto uninterrupted = full_driver.initial_state();
+    impose_unstable_columns(full_driver, uninterrupted);
+    auto segmented = uninterrupted;
+    full_driver.advance(uninterrupted, config.run.end_time_s);
+    full_driver.advance(segmented, 10.0);
+    const mps::DryHydrostaticDriver restarted_driver(config);
+    restarted_driver.advance(segmented, config.run.end_time_s);
+    MPS_CHECK_NEAR(normalized_difference(uninterrupted, segmented, 2), 0.0, 1e-14);
   }
 }
 
