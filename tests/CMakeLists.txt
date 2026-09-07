@@ -54,6 +54,11 @@ target_compile_definitions(
   phase10.balance PRIVATE MPS_CONFIG_DIRECTORY="${CMAKE_SOURCE_DIR}/configs"
 )
 set_tests_properties(phase10.balance PROPERTIES LABELS phase10_gate)
+mps_add_test(phase10.long_step test_phase10_long_step.cpp)
+target_compile_definitions(
+  phase10.long_step PRIVATE MPS_CONFIG_DIRECTORY="${CMAKE_SOURCE_DIR}/configs"
+)
+set_tests_properties(phase10.long_step PROPERTIES LABELS phase10_gate)
 mps_add_test(unit.time_step_normalization test_time_step_normalization.cpp)
 mps_add_test(smoke.presets test_preset_smoke.cpp)
 target_compile_definitions(

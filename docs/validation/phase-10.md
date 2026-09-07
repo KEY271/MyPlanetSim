@@ -232,3 +232,169 @@ The complete Clang development suite passes 84/84 tests. The six `phase10_gate` 
 also pass with GCC 15.2 under `-Werror`, and with the Clang ASan/UBSan preset. Aggregate
 initializers touched by the Phase 10 state/config additions explicitly initialize their
 remaining members so both compilers enforce the same warning-clean contract.
+
+## P10.13 long-step presets
+
+`configs/phase10_linear_wave_semi_implicit.cfg`,
+`configs/phase10_dcmip_rest_semi_implicit.cfg`,
+`configs/phase10_linear_mountain_wave_semi_implicit.cfg`, and
+`configs/phase10_held_suarez_semi_implicit.cfg` request 1,800 s. The Phase 5--8 explicit
+presets are unchanged. All four presets were revised at P10.14 to the fixed-iteration
+contract; their current registered settings are `nonlinear_iterations = 3`,
+`reference_update = fixed`, and `linear_relative_tolerance = 1e-4`.
+
+## P10.14 iteration contract and measured cost
+
+### Why the tolerance-based contract was replaced
+
+The scheme first delivered at P10.13 accepted a step only when the scaled max-norm
+Crank--Nicolson residual fell below `1e-8`. On `phase10_held_suarez_semi_implicit.cfg`
+that never happened at 1,800 s. The measured behaviour was:
+
+| quantity | P10.13 as delivered |
+|---|---:|
+| seconds per model day | 13.49 |
+| explicit 200 s baseline, same session | 5.67 |
+| accepted step, mean / maximum | 778 s / 900 s |
+| retries per 111 accepted steps | 139 |
+| limiting residual component | `potential_temperature_mass` |
+
+The iteration was not diverging; it was being cut off. With retries suppressed the
+residual fell from `8.88e-4` to `1.74e-7` in four iterations and was still contracting at
+roughly a factor of three per iteration. Every requested 1,800 s step therefore paid its
+full iteration budget, was rejected on the residual test, and was recomputed at 900 s.
+Scanning `reference_temperature_k` over 220--300 K moved the final residual only between
+`6.4e-7` and `1.7e-7`, and raising `maximum_implicit_modes` from 5 to 20 left the step
+sequence bit-for-bit identical, so neither the reference scalar nor the modal truncation
+was responsible.
+
+The literature contract is different from the one that was implemented. Benard (2003)
+gathers the classical semi-implicit scheme and its iterative variants into a single ICI
+class "differing only by their number of iterations", lists the operational choices as
+`N_iter = 1` for the extrapolating semi-implicit scheme and `N_iter = 2` for Cullen's
+predictor/corrector and Cote et al., and describes the fully converged limit as unable to
+be "achieved in practice for numerical models". Thuburn et al. (2014) report that "four
+iterations are sufficient to achieve stable results, and it might be feasible to use
+fewer iterations operationally" and solve the Helmholtz problem with a single multigrid
+sweep, "more than sufficient accuracy in the context of the iterative nonlinear solver".
+ENDGame solves its linear system four times per step at an operational tolerance of
+`1e-4`. None of them tests a nonlinear residual.
+
+### The registered contract
+
+`semi_implicit.nonlinear_iterations` now performs exactly that many quasi-Newton
+corrections. The residual is computed and reported every step but does not gate
+acceptance; only a non-finite residual, or a final residual above the initial one,
+rejects an attempt. `linear_relative_tolerance` is `1e-4` in all Phase 10 presets.
+
+### Choosing the iteration count
+
+Measured on `phase10_linear_wave_semi_implicit.cfg` at `N=4`, 7,200 s of integration,
+against a six-iteration reference at the same step, with the temporal truncation error
+taken as the 1,800 s versus 900 s difference at six iterations:
+
+| iterations | iteration error | ratio to truncation error `7.50e-10` |
+|---:|---:|---:|
+| 2 | 1.853e-9 | 2.47 |
+| 3 | 2.256e-10 | 0.30 |
+| 4 | 2.377e-11 | 0.032 |
+| 5 | 3.607e-12 | 0.005 |
+| 6 | 3.678e-13 | 0.0005 |
+
+The contraction is about one order of magnitude per iteration, the rate Thuburn et al.
+report. Two iterations restore second-order accuracy -- the observed order over
+1,800/900/450/225 s is 1.977 and 2.041 -- but leave an iteration error 2.5 times the
+truncation error. Three iterations put it below. **The registered production value is
+therefore `nonlinear_iterations = 3`**, not the two that the operational ICI catalogue
+would suggest for a different discretization. `phase10.long_step` asserts both the
+second-order convergence and that the iteration error at three iterations is below the
+truncation error.
+
+### Reference update
+
+`semi_implicit.reference_update = per_step` rebuilds the horizontally uniform reference
+column each step from the mass-weighted horizontal mean of the state, following Thuburn
+et al. Measured on Held--Suarez at two iterations it did **not** improve the residual:
+
+| configuration | mean residual | maximum residual |
+|---|---:|---:|
+| `fixed`, `T* = 200 K` | 1.600e-5 | 6.260e-5 |
+| `fixed`, `T* = 264 K` | 1.204e-5 | 5.695e-5 |
+| `fixed`, `T* = 300 K` | 9.830e-6 | 3.655e-5 |
+| `fixed`, `T* = 340 K` | 1.069e-5 | 3.651e-5 |
+| `fixed`, `T* = 440 K` | 1.137e-5 | 2.379e-5 |
+| `per_step` (any `T*`) | 1.221e-5 | 5.781e-5 |
+
+A horizontally uniform reference cannot represent the pole-to-equator thermal structure
+that dominates the remaining residual, so tracking the horizontal mean does not help. The
+`fixed` sequence instead reproduces the classical guidance Benard records from Simmons et
+al. (1978): a warmer reference with larger static stability is better, with a shallow
+optimum near 300 K. The presets use `fixed` with `T* = 300 K` for Held--Suarez.
+
+`per_step` is retained for a different, measured reason: it makes the result exactly
+independent of `reference_temperature_k`, which removes a hand-tuning failure mode on
+planets where no good fixed value is known. It costs about 4 % in wall time.
+
+### Performance envelope
+
+`N=12`, `K=20`, Release LTO, one thread, one model day, median of three runs in a single
+session. The explicit baseline is remeasured in the same session because the machine was
+20--45 % slower than when the P10.01 baseline was recorded, and a speedup quoted against
+a stale baseline is not a measurement.
+
+| metric | registered target | explicit 200 s | semi-implicit 1,800 s |
+|---|---:|---:|---:|
+| seconds per model day | -- | 5.86 | **1.014** |
+| speedup versus explicit | >= 3x | 1.0x | **5.78x** |
+| accepted median step | >= 1,200 s | 200 s | 1,800 s |
+| retries per model day | -- | -- | **0** |
+| GMRES iterations, maximum | < 40, p95 <= 20 | -- | **1** |
+| nonlinear iterations | fixed | -- | 3 |
+| peak RSS | <= 2x explicit | 24.9 MB | 25.7 MB (1.03x) |
+| solver allocations after warm-up | 0 | 0 | 0 |
+
+Wall time splits as 64 % full nonlinear RHS, 15 % modal linear solves, 21 % residual
+assembly, correction and invariant checks. The elliptic solve was never the constraint:
+it converges in a single GMRES iteration. Cost is set by the number of full RHS
+evaluations, which the fixed-iteration contract reduced from about 609 per model day to
+about 144.
+
+### Long-step ladder
+
+Requested step probed in ascending order on `phase10_held_suarez_semi_implicit.cfg`:
+
+| requested step | with registered `maximum_implicit_modes = 5` | with the cap released to 20 |
+|---:|---|---|
+| 1,800 s | accepted, 0 retries | accepted |
+| 2,400 s | accepted, 0 retries | accepted |
+| 3,600 s | rejected: required modes exceed the cap | accepted |
+| 5,400 s | rejected: required modes exceed the cap | accepted |
+| 7,200 s | rejected: required modes exceed the cap | accepted |
+| 10,800 s | -- | rejected: candidate violates an explicit CFL constraint |
+
+The registered operational limit for this preset is **2,400 s**, because the mode cap is
+part of the registered configuration and a run that needs more modes is rejected rather
+than silently left partly explicit. With the cap released the ladder ends at the material
+advection limit that Phase 10 deliberately does not make implicit, which is the intended
+failure mode. Accuracy at steps beyond 1,800 s is not registered as a capability here;
+only stability was probed.
+
+### Thirty-day comparison
+
+`phase10_held_suarez_semi_implicit.cfg` at 1,800 s against `configs/phase7_held_suarez.cfg`
+at 200 s, both for 30 model days:
+
+| quantity | semi-implicit | explicit |
+|---|---:|---:|
+| accepted steps | 1,440 | 12,960 |
+| wall time | 27.5 s | 183.2 s |
+| dry mass drift | -1.99e-16 | -6.32e-13 |
+| total energy, J | 1.318258e24 | 1.317910e24 |
+| minimum temperature, K | 205.59 | 204.70 |
+| maximum wind, m/s | 30.03 | 25.83 |
+| non-finite samples | 0 | 0 |
+
+Total energy differs by 2.6e-4 relative over 30 days. Dry mass is conserved about three
+thousand times more tightly by the semi-implicit path, which takes nine times fewer
+steps. Zonal statistics are not compared at 30 days because the climate accumulator does
+not begin until day 200; that comparison belongs to the pilot below.
