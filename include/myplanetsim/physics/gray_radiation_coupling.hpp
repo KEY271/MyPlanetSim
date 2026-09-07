@@ -30,6 +30,22 @@ struct GrayRadiationDiagnostics {
   Real rayleigh_drag_work_w = 0.0;
 };
 
+struct GrayRadiationBudget {
+  Real toa_incoming_shortwave_energy_j = 0.0;
+  Real toa_reflected_shortwave_energy_j = 0.0;
+  Real toa_outgoing_longwave_energy_j = 0.0;
+  Real toa_net_upward_energy_j = 0.0;
+  Real atmospheric_shortwave_heating_energy_j = 0.0;
+  Real atmospheric_longwave_heating_energy_j = 0.0;
+  Real sensible_to_atmosphere_energy_j = 0.0;
+  Real internal_heat_energy_j = 0.0;
+  Real surface_storage_change_j = 0.0;
+  Real surface_time_integration_residual_j = 0.0;
+  Real interface_conservation_residual_j = 0.0;
+  Real dry_thermal_energy_j = 0.0;
+  Real rayleigh_drag_energy_j = 0.0;
+};
+
 struct GrayRadiationTendency {
   std::vector<Real> surface_temperature_k_s;
   std::vector<Real> potential_temperature_mass_k_kg_m2_s;
@@ -51,5 +67,12 @@ void gray_radiation_tendency(
     const PlanetParameters& planet, const SurfaceParameters& surface,
     const RadiationParameters& radiation, const OrbitState& orbit_state,
     GrayRadiationTendency& result, GrayRadiationCouplingWorkspace& workspace);
+
+[[nodiscard]] GrayRadiationBudget integrate_gray_radiation_budget(
+    const CubedSphereGrid& grid, const SurfaceBoundary& boundary,
+    const SurfaceParameters& surface,
+    std::span<const Real> initial_surface_temperature_k,
+    std::span<const Real> final_surface_temperature_k, Real time_step_s,
+    const GrayRadiationDiagnostics& weighted_rates);
 
 }  // namespace mps

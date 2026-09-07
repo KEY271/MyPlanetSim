@@ -201,7 +201,13 @@ MPS_TEST_CASE("explicit gray coupling conserves dry and tracer mass") {
   const mps::Real initial_mass = dry_mass(driver, state);
   const auto initial_tracer = state.tracer_mass_kg_m2;
   const auto initial_surface = state.surface_temperature_k;
-  driver.advance(state, config.run.end_time_s);
+  std::vector<mps::GrayRadiationBudget> budgets;
+  driver.advance(
+      state, config.run.end_time_s,
+      [&](const mps::DryHydrostaticState& sampled, const mps::DryHydrostaticDerived*,
+          const mps::DryHydrostaticStepDiagnostics& diagnostics) {
+        if (sampled.step > 0) budgets.push_back(diagnostics.radiation_budget);
+      });
   MPS_CHECK_NEAR(dry_mass(driver, state), initial_mass, 1e-13 * initial_mass);
   mps::Real initial_tracer_total = 0.0;
   mps::Real final_tracer_total = 0.0;
@@ -214,6 +220,25 @@ MPS_TEST_CASE("explicit gray coupling conserves dry and tracer mass") {
   MPS_CHECK_NEAR(final_tracer_total, initial_tracer_total,
                  1e-13 * initial_tracer_total);
   MPS_CHECK(state.surface_temperature_k != initial_surface);
+  mps::Real integrated_storage = 0.0;
+  mps::Real integrated_interface_residual = 0.0;
+  for (const auto& budget : budgets) {
+    integrated_storage += budget.surface_storage_change_j;
+    integrated_interface_residual += budget.interface_conservation_residual_j;
+  }
+  const mps::Real capacity = mps::mixed_surface_heat_capacity(
+      config.surface->uniform_land_fraction, config.surface->land_heat_capacity_j_m2_k,
+      config.surface->ocean_heat_capacity_j_m2_k);
+  mps::Real measured_storage = 0.0;
+  for (std::size_t cell = 0; cell < driver.grid().cell_count(); ++cell)
+    measured_storage += driver.grid().cells()[cell].area_m2 * capacity *
+                        (state.surface_temperature_k[cell] - initial_surface[cell]);
+  MPS_CHECK_NEAR(integrated_storage, measured_storage,
+                 1e-12 * std::max(1.0, std::abs(measured_storage)));
+  MPS_CHECK(std::abs(integrated_interface_residual) <
+            1e-12 * config.run.end_time_s *
+                config.orbit->stellar_flux_at_semimajor_axis_w_m2 *
+                driver.grid().total_area_m2());
 }
 
 MPS_TEST_CASE("semi implicit gray coupling advances with explicit source checks") {
@@ -246,6 +271,42 @@ MPS_TEST_CASE("centered gray semi implicit path has time and iteration convergen
   const auto three_iterations = run(semi_implicit_config(20.0, 3));
   const mps::Real iteration_error = normalized_difference(three_iterations, coarse, 2);
   MPS_CHECK(iteration_error < coarse_difference);
+}
+
+MPS_TEST_CASE("rejected radiation attempts do not enter accepted energy budgets") {
+  auto config = gray_config();
+  config.run.end_time_s = 0.1;
+  config.run.time_step_s = 0.1;
+  config.surface->land_heat_capacity_j_m2_k = 100.0;
+  config.surface->ocean_heat_capacity_j_m2_k = 100.0;
+  config.surface->air_exchange_coefficient_w_m2_k = 0.0;
+  config.orbit->stellar_flux_at_semimajor_axis_w_m2 = 1e8;
+  const mps::DryHydrostaticDriver driver(config);
+  auto state = driver.initial_state();
+  std::size_t retries = 0;
+  mps::Real accepted_duration = 0.0;
+  mps::Real incident_energy = 0.0;
+  driver.advance(state, config.run.end_time_s,
+                 [&](const mps::DryHydrostaticState&, const mps::DryHydrostaticDerived*,
+                     const mps::DryHydrostaticStepDiagnostics& step) {
+                   retries += step.retry_count;
+                   MPS_CHECK(step.retry_count == step.cfl_retry_count +
+                                                     step.invariant_retry_count +
+                                                     step.solver_retry_count);
+                   accepted_duration += step.accepted_time_step_s;
+                   incident_energy +=
+                       step.radiation_budget.toa_incoming_shortwave_energy_j;
+                 });
+  MPS_CHECK(retries > 0);
+  MPS_CHECK_NEAR(accepted_duration, config.run.end_time_s, 1e-14);
+  mps::DryHydrostaticRhs initial_rhs;
+  driver.rhs(driver.initial_state(), initial_rhs);
+  // Insolation changes negligibly over 0.1 seconds. Counting rejected attempts
+  // would exceed this independent boundary-flux integral by orders of magnitude.
+  const auto expected =
+      config.run.end_time_s *
+      initial_rhs.radiation_diagnostics.toa_incoming_shortwave_power_w;
+  MPS_CHECK_NEAR(incident_energy, expected, 1e-8 * expected);
 }
 
 int main() { return mps::test::run_all(); }

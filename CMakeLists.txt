@@ -225,6 +225,15 @@ if(BUILD_TESTING)
       -DMPS_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR} -P
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase10_diagnostics.cmake
   )
+  add_test(
+    NAME phase11.radiation_cli
+    COMMAND
+      ${CMAKE_COMMAND} -DMPS_EXECUTABLE=$<TARGET_FILE:my_planet_sim>
+      -DMPS_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/tests/data/phase11_diagnostics.cfg
+      -DMPS_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR} -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase11_cli.cmake
+  )
+  set_tests_properties(phase11.radiation_cli PROPERTIES LABELS phase11_gate)
   set_tests_properties(
     phase10.semi_implicit_diagnostics PROPERTIES LABELS phase10_gate
   )

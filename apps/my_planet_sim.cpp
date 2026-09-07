@@ -631,6 +631,23 @@ struct SurfaceDiagnosticsRow {
   mps::SurfaceEnergyBudget interval_budget;
 };
 
+struct RadiationDiagnosticsRow {
+  mps::Real time_s;
+  std::uint64_t step;
+  mps::Real segment_start_time_s;
+  std::uint64_t segment_start_step;
+  mps::GrayRadiationDiagnostics rates;
+  mps::GrayRadiationBudget interval_budget;
+  mps::Real requested_time_step_s;
+  mps::Real accepted_time_step_s;
+  mps::Real radiation_stable_time_step_s;
+  std::size_t cfl_retry_count;
+  std::size_t invariant_retry_count;
+  std::size_t solver_retry_count;
+  std::size_t radiation_column_call_count;
+  mps::Real radiation_wall_seconds;
+};
+
 struct SemiImplicitDiagnosticsRow {
   mps::Real time_s;
   std::uint64_t step;
@@ -648,7 +665,8 @@ void write_semi_implicit_diagnostics(
             "implicit_wave_cfl,vertical_cfl,selected_implicit_modes,"
             "linear_iterations_total,linear_iterations_maximum,"
             "linear_relative_residual_maximum,nonlinear_iterations,"
-            "nonlinear_relative_residual,retry_count,wall_seconds_rhs,"
+            "nonlinear_relative_residual,retry_count,cfl_retry_count,"
+            "invariant_retry_count,solver_retry_count,wall_seconds_rhs,"
             "wall_seconds_linear_solve,wall_seconds_total\n"
          << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
   for (const auto& row : rows) {
@@ -660,9 +678,10 @@ void write_semi_implicit_diagnostics(
            << ',' << value.linear_iterations_maximum << ','
            << value.linear_relative_residual_maximum << ','
            << value.nonlinear_iterations << ',' << value.nonlinear_relative_residual
-           << ',' << value.retry_count << ',' << value.wall_seconds_rhs << ','
-           << value.wall_seconds_linear_solve << ',' << value.wall_seconds_total
-           << '\n';
+           << ',' << value.retry_count << ',' << value.cfl_retry_count << ','
+           << value.invariant_retry_count << ',' << value.solver_retry_count << ','
+           << value.wall_seconds_rhs << ',' << value.wall_seconds_linear_solve << ','
+           << value.wall_seconds_total << '\n';
   }
   if (!output)
     throw std::runtime_error("failed while writing semi-implicit diagnostics CSV");
@@ -676,6 +695,151 @@ void add_surface_budget(mps::SurfaceEnergyBudget& total,
   total.sensible_to_atmosphere_energy_j += step.sensible_to_atmosphere_energy_j;
   total.surface_storage_change_j += step.surface_storage_change_j;
   total.surface_budget_residual_j += step.surface_budget_residual_j;
+}
+
+void add_radiation_budget(mps::GrayRadiationBudget& total,
+                          const mps::GrayRadiationBudget& step) {
+  total.toa_incoming_shortwave_energy_j += step.toa_incoming_shortwave_energy_j;
+  total.toa_reflected_shortwave_energy_j += step.toa_reflected_shortwave_energy_j;
+  total.toa_outgoing_longwave_energy_j += step.toa_outgoing_longwave_energy_j;
+  total.toa_net_upward_energy_j += step.toa_net_upward_energy_j;
+  total.atmospheric_shortwave_heating_energy_j +=
+      step.atmospheric_shortwave_heating_energy_j;
+  total.atmospheric_longwave_heating_energy_j +=
+      step.atmospheric_longwave_heating_energy_j;
+  total.sensible_to_atmosphere_energy_j += step.sensible_to_atmosphere_energy_j;
+  total.internal_heat_energy_j += step.internal_heat_energy_j;
+  total.surface_storage_change_j += step.surface_storage_change_j;
+  total.surface_time_integration_residual_j += step.surface_time_integration_residual_j;
+  total.interface_conservation_residual_j += step.interface_conservation_residual_j;
+  total.dry_thermal_energy_j += step.dry_thermal_energy_j;
+  total.rayleigh_drag_energy_j += step.rayleigh_drag_energy_j;
+}
+
+void write_radiation_diagnostics(const mps::ExperimentConfig& config,
+                                 const mps::CubedSphereGrid& grid,
+                                 const std::span<const RadiationDiagnosticsRow> rows) {
+  const std::filesystem::path directory(config.output_directory);
+  std::filesystem::create_directories(directory);
+  std::ofstream output(directory / "radiation_diagnostics.csv", std::ios::trunc);
+  if (!output) throw std::runtime_error("unable to open radiation diagnostics CSV");
+  output << "time_s,step,segment_start_time_s,segment_start_step,"
+            "toa_incoming_sw_w_m2,toa_reflected_sw_w_m2,olr_w_m2,"
+            "toa_net_upward_w_m2,surface_down_sw_w_m2,surface_up_sw_w_m2,"
+            "surface_down_lw_w_m2,surface_up_lw_w_m2,atmospheric_sw_heating_w_m2,"
+            "atmospheric_lw_heating_w_m2,surface_storage_w_m2,sensible_w_m2,"
+            "internal_heat_w_m2,interface_conservation_residual_w_m2,"
+            "dry_thermal_energy_rate_w,rayleigh_drag_work_w,"
+            "interval_toa_incoming_sw_j,interval_toa_reflected_sw_j,"
+            "interval_olr_j,interval_toa_net_upward_j,interval_atmospheric_sw_j,"
+            "interval_atmospheric_lw_j,interval_sensible_j,interval_internal_heat_j,"
+            "interval_surface_storage_change_j,"
+            "interval_surface_time_integration_residual_j,"
+            "interval_interface_conservation_residual_j,interval_dry_thermal_j,"
+            "interval_drag_j,requested_dt_s,accepted_dt_s,"
+            "radiation_stable_dt_s,cfl_retry_count,"
+            "invariant_retry_count,solver_retry_count,radiation_column_call_count,"
+            "radiation_wall_seconds\n"
+         << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+  const mps::Real inverse_area = 1.0 / grid.total_area_m2();
+  for (const auto& row : rows) {
+    const auto& rate = row.rates;
+    const auto& budget = row.interval_budget;
+    output << row.time_s << ',' << row.step << ',' << row.segment_start_time_s << ','
+           << row.segment_start_step << ','
+           << rate.toa_incoming_shortwave_power_w * inverse_area << ','
+           << rate.toa_reflected_shortwave_power_w * inverse_area << ','
+           << rate.toa_outgoing_longwave_power_w * inverse_area << ','
+           << rate.toa_net_upward_power_w * inverse_area << ','
+           << rate.surface_down_shortwave_power_w * inverse_area << ','
+           << rate.surface_up_shortwave_power_w * inverse_area << ','
+           << rate.surface_down_longwave_power_w * inverse_area << ','
+           << rate.surface_up_longwave_power_w * inverse_area << ','
+           << rate.atmospheric_shortwave_heating_power_w * inverse_area << ','
+           << rate.atmospheric_longwave_heating_power_w * inverse_area << ','
+           << rate.surface_storage_rate_w * inverse_area << ','
+           << rate.sensible_to_atmosphere_power_w * inverse_area << ','
+           << rate.internal_heat_power_w * inverse_area << ','
+           << rate.interface_conservation_residual_w * inverse_area << ','
+           << rate.dry_thermal_energy_rate_w << ',' << rate.rayleigh_drag_work_w << ','
+           << budget.toa_incoming_shortwave_energy_j << ','
+           << budget.toa_reflected_shortwave_energy_j << ','
+           << budget.toa_outgoing_longwave_energy_j << ','
+           << budget.toa_net_upward_energy_j << ','
+           << budget.atmospheric_shortwave_heating_energy_j << ','
+           << budget.atmospheric_longwave_heating_energy_j << ','
+           << budget.sensible_to_atmosphere_energy_j << ','
+           << budget.internal_heat_energy_j << ',' << budget.surface_storage_change_j
+           << ',' << budget.surface_time_integration_residual_j << ','
+           << budget.interface_conservation_residual_j << ','
+           << budget.dry_thermal_energy_j << ',' << budget.rayleigh_drag_energy_j << ','
+           << row.requested_time_step_s << ',' << row.accepted_time_step_s << ','
+           << row.radiation_stable_time_step_s << ',' << row.cfl_retry_count << ','
+           << row.invariant_retry_count << ',' << row.solver_retry_count << ','
+           << row.radiation_column_call_count << ',' << row.radiation_wall_seconds
+           << '\n';
+  }
+  if (!output)
+    throw std::runtime_error("failed while writing radiation diagnostics CSV");
+}
+
+void write_radiation_column(const mps::ExperimentConfig& config,
+                            const mps::DryHydrostaticDriver& driver,
+                            const mps::DryHydrostaticState& state,
+                            const mps::DryHydrostaticDerived& derived) {
+  const mps::AtmosphericHybridCoordinate coordinate(
+      {config.vertical.a_half_pa, config.vertical.b_half},
+      config.vertical.minimum_surface_pressure_pa,
+      config.vertical.maximum_surface_pressure_pa,
+      config.vertical.minimum_pressure_thickness_pa);
+  const auto geometry = coordinate.geometry(
+      state.surface_pressure_pa.front(), config.planet.gravity_m_s2,
+      config.planet.gas_constant_j_kg_k, config.planet.heat_capacity_cp_j_kg_k,
+      config.planet.reference_pressure_pa);
+  const std::size_t levels = coordinate.levels();
+  const auto orbit =
+      mps::evaluate_orbit(*config.orbit, config.planet.rotation_rate_rad_s,
+                          state.time_s - config.run.start_time_s);
+  const mps::GrayRadiationColumnInput input{
+      .pressure_half_pa = geometry.pressure_half_pa,
+      .temperature_k = std::span<const mps::Real>(derived.temperature_k.data(), levels),
+      .surface_temperature_k = state.surface_temperature_k.front(),
+      .gravity_m_s2 = config.planet.gravity_m_s2,
+      .stellar_flux_w_m2 = orbit.stellar_flux_w_m2,
+      .cosine_solar_zenith =
+          mps::cosine_solar_zenith(driver.grid().cells().front().center, orbit),
+      .surface_albedo = config.surface->albedo,
+      .surface_emissivity = config.surface->emissivity,
+      .parameters = *config.radiation,
+  };
+  const auto column = mps::gray_radiation_column(input);
+  const std::filesystem::path directory(config.output_directory);
+  std::filesystem::create_directories(directory);
+  std::ofstream output(directory / "radiation_column.csv", std::ios::trunc);
+  if (!output) throw std::runtime_error("unable to open radiation column CSV");
+  output << "time_s,cell_id,record_kind,index,pressure_pa,shortwave_optical_depth,"
+            "longwave_optical_depth,shortwave_down_w_m2,shortwave_up_w_m2,"
+            "longwave_down_w_m2,longwave_up_w_m2,net_flux_w_m2,temperature_k,"
+            "shortwave_heating_w_m2,longwave_heating_w_m2,total_heating_w_m2\n"
+         << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+  for (std::size_t interface = 0; interface <= levels; ++interface)
+    output << state.time_s << ",0,interface," << interface << ','
+           << geometry.pressure_half_pa[interface] << ",,,"
+           << column.shortwave_down_w_m2[interface] << ','
+           << column.shortwave_up_w_m2[interface] << ','
+           << column.longwave_down_w_m2[interface] << ','
+           << column.longwave_up_w_m2[interface] << ','
+           << column.net_flux_w_m2[interface] << ",,,,\n";
+  for (std::size_t level = 0; level < levels; ++level)
+    output << state.time_s << ",0,full," << level << ','
+           << geometry.pressure_full_pa[level] << ','
+           << column.optical_depth.shortwave[level] << ','
+           << column.optical_depth.longwave[level] << ",,,,,,"
+           << derived.temperature_k[level] << ','
+           << column.shortwave_convergence_w_m2[level] << ','
+           << column.longwave_convergence_w_m2[level] << ','
+           << column.radiative_convergence_w_m2[level] << '\n';
+  if (!output) throw std::runtime_error("failed while writing radiation column CSV");
 }
 
 class PhysicsDiagnosticsAccumulator {
@@ -893,7 +1057,8 @@ int main(const int argc, const char* const argv[]) {
         throw std::invalid_argument("dry hydrostatic supports only ssprk3");
       }
       if (command_line.control_request_path.has_value()) {
-        if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance) {
+        if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance ||
+            config.physics.kind == mps::PhysicsKind::kGrayRadiation) {
           throw std::invalid_argument(
               "machine control mode does not support surface energy balance");
         }
@@ -982,7 +1147,8 @@ int main(const int argc, const char* const argv[]) {
         const auto cells = driver.grid().cell_count();
         const auto levels = static_cast<std::size_t>(config.vertical.levels);
         const bool has_surface =
-            config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance;
+            config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance ||
+            config.physics.kind == mps::PhysicsKind::kGrayRadiation;
         const auto layout = has_surface ? mps::kDryHydrostaticSurfaceCheckpointLayout
                                         : mps::kDryHydrostaticCheckpointLayout;
         const auto state_size = cells + 5 * cells * levels + (has_surface ? cells : 0);
@@ -998,14 +1164,24 @@ int main(const int argc, const char* const argv[]) {
       std::optional<PhysicsDiagnosticsAccumulator> physics_diagnostics;
       std::optional<mps::ClimateStatisticsAccumulator> climate_statistics;
       if (config.physics.kind == mps::PhysicsKind::kHeldSuarez ||
-          config.physics.kind == mps::PhysicsKind::kPlanetaryNewtonian) {
+          config.physics.kind == mps::PhysicsKind::kPlanetaryNewtonian ||
+          config.physics.kind == mps::PhysicsKind::kGrayRadiation) {
         physics_diagnostics.emplace(config, driver.grid());
         climate_statistics.emplace(driver.grid(),
                                    static_cast<std::size_t>(config.vertical.levels));
       }
       std::vector<SurfaceDiagnosticsRow> surface_diagnostics;
+      std::vector<RadiationDiagnosticsRow> radiation_diagnostics;
       std::vector<SemiImplicitDiagnosticsRow> semi_implicit_diagnostics;
       mps::SurfaceEnergyBudget pending_surface_budget;
+      mps::GrayRadiationBudget pending_radiation_budget;
+      std::size_t pending_cfl_retries = 0;
+      std::size_t pending_invariant_retries = 0;
+      std::size_t pending_solver_retries = 0;
+      std::size_t pending_radiation_column_calls = 0;
+      mps::Real pending_radiation_wall_seconds = 0.0;
+      const mps::Real segment_start_time_s = state.time_s;
+      const std::uint64_t segment_start_step = state.step;
       ProgressReporter progress(config, state, command_line.progress_interval_s);
       g_cancel_requested.store(false);
       std::signal(SIGINT, request_cancellation);
@@ -1013,7 +1189,11 @@ int main(const int argc, const char* const argv[]) {
       driver.advance(
           state, config.run.end_time_s,
           [&physics_diagnostics, &climate_statistics, &surface_diagnostics,
-           &pending_surface_budget, &semi_implicit_diagnostics, &progress,
+           &radiation_diagnostics, &pending_surface_budget, &pending_radiation_budget,
+           &pending_cfl_retries, &pending_invariant_retries, &pending_solver_retries,
+           &pending_radiation_column_calls, &pending_radiation_wall_seconds,
+           &semi_implicit_diagnostics, &progress, segment_start_time_s,
+           segment_start_step,
            &config](const mps::DryHydrostaticState& sampled,
                     const mps::DryHydrostaticDerived* derived,
                     const mps::DryHydrostaticStepDiagnostics& step) {
@@ -1039,6 +1219,37 @@ int main(const int argc, const char* const argv[]) {
                 pending_surface_budget = {};
               }
             }
+            if (config.physics.kind == mps::PhysicsKind::kGrayRadiation) {
+              add_radiation_budget(pending_radiation_budget, step.radiation_budget);
+              pending_cfl_retries += step.cfl_retry_count;
+              pending_invariant_retries += step.invariant_retry_count;
+              pending_solver_retries += step.solver_retry_count;
+              pending_radiation_column_calls += step.radiation_column_call_count;
+              pending_radiation_wall_seconds += step.radiation_wall_seconds;
+              if (derived != nullptr) {
+                radiation_diagnostics.push_back(
+                    {.time_s = sampled.time_s,
+                     .step = sampled.step,
+                     .segment_start_time_s = segment_start_time_s,
+                     .segment_start_step = segment_start_step,
+                     .rates = step.radiation_rates,
+                     .interval_budget = pending_radiation_budget,
+                     .requested_time_step_s = step.requested_time_step_s,
+                     .accepted_time_step_s = step.accepted_time_step_s,
+                     .radiation_stable_time_step_s = step.radiation_stable_time_step_s,
+                     .cfl_retry_count = pending_cfl_retries,
+                     .invariant_retry_count = pending_invariant_retries,
+                     .solver_retry_count = pending_solver_retries,
+                     .radiation_column_call_count = pending_radiation_column_calls,
+                     .radiation_wall_seconds = pending_radiation_wall_seconds});
+                pending_radiation_budget = {};
+                pending_cfl_retries = 0;
+                pending_invariant_retries = 0;
+                pending_solver_retries = 0;
+                pending_radiation_column_calls = 0;
+                pending_radiation_wall_seconds = 0.0;
+              }
+            }
           },
           [&state, &command_line] {
             return g_cancel_requested.load() ||
@@ -1060,7 +1271,8 @@ int main(const int argc, const char* const argv[]) {
       }
       if (driver.semi_implicit_vertical_modes().has_value())
         write_semi_implicit_diagnostics(config, semi_implicit_diagnostics);
-      if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance) {
+      if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance ||
+          config.physics.kind == mps::PhysicsKind::kGrayRadiation) {
         const std::filesystem::path directory(config.output_directory);
         std::filesystem::create_directories(directory);
         std::ofstream surface_state(directory / "surface_state.csv", std::ios::trunc);
@@ -1089,39 +1301,44 @@ int main(const int argc, const char* const argv[]) {
                                config.surface->ocean_heat_capacity_j_m2_k)
                         << ',' << state.surface_temperature_k[cell] << '\n';
         }
-        std::ofstream diagnostics_output(directory / "surface_diagnostics.csv",
-                                         std::ios::trunc);
-        if (!diagnostics_output)
-          throw std::runtime_error("unable to open surface diagnostics CSV");
-        diagnostics_output
-            << std::setprecision(17)
-            << "time_s,absorbed_stellar_power_w,internal_heat_power_w,"
-               "outgoing_longwave_power_w,sensible_to_atmosphere_power_w,"
-               "surface_storage_rate_w,interval_absorbed_stellar_energy_j,"
-               "interval_internal_heat_energy_j,"
-               "interval_outgoing_longwave_energy_j,"
-               "interval_sensible_to_atmosphere_energy_j,"
-               "interval_surface_storage_change_j,"
-               "interval_surface_budget_residual_j\n";
-        for (const auto& sample : surface_diagnostics) {
-          const auto& rates = sample.rates;
-          const auto& budget = sample.interval_budget;
-          diagnostics_output << sample.time_s << ',' << rates.absorbed_stellar_power_w
-                             << ',' << rates.internal_heat_power_w << ','
-                             << rates.outgoing_longwave_power_w << ','
-                             << rates.sensible_to_atmosphere_power_w << ','
-                             << rates.surface_storage_rate_w << ','
-                             << budget.absorbed_stellar_energy_j << ','
-                             << budget.internal_heat_energy_j << ','
-                             << budget.outgoing_longwave_energy_j << ','
-                             << budget.sensible_to_atmosphere_energy_j << ','
-                             << budget.surface_storage_change_j << ','
-                             << budget.surface_budget_residual_j << '\n';
+        if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance) {
+          std::ofstream diagnostics_output(directory / "surface_diagnostics.csv",
+                                           std::ios::trunc);
+          if (!diagnostics_output)
+            throw std::runtime_error("unable to open surface diagnostics CSV");
+          diagnostics_output
+              << std::setprecision(17)
+              << "time_s,absorbed_stellar_power_w,internal_heat_power_w,"
+                 "outgoing_longwave_power_w,sensible_to_atmosphere_power_w,"
+                 "surface_storage_rate_w,interval_absorbed_stellar_energy_j,"
+                 "interval_internal_heat_energy_j,"
+                 "interval_outgoing_longwave_energy_j,"
+                 "interval_sensible_to_atmosphere_energy_j,"
+                 "interval_surface_storage_change_j,"
+                 "interval_surface_budget_residual_j\n";
+          for (const auto& sample : surface_diagnostics) {
+            const auto& rates = sample.rates;
+            const auto& budget = sample.interval_budget;
+            diagnostics_output << sample.time_s << ',' << rates.absorbed_stellar_power_w
+                               << ',' << rates.internal_heat_power_w << ','
+                               << rates.outgoing_longwave_power_w << ','
+                               << rates.sensible_to_atmosphere_power_w << ','
+                               << rates.surface_storage_rate_w << ','
+                               << budget.absorbed_stellar_energy_j << ','
+                               << budget.internal_heat_energy_j << ','
+                               << budget.outgoing_longwave_energy_j << ','
+                               << budget.sensible_to_atmosphere_energy_j << ','
+                               << budget.surface_storage_change_j << ','
+                               << budget.surface_budget_residual_j << '\n';
+          }
         }
       }
+      if (config.physics.kind == mps::PhysicsKind::kGrayRadiation)
+        write_radiation_diagnostics(config, driver.grid(), radiation_diagnostics);
       if (command_line.checkpoint_path.has_value()) {
         const bool has_surface =
-            config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance;
+            config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance ||
+            config.physics.kind == mps::PhysicsKind::kGrayRadiation;
         mps::write_checkpoint_file(
             *command_line.checkpoint_path,
             {.time_s = state.time_s,
@@ -1138,6 +1355,8 @@ int main(const int argc, const char* const argv[]) {
                                          : mps::kDryHydrostaticCheckpointLayout)});
       }
       const auto derived = driver.diagnose(state);
+      if (config.physics.kind == mps::PhysicsKind::kGrayRadiation)
+        write_radiation_column(config, driver, state, derived);
       const auto diagnostics = mps::diagnose_dry_hydrostatic_budgets(
           driver.grid(), state, derived, config.planet);
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);

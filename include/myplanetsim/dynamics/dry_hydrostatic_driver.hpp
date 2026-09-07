@@ -32,6 +32,8 @@ struct DryHydrostaticRhs {
   std::vector<Real> surface_temperature_k_s;
   SurfaceEnergyDiagnostics surface_diagnostics{};
   GrayRadiationDiagnostics radiation_diagnostics{};
+  std::size_t radiation_column_call_count = 0;
+  Real radiation_wall_seconds = 0.0;
   // Explicit horizontal diffusion, kept out of the advection, pressure-gradient,
   // Coriolis, and vertical-transport terms so its dissipation is attributable.
   Real diffusion_kinetic_energy_rate_w = 0.0;
@@ -59,9 +61,11 @@ struct DryHydrostaticStepDiagnostics {
   SurfaceEnergyDiagnostics surface_rates{};
   SurfaceEnergyBudget surface_budget{};
   GrayRadiationDiagnostics radiation_rates{};
+  GrayRadiationBudget radiation_budget{};
   Real diffusion_energy_contribution_j = 0.0;
   Real requested_time_step_s = 0.0;
   Real accepted_time_step_s = 0.0;
+  Real radiation_stable_time_step_s = std::numeric_limits<Real>::infinity();
   Real advective_cfl = 0.0;
   Real implicit_wave_courant = 0.0;
   Real vertical_cfl = 0.0;
@@ -72,6 +76,11 @@ struct DryHydrostaticStepDiagnostics {
   std::size_t nonlinear_iterations = 0;
   Real nonlinear_relative_residual = 0.0;
   std::size_t retry_count = 0;
+  std::size_t cfl_retry_count = 0;
+  std::size_t invariant_retry_count = 0;
+  std::size_t solver_retry_count = 0;
+  std::size_t radiation_column_call_count = 0;
+  Real radiation_wall_seconds = 0.0;
   Real wall_seconds_rhs = 0.0;
   Real wall_seconds_linear_solve = 0.0;
   Real wall_seconds_total = 0.0;

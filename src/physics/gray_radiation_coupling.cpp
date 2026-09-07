@@ -170,4 +170,50 @@ void gray_radiation_tendency(
   };
 }
 
+GrayRadiationBudget integrate_gray_radiation_budget(
+    const CubedSphereGrid& grid, const SurfaceBoundary& boundary,
+    const SurfaceParameters& surface,
+    const std::span<const Real> initial_surface_temperature_k,
+    const std::span<const Real> final_surface_temperature_k, const Real time_step_s,
+    const GrayRadiationDiagnostics& rates) {
+  if (initial_surface_temperature_k.size() != grid.cell_count() ||
+      final_surface_temperature_k.size() != grid.cell_count() ||
+      boundary.land_fraction().size() != grid.cell_count() || !(time_step_s > 0.0) ||
+      !std::isfinite(time_step_s))
+    throw std::invalid_argument("gray radiation budget arguments are invalid");
+  diagnostics::CompensatedAccumulator storage_change;
+  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
+    const Real capacity = mixed_surface_heat_capacity(
+        boundary.land_fraction()[cell], surface.land_heat_capacity_j_m2_k,
+        surface.ocean_heat_capacity_j_m2_k);
+    storage_change.add(
+        grid.cells()[cell].area_m2 * capacity *
+        (final_surface_temperature_k[cell] - initial_surface_temperature_k[cell]));
+  }
+  GrayRadiationBudget result{
+      .toa_incoming_shortwave_energy_j =
+          time_step_s * rates.toa_incoming_shortwave_power_w,
+      .toa_reflected_shortwave_energy_j =
+          time_step_s * rates.toa_reflected_shortwave_power_w,
+      .toa_outgoing_longwave_energy_j =
+          time_step_s * rates.toa_outgoing_longwave_power_w,
+      .toa_net_upward_energy_j = time_step_s * rates.toa_net_upward_power_w,
+      .atmospheric_shortwave_heating_energy_j =
+          time_step_s * rates.atmospheric_shortwave_heating_power_w,
+      .atmospheric_longwave_heating_energy_j =
+          time_step_s * rates.atmospheric_longwave_heating_power_w,
+      .sensible_to_atmosphere_energy_j =
+          time_step_s * rates.sensible_to_atmosphere_power_w,
+      .internal_heat_energy_j = time_step_s * rates.internal_heat_power_w,
+      .surface_storage_change_j = storage_change.value(),
+      .interface_conservation_residual_j =
+          time_step_s * rates.interface_conservation_residual_w,
+      .dry_thermal_energy_j = time_step_s * rates.dry_thermal_energy_rate_w,
+      .rayleigh_drag_energy_j = time_step_s * rates.rayleigh_drag_work_w,
+  };
+  result.surface_time_integration_residual_j =
+      result.surface_storage_change_j - time_step_s * rates.surface_storage_rate_w;
+  return result;
+}
+
 }  // namespace mps
