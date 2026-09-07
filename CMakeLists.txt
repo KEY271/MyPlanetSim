@@ -95,6 +95,8 @@ add_library(
   src/io/run_metadata.cpp
   src/phase0/ode_experiment.cpp
   src/physics/held_suarez.cpp
+  src/physics/moist_thermodynamics.cpp
+  src/physics/saturation_adjustment.cpp
   src/physics/boundary_layer.cpp
   src/physics/dry_convective_adjustment.cpp
   src/physics/dry_mixing_coupling.cpp

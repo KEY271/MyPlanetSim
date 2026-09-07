@@ -68,6 +68,8 @@ target_compile_definitions(
 )
 mps_add_test(unit.held_suarez test_held_suarez.cpp)
 mps_add_test(unit.dry_convective_adjustment test_dry_convective_adjustment.cpp)
+mps_add_test(phase13.saturation_adjustment test_saturation_adjustment.cpp)
+set_tests_properties(phase13.saturation_adjustment PROPERTIES LABELS phase13_gate)
 mps_add_test(unit.boundary_layer test_boundary_layer.cpp)
 mps_add_test(unit.dry_mixing_core test_dry_mixing_core.cpp)
 mps_add_test(phase12.dry_mixing_column test_dry_mixing_column.cpp)
