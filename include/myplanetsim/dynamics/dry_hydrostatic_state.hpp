@@ -20,6 +20,7 @@ inline constexpr std::string_view kDryHydrostaticSurfaceCheckpointLayout =
 struct DryHydrostaticState {
   Real time_s = 0.0;
   std::uint64_t step = 0;
+  std::size_t tracer_count = 1;
   std::vector<Real> surface_pressure_pa;
   std::vector<Vec3> horizontal_momentum_mass_kg_m_s;
   std::vector<Real> potential_temperature_mass_k_kg_m2;
@@ -30,6 +31,7 @@ struct DryHydrostaticState {
 struct DryHydrostaticDerived {
   std::size_t cells = 0;
   std::size_t levels = 0;
+  std::size_t tracer_count = 1;
   std::vector<Real> pressure_pa;
   std::vector<Real> exner_half;
   std::vector<Real> exner_full;
@@ -46,6 +48,17 @@ struct DryHydrostaticDerived {
     const std::size_t levels) noexcept {
   return cell * levels + level;
 }
+[[nodiscard]] constexpr std::size_t dry_hydrostatic_tracer_offset(
+    const std::size_t tracer, const std::size_t cell, const std::size_t level,
+    const std::size_t cells, const std::size_t levels) noexcept {
+  return (tracer * cells + cell) * levels + level;
+}
+[[nodiscard]] std::span<Real> dry_hydrostatic_tracer_component(
+    DryHydrostaticState& state, std::size_t tracer, std::size_t cells,
+    std::size_t levels);
+[[nodiscard]] std::span<const Real> dry_hydrostatic_tracer_component(
+    const DryHydrostaticState& state, std::size_t tracer, std::size_t cells,
+    std::size_t levels);
 [[nodiscard]] std::vector<Real> flatten_dry_hydrostatic_state(
     const DryHydrostaticState& state, std::size_t levels);
 [[nodiscard]] DryHydrostaticState unflatten_dry_hydrostatic_state(

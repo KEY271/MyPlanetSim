@@ -19,7 +19,7 @@ DryHydrostaticDiffusionTendency dry_hydrostatic_diffusion_tendency(
   DryHydrostaticDiffusionTendency tendency{
       .momentum = std::vector<Vec3>(cells * levels),
       .potential_temperature_mass = std::vector<Real>(cells * levels),
-      .tracer_mass = std::vector<Real>(cells * levels),
+      .tracer_mass = std::vector<Real>(derived.tracer_count * cells * levels),
   };
   if (kind == DiffusionKind::kNone) {
     if (diffusion_coefficient != 0.0) {
@@ -36,21 +36,17 @@ DryHydrostaticDiffusionTendency dry_hydrostatic_diffusion_tendency(
 
   std::vector<Vec3> velocity(cells);
   std::vector<Real> potential_temperature(cells);
-  std::vector<Real> tracer(cells);
   for (std::size_t level = 0; level < levels; ++level) {
     for (std::size_t cell = 0; cell < cells; ++cell) {
       const auto n = dry_hydrostatic_offset(cell, level, levels);
       velocity[cell] = derived.velocity_m_s[n];
       potential_temperature[cell] = derived.potential_temperature_k[n];
-      tracer[cell] = derived.tracer_mixing_ratio[n];
     }
     auto velocity_operator = finite_volume_vector_laplacian(grid, velocity);
     auto temperature_operator = finite_volume_laplacian(grid, potential_temperature);
-    auto tracer_operator = finite_volume_laplacian(grid, tracer);
     if (biharmonic) {
       velocity_operator = finite_volume_vector_laplacian(grid, velocity_operator);
       temperature_operator = finite_volume_laplacian(grid, temperature_operator);
-      tracer_operator = finite_volume_laplacian(grid, tracer_operator);
     }
     for (std::size_t cell = 0; cell < cells; ++cell) {
       const auto n = dry_hydrostatic_offset(cell, level, levels);
@@ -61,9 +57,28 @@ DryHydrostaticDiffusionTendency dry_hydrostatic_diffusion_tendency(
       tendency.momentum[n] = momentum;
       tendency.potential_temperature_mass[n] =
           signed_coefficient * mass * temperature_operator[cell];
-      tendency.tracer_mass[n] = signed_coefficient * mass * tracer_operator[cell];
       tendency.kinetic_energy_rate_w +=
           grid.cells()[cell].area_m2 * dot(velocity[cell], momentum);
+    }
+  }
+  std::vector<Real> tracer(cells);
+  for (std::size_t tracer_index = 0; tracer_index < derived.tracer_count;
+       ++tracer_index) {
+    for (std::size_t level = 0; level < levels; ++level) {
+      for (std::size_t cell = 0; cell < cells; ++cell) {
+        const auto q =
+            dry_hydrostatic_tracer_offset(tracer_index, cell, level, cells, levels);
+        tracer[cell] = derived.tracer_mixing_ratio[q];
+      }
+      auto tracer_operator = finite_volume_laplacian(grid, tracer);
+      if (biharmonic) tracer_operator = finite_volume_laplacian(grid, tracer_operator);
+      for (std::size_t cell = 0; cell < cells; ++cell) {
+        const auto n = dry_hydrostatic_offset(cell, level, levels);
+        const auto q =
+            dry_hydrostatic_tracer_offset(tracer_index, cell, level, cells, levels);
+        tendency.tracer_mass[q] =
+            signed_coefficient * derived.air_mass_kg_m2[n] * tracer_operator[cell];
+      }
     }
   }
   return tendency;

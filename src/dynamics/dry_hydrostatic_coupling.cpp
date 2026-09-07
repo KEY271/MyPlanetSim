@@ -35,9 +35,10 @@ void couple_dry_hydrostatic_columns(
     const VerticalLimiterKind potential_temperature_limiter,
     DryHydrostaticCoupling& out, DryHydrostaticCouplingWorkspace& workspace) {
   const auto n = d.cells * d.levels;
-  if (h.air_mass.size() != n || h.momentum.size() != n ||
-      h.potential_temperature_mass.size() != n || h.tracer_mass.size() != n ||
-      b.size() != d.levels + 1)
+  if (d.tracer_count == 0 || s.tracer_count != d.tracer_count ||
+      h.air_mass.size() != n || h.momentum.size() != n ||
+      h.potential_temperature_mass.size() != n ||
+      h.tracer_mass.size() != d.tracer_count * n || b.size() != d.levels + 1)
     throw std::invalid_argument("dry coupling shape mismatch");
   out.surface_pressure_pa_s.resize(d.cells);
   out.interface_mass_flux_kg_m2_s.resize(d.cells * (d.levels + 1));
@@ -85,22 +86,26 @@ void couple_dry_hydrostatic_columns(
       out.tendency.air_mass[begin + k] = f.target_air_mass_tendency_kg_m2_s[k];
       out.tendency.potential_temperature_mass[begin + k] = workspace.rhs[k];
     }
-    const std::span<const Real> tracer_state(s.tracer_mass_kg_m2.data() + begin,
-                                             d.levels);
-    const std::span<const Real> horizontal_tracer(h.tracer_mass.data() + begin,
-                                                  d.levels);
-    const bool tracer_is_inactive =
-        std::ranges::all_of(tracer_state,
-                            [](const Real value) { return value == 0.0; }) &&
-        std::ranges::all_of(horizontal_tracer,
-                            [](const Real value) { return value == 0.0; });
-    if (tracer_is_inactive) {
-      std::fill_n(out.tendency.tracer_mass.begin() + static_cast<std::ptrdiff_t>(begin),
-                  d.levels, 0.0);
-    } else {
-      apply(tracer_state, horizontal_tracer, limiter);
-      for (std::size_t k = 0; k < d.levels; ++k)
-        out.tendency.tracer_mass[begin + k] = workspace.rhs[k];
+    for (std::size_t tracer = 0; tracer < d.tracer_count; ++tracer) {
+      const auto tracer_begin = tracer * n + begin;
+      const std::span<const Real> tracer_state(
+          s.tracer_mass_kg_m2.data() + tracer_begin, d.levels);
+      const std::span<const Real> horizontal_tracer(h.tracer_mass.data() + tracer_begin,
+                                                    d.levels);
+      const bool tracer_is_inactive =
+          std::ranges::all_of(tracer_state,
+                              [](const Real value) { return value == 0.0; }) &&
+          std::ranges::all_of(horizontal_tracer,
+                              [](const Real value) { return value == 0.0; });
+      if (tracer_is_inactive) {
+        std::fill_n(out.tendency.tracer_mass.begin() +
+                        static_cast<std::ptrdiff_t>(tracer_begin),
+                    d.levels, 0.0);
+      } else {
+        apply(tracer_state, horizontal_tracer, limiter);
+        for (std::size_t k = 0; k < d.levels; ++k)
+          out.tendency.tracer_mass[tracer_begin + k] = workspace.rhs[k];
+      }
     }
     for (int component = 0; component < 3; ++component) {
       for (std::size_t k = 0; k < d.levels; ++k) {

@@ -64,6 +64,7 @@ add_library(
   src/diagnostics/planetary_scales.cpp
   src/dynamics/shallow_water_state.cpp
   src/dynamics/dry_hydrostatic_state.cpp
+  src/dynamics/tracer_registry.cpp
   src/dynamics/dry_hydrostatic_flux.cpp
   src/dynamics/dry_hydrostatic_sources.cpp
   src/dynamics/dry_hydrostatic_coupling.cpp

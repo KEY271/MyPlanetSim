@@ -48,4 +48,18 @@ DryHydrostaticEdgeFlux rusanov_dry_hydrostatic_flux(const DryHydrostaticPrimitiv
           .maximum_dissipation_speed_m_s = dissipation_speed,
           .maximum_wave_speed_m_s = maximum_wave_speed};
 }
+
+Real rusanov_dry_hydrostatic_tracer_flux(const DryHydrostaticPrimitive& l,
+                                         const DryHydrostaticPrimitive& r,
+                                         const Real ql, const Real qr,
+                                         const EdgeTangentBasis& b) {
+  if (!(l.air_mass_kg_m2 > 0.0) || !(r.air_mass_kg_m2 > 0.0) || !std::isfinite(ql) ||
+      !std::isfinite(qr))
+    throw std::invalid_argument("invalid dry hydrostatic tracer edge state");
+  const Real unl = dot(l.velocity_m_s, b.normal);
+  const Real unr = dot(r.velocity_m_s, b.normal);
+  const Real speed = std::max(std::abs(unl), std::abs(unr));
+  return 0.5 * (l.air_mass_kg_m2 * unl * ql + r.air_mass_kg_m2 * unr * qr) -
+         0.5 * speed * (r.air_mass_kg_m2 * qr - l.air_mass_kg_m2 * ql);
+}
 }  // namespace mps

@@ -17,7 +17,8 @@ void require_shape(const DryHydrostaticState& state, const std::size_t levels) {
   if (cells == 0 || levels == 0 ||
       state.horizontal_momentum_mass_kg_m_s.size() != volume ||
       state.potential_temperature_mass_k_kg_m2.size() != volume ||
-      state.tracer_mass_kg_m2.size() != volume ||
+      state.tracer_count == 0 ||
+      state.tracer_mass_kg_m2.size() != state.tracer_count * volume ||
       (!state.surface_temperature_k.empty() &&
        state.surface_temperature_k.size() != cells)) {
     throw std::invalid_argument("dry hydrostatic state shape is invalid");
@@ -25,9 +26,34 @@ void require_shape(const DryHydrostaticState& state, const std::size_t levels) {
 }
 }  // namespace
 
+std::span<Real> dry_hydrostatic_tracer_component(DryHydrostaticState& state,
+                                                 const std::size_t tracer,
+                                                 const std::size_t cells,
+                                                 const std::size_t levels) {
+  const auto volume = cells * levels;
+  if (tracer >= state.tracer_count ||
+      state.tracer_mass_kg_m2.size() != state.tracer_count * volume)
+    throw std::out_of_range("dry hydrostatic tracer component is out of range");
+  return std::span<Real>(state.tracer_mass_kg_m2).subspan(tracer * volume, volume);
+}
+
+std::span<const Real> dry_hydrostatic_tracer_component(const DryHydrostaticState& state,
+                                                       const std::size_t tracer,
+                                                       const std::size_t cells,
+                                                       const std::size_t levels) {
+  const auto volume = cells * levels;
+  if (tracer >= state.tracer_count ||
+      state.tracer_mass_kg_m2.size() != state.tracer_count * volume)
+    throw std::out_of_range("dry hydrostatic tracer component is out of range");
+  return std::span<const Real>(state.tracer_mass_kg_m2)
+      .subspan(tracer * volume, volume);
+}
+
 std::vector<Real> flatten_dry_hydrostatic_state(const DryHydrostaticState& state,
                                                 const std::size_t levels) {
   require_shape(state, levels);
+  if (state.tracer_count != 1)
+    throw std::invalid_argument("legacy dry checkpoint requires one tracer");
   const auto cells = state.surface_pressure_pa.size();
   const auto volume = cells * levels;
   std::vector<Real> values(cells + 5 * volume);
@@ -58,6 +84,7 @@ DryHydrostaticState unflatten_dry_hydrostatic_state(const Real time_s,
     throw std::invalid_argument("dry hydrostatic flat state size does not match shape");
   DryHydrostaticState state{.time_s = time_s,
                             .step = step,
+                            .tracer_count = 1,
                             .surface_pressure_pa = {},
                             .horizontal_momentum_mass_kg_m_s = {},
                             .potential_temperature_mass_k_kg_m2 = {},
@@ -133,6 +160,7 @@ void diagnose_dry_hydrostatic_state(
     throw std::invalid_argument("surface orography shape does not match state");
   out.cells = state.surface_pressure_pa.size();
   out.levels = coordinate.levels();
+  out.tracer_count = state.tracer_count;
   if (theta.size() != out.levels)
     throw std::invalid_argument("dry diagnostic theta workspace shape mismatch");
   const auto volume = out.cells * out.levels;
@@ -142,7 +170,7 @@ void diagnose_dry_hydrostatic_state(
   out.air_mass_kg_m2.resize(volume);
   out.velocity_m_s.resize(volume);
   out.potential_temperature_k.resize(volume);
-  out.tracer_mixing_ratio.resize(volume);
+  out.tracer_mixing_ratio.resize(state.tracer_count * volume);
   out.temperature_k.resize(volume);
   out.geopotential_m2_s2.resize(volume);
   for (std::size_t c = 0; c < out.cells; ++c) {
@@ -161,7 +189,11 @@ void diagnose_dry_hydrostatic_state(
       out.velocity_m_s[n] = state.horizontal_momentum_mass_kg_m_s[n] / mass;
       theta[k] = state.potential_temperature_mass_k_kg_m2[n] / mass;
       out.potential_temperature_k[n] = theta[k];
-      out.tracer_mixing_ratio[n] = state.tracer_mass_kg_m2[n] / mass;
+      for (std::size_t tracer = 0; tracer < state.tracer_count; ++tracer) {
+        const auto q =
+            dry_hydrostatic_tracer_offset(tracer, c, k, out.cells, out.levels);
+        out.tracer_mixing_ratio[q] = state.tracer_mass_kg_m2[q] / mass;
+      }
       out.temperature_k[n] = theta[k] * geometry.exner_full[k];
     }
     const Real surface_geopotential =
@@ -197,10 +229,14 @@ void validate_dry_hydrostatic_state(const DryHydrostaticState& state,
           std::abs(dot(state.horizontal_momentum_mass_kg_m_s[n], centres[c])) >
               1e-10 * std::max(1.0, norm(state.horizontal_momentum_mass_kg_m_s[n])) ||
           !std::isfinite(d.potential_temperature_k[n]) ||
-          !(d.potential_temperature_k[n] > 0.0) ||
-          !std::isfinite(d.tracer_mixing_ratio[n]) ||
-          (nonnegative && d.tracer_mixing_ratio[n] < -kTracerRoundoffTolerance))
+          !(d.potential_temperature_k[n] > 0.0))
         throw std::runtime_error("dry hydrostatic cell-layer invariant failed");
+      for (std::size_t tracer = 0; tracer < state.tracer_count; ++tracer) {
+        const auto q = dry_hydrostatic_tracer_offset(tracer, c, k, d.cells, d.levels);
+        if (!std::isfinite(d.tracer_mixing_ratio[q]) ||
+            (nonnegative && d.tracer_mixing_ratio[q] < -kTracerRoundoffTolerance))
+          throw std::runtime_error("dry hydrostatic tracer invariant failed");
+      }
     }
   }
   for (const Real temperature : state.surface_temperature_k)

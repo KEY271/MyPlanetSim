@@ -255,6 +255,34 @@ constexpr std::array<std::string_view, 12> kSemiImplicitRequiredKeys{
   return values;
 }
 
+[[nodiscard]] std::vector<std::string> parse_name_list(const std::string_view text,
+                                                       const std::size_t line,
+                                                       const std::string_view key) {
+  std::vector<std::string> values;
+  std::size_t begin = 0;
+  while (begin < text.size()) {
+    const auto comma = text.find(',', begin);
+    const auto item =
+        trim(text.substr(begin, comma == std::string_view::npos ? std::string_view::npos
+                                                                : comma - begin));
+    if (item.empty())
+      throw parse_error(line, "empty list element for " + std::string(key));
+    values.emplace_back(item);
+    if (comma == std::string_view::npos) break;
+    begin = comma + 1;
+    if (begin == text.size())
+      throw parse_error(line, "trailing comma for " + std::string(key));
+  }
+  return values;
+}
+
+[[nodiscard]] bool parse_bool(const std::string_view text, const std::size_t line,
+                              const std::string_view key) {
+  if (text == "true") return true;
+  if (text == "false") return false;
+  throw parse_error(line, "invalid boolean value for " + std::string(key));
+}
+
 void assign_value(ExperimentConfig& config, const std::string_view key,
                   const std::string_view value, const std::size_t line) {
   if (key == "experiment.kind") {
@@ -554,6 +582,39 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
         DryHydrostaticTimeIntegrator::kSemiImplicit;
   } else if (key == "dry_hydrostatic.advective_cfl") {
     config.dry_hydrostatic.advective_cfl = parse_real(value, line, key);
+  } else if (key == "tracers.names") {
+    config.tracers.clear();
+    for (auto& name : parse_name_list(value, line, key))
+      config.tracers.push_back(TracerDescriptor{.name = std::move(name)});
+    static_cast<void>(TracerRegistry(config.tracers));
+  } else if (key.starts_with("tracers.")) {
+    const auto suffix = key.substr(std::string_view("tracers.").size());
+    const auto dot = suffix.find('.');
+    if (dot == std::string_view::npos)
+      throw parse_error(line, "unknown tracer key " + std::string(key));
+    const auto name = suffix.substr(0, dot);
+    const auto property = suffix.substr(dot + 1);
+    auto found = std::ranges::find_if(
+        config.tracers, [&](const auto& tracer) { return tracer.name == name; });
+    if (found == config.tracers.end())
+      throw parse_error(
+          line, "tracers.names must precede properties for " + std::string(name));
+    if (property == "role") {
+      if (value == "passive")
+        found->role = TracerRole::kPassive;
+      else if (value == "water_vapor")
+        found->role = TracerRole::kWaterVapor;
+      else
+        throw parse_error(line, "unknown tracer role " + std::string(value));
+    } else if (property == "initial_mixing_ratio") {
+      found->initial_mixing_ratio = parse_real(value, line, key);
+    } else if (property == "require_nonnegative") {
+      found->require_nonnegative = parse_bool(value, line, key);
+    } else if (property == "horizontal_diffusion") {
+      found->horizontal_diffusion = parse_bool(value, line, key);
+    } else {
+      throw parse_error(line, "unknown tracer property " + std::string(property));
+    }
   } else if (key.starts_with("semi_implicit.")) {
     if (!config.semi_implicit.has_value()) config.semi_implicit.emplace();
     auto& semi_implicit = *config.semi_implicit;
@@ -751,6 +812,17 @@ void require_keys(const std::set<std::string, std::less<>>& seen_keys,
 void ExperimentConfig::validate() const {
   planet.validate();
   if (orbit.has_value()) orbit->validate();
+  if (!tracers.empty()) {
+    if (kind != ExperimentKind::kDryHydrostatic)
+      throw std::invalid_argument("tracers are valid only for dry_hydrostatic");
+    static_cast<void>(TracerRegistry(tracers));
+    for (const auto& tracer : tracers) {
+      require_finite(tracer.initial_mixing_ratio, "tracer initial_mixing_ratio");
+      if (tracer.require_nonnegative && tracer.initial_mixing_ratio < 0.0)
+        throw std::invalid_argument(
+            "nonnegative tracer requires a nonnegative initial mixing ratio");
+    }
+  }
   if (kind != ExperimentKind::kDryHydrostatic &&
       (dry_hydrostatic.time_integrator == DryHydrostaticTimeIntegrator::kSemiImplicit ||
        semi_implicit.has_value()))
@@ -1376,6 +1448,13 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     throw std::runtime_error("convection parameters require dry_adjustment");
   }
 
+  const bool has_tracer_key = std::ranges::any_of(
+      seen_keys, [](const auto& key) { return key.starts_with("tracers."); });
+  if (config.kind != ExperimentKind::kDryHydrostatic && has_tracer_key)
+    throw std::runtime_error("tracer keys are valid only for dry_hydrostatic");
+  if (has_tracer_key && !seen_keys.contains("tracers.names"))
+    throw std::runtime_error("tracer properties require tracers.names");
+
   const bool has_boundary_layer_key = std::ranges::any_of(
       seen_keys, [](const auto& key) { return key.starts_with("boundary_layer."); });
   const bool has_boundary_surface_key =
@@ -1542,6 +1621,23 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
              << diffusion_kind_name(config.dry_hydrostatic.diffusion_kind) << '\n'
              << "dry_hydrostatic.diffusion_coefficient = "
              << config.dry_hydrostatic.diffusion_coefficient << '\n';
+      if (!config.tracers.empty()) {
+        output << "tracers.names = ";
+        for (std::size_t index = 0; index < config.tracers.size(); ++index) {
+          if (index != 0) output << ',';
+          output << config.tracers[index].name;
+        }
+        output << '\n';
+        for (const auto& tracer : config.tracers)
+          output << "tracers." << tracer.name
+                 << ".role = " << tracer_role_name(tracer.role) << '\n'
+                 << "tracers." << tracer.name
+                 << ".initial_mixing_ratio = " << tracer.initial_mixing_ratio << '\n'
+                 << "tracers." << tracer.name << ".require_nonnegative = "
+                 << (tracer.require_nonnegative ? "true" : "false") << '\n'
+                 << "tracers." << tracer.name << ".horizontal_diffusion = "
+                 << (tracer.horizontal_diffusion ? "true" : "false") << '\n';
+      }
       if (config.dry_hydrostatic.time_integrator ==
           DryHydrostaticTimeIntegrator::kSemiImplicit) {
         const auto& semi_implicit = *config.semi_implicit;

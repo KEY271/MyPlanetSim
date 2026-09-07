@@ -19,11 +19,16 @@ struct DryHydrostaticFaceStates {
 
 struct DryHydrostaticReconstruction {
   std::size_t levels;
+  std::size_t tracer_count = 1;
   std::vector<DryHydrostaticFaceStates> edge_levels;
+  std::vector<Real> left_tracer_mixing_ratio;
+  std::vector<Real> right_tracer_mixing_ratio;
   std::uint64_t limiter_activations;
 
   [[nodiscard]] const DryHydrostaticFaceStates& at(std::size_t edge,
                                                    std::size_t level) const;
+  [[nodiscard]] Real tracer_at(bool left, std::size_t tracer, std::size_t edge,
+                               std::size_t level) const;
 };
 
 struct DryHydrostaticReconstructionLevelWorkspace {

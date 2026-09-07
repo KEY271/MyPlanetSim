@@ -205,6 +205,16 @@ const DryHydrostaticFaceStates& DryHydrostaticReconstruction::at(
   return edge_levels[edge * levels + level];
 }
 
+Real DryHydrostaticReconstruction::tracer_at(const bool left, const std::size_t tracer,
+                                             const std::size_t edge,
+                                             const std::size_t level) const {
+  const auto edges = levels == 0 ? 0 : edge_levels.size() / levels;
+  if (tracer >= tracer_count || edge >= edges || level >= levels)
+    throw std::out_of_range("dry reconstruction tracer edge-level is out of range");
+  const auto offset = (tracer * edges + edge) * levels + level;
+  return left ? left_tracer_mixing_ratio[offset] : right_tracer_mixing_ratio[offset];
+}
+
 DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(
     const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
     const ReconstructionKind reconstruction, const LimiterKind limiter) {
@@ -227,12 +237,13 @@ void reconstruct_dry_hydrostatic_face_states(
   if (derived.cells != cells || levels == 0 ||
       derived.air_mass_kg_m2.size() != volume ||
       derived.velocity_m_s.size() != volume ||
-      derived.potential_temperature_k.size() != volume ||
-      derived.tracer_mixing_ratio.size() != volume ||
+      derived.potential_temperature_k.size() != volume || derived.tracer_count == 0 ||
+      derived.tracer_mixing_ratio.size() != derived.tracer_count * volume ||
       derived.temperature_k.size() != volume)
     throw std::invalid_argument("dry reconstruction shape mismatch");
 
   result.levels = levels;
+  result.tracer_count = derived.tracer_count;
   result.edge_levels.resize(grid.edge_count() * levels);
   std::uint64_t limiter_activations = 0;
   const int thread_count = reconstruction_thread_count(levels);
@@ -342,6 +353,57 @@ void reconstruct_dry_hydrostatic_face_states(
       };
       result.edge_levels[edge.id * levels + level] = {.left = face(left),
                                                       .right = face(right)};
+    }
+  }
+  const auto tracer_faces = derived.tracer_count * grid.edge_count() * levels;
+  result.left_tracer_mixing_ratio.resize(tracer_faces);
+  result.right_tracer_mixing_ratio.resize(tracer_faces);
+  for (const auto& edge : grid.edges()) {
+    for (std::size_t level = 0; level < levels; ++level) {
+      const auto face = edge.id * levels + level;
+      const auto output = edge.id * levels + level;
+      result.left_tracer_mixing_ratio[output] =
+          result.edge_levels[face].left.tracer_mixing_ratio;
+      result.right_tracer_mixing_ratio[output] =
+          result.edge_levels[face].right.tracer_mixing_ratio;
+    }
+  }
+  // Dynamics fields are reconstructed once above. Additional tracers reuse the same
+  // bounded scalar reconstruction independently, so component order cannot affect a
+  // face value or limiter decision.
+  auto& tracer_worker = workspace.workers.front();
+  for (std::size_t tracer_index = 1; tracer_index < derived.tracer_count;
+       ++tracer_index) {
+    const auto component = std::span<const Real>(derived.tracer_mixing_ratio)
+                               .subspan(tracer_index * volume, volume);
+    for (std::size_t level = 0; level < levels; ++level) {
+      copy_level_scalar(component, cells, levels, level, tracer_worker.tracer);
+      const auto values = std::span<const Real>(tracer_worker.tracer);
+      const bool constant = std::ranges::all_of(
+          values, [&](const Real value) { return value == values.front(); });
+      ScalarReconstruction prepared{};
+      if (reconstruction == ReconstructionKind::kLinear && !constant) {
+        prepared =
+            prepare_scalar(grid, values, limiter, tracer_worker.scalar_gradients[2],
+                           tracer_worker.limiter_factors[2]);
+        for (std::size_t cell = 0; cell < cells; ++cell)
+          if (prepared.factor[cell] < 1.0 - 1.0e-14) ++limiter_activations;
+      }
+      for (const auto& edge : grid.edges()) {
+        const auto& cached = grid.edge_cache()[edge.id];
+        const auto output =
+            (tracer_index * grid.edge_count() + edge.id) * levels + level;
+        const auto value = [&](const std::size_t cell, const std::size_t slot) {
+          if (reconstruction == ReconstructionKind::kPiecewiseConstant || constant)
+            return values[cell];
+          return reconstruct_scalar(cell, grid.cell_cache()[cell].edges[slot], values,
+                                    prepared);
+        };
+        result.left_tracer_mixing_ratio[output] =
+            value(cached.left_cell, cached.left_slot);
+        result.right_tracer_mixing_ratio[output] =
+            value(cached.right_cell, cached.right_slot);
+      }
     }
   }
   result.limiter_activations = limiter_activations;

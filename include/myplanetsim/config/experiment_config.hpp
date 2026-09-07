@@ -11,6 +11,7 @@
 #include "myplanetsim/core/orbit_parameters.hpp"
 #include "myplanetsim/core/planet_parameters.hpp"
 #include "myplanetsim/core/types.hpp"
+#include "myplanetsim/dynamics/tracer_registry.hpp"
 
 namespace mps {
 
@@ -256,6 +257,7 @@ struct ExperimentConfig {
   ShallowWaterParameters shallow_water{};
   VerticalColumnParameters vertical{};
   DryHydrostaticParameters dry_hydrostatic{};
+  std::vector<TracerDescriptor> tracers{};
   std::optional<SemiImplicitParameters> semi_implicit{};
   OrographyParameters orography{};
   PhysicsParameters physics{};

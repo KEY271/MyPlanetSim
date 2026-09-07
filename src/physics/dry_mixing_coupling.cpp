@@ -16,6 +16,8 @@ void apply_dry_boundary_layer(
   const std::size_t cells = derived.cells;
   const std::size_t levels = derived.levels;
   if (cells != grid.cell_count() || coordinate.levels() != levels || levels == 0 ||
+      derived.tracer_count == 0 || state.tracer_count != derived.tracer_count ||
+      derived.tracer_mixing_ratio.size() != derived.tracer_count * cells * levels ||
       state.surface_temperature_k.size() != cells ||
       boundary.land_fraction().size() != cells ||
       boundary.surface_geopotential_m2_s2().size() != cells)
@@ -35,8 +37,6 @@ void apply_dry_boundary_layer(
         std::span<const Real>(derived.temperature_k).subspan(begin, levels);
     const auto velocity =
         std::span<const Vec3>(derived.velocity_m_s).subspan(begin, levels);
-    const auto tracer =
-        std::span<const Real>(derived.tracer_mixing_ratio).subspan(begin, levels);
     coordinate.geometry(state.surface_pressure_pa[cell], planet.gravity_m_s2,
                         planet.gas_constant_j_kg_k, planet.heat_capacity_cp_j_kg_k,
                         planet.reference_pressure_pa, workspace.vertical_geometry);
@@ -79,29 +79,42 @@ void apply_dry_boundary_layer(
     const Real surface_capacity =
         mixed_surface_heat_capacity(land_fraction, surface.land_heat_capacity_j_m2_k,
                                     surface.ocean_heat_capacity_j_m2_k);
-    implicit_boundary_layer_column(
-        {.potential_temperature_k = theta,
-         .velocity_m_s = velocity,
-         .tracer_mixing_ratio = tracer,
-         .air_mass_kg_m2 = workspace.vertical_geometry.air_mass_kg_m2,
-         .exner_full = workspace.vertical_geometry.exner_full,
-         .exner_half = workspace.vertical_geometry.exner_half,
-         .height_full_m = workspace.height_full_m,
-         .density_half_kg_m3 = workspace.bulk.density_half_kg_m3,
-         .eddy_diffusivity_momentum_m2_s =
-             workspace.bulk.eddy_diffusivity_momentum_m2_s,
-         .eddy_diffusivity_heat_m2_s = workspace.bulk.eddy_diffusivity_heat_m2_s,
-         .eddy_diffusivity_tracer_m2_s = workspace.bulk.eddy_diffusivity_tracer_m2_s,
-         .surface_temperature_k = state.surface_temperature_k[cell],
-         .surface_exner = workspace.vertical_geometry.exner_half.back(),
-         .surface_heat_capacity_j_m2_k = surface_capacity,
-         .surface_heat_conductance_w_m2_k =
-             workspace.bulk.surface_heat_conductance_w_m2_k,
-         .surface_drag_conductance_kg_m2_s =
-             workspace.bulk.surface_drag_conductance_kg_m2_s,
-         .heat_capacity_cp_j_kg_k = planet.heat_capacity_cp_j_kg_k,
-         .time_step_s = time_step_s},
-        workspace.column, workspace.column_workspace);
+    Real tracer_mass_change_kg_m2 = 0.0;
+    for (std::size_t tracer_index = 0; tracer_index < derived.tracer_count;
+         ++tracer_index) {
+      const auto tracer = std::span<const Real>(derived.tracer_mixing_ratio)
+                              .subspan(tracer_index * cells * levels + begin, levels);
+      implicit_boundary_layer_column(
+          {.potential_temperature_k = theta,
+           .velocity_m_s = velocity,
+           .tracer_mixing_ratio = tracer,
+           .air_mass_kg_m2 = workspace.vertical_geometry.air_mass_kg_m2,
+           .exner_full = workspace.vertical_geometry.exner_full,
+           .exner_half = workspace.vertical_geometry.exner_half,
+           .height_full_m = workspace.height_full_m,
+           .density_half_kg_m3 = workspace.bulk.density_half_kg_m3,
+           .eddy_diffusivity_momentum_m2_s =
+               workspace.bulk.eddy_diffusivity_momentum_m2_s,
+           .eddy_diffusivity_heat_m2_s = workspace.bulk.eddy_diffusivity_heat_m2_s,
+           .eddy_diffusivity_tracer_m2_s = workspace.bulk.eddy_diffusivity_tracer_m2_s,
+           .surface_temperature_k = state.surface_temperature_k[cell],
+           .surface_exner = workspace.vertical_geometry.exner_half.back(),
+           .surface_heat_capacity_j_m2_k = surface_capacity,
+           .surface_heat_conductance_w_m2_k =
+               workspace.bulk.surface_heat_conductance_w_m2_k,
+           .surface_drag_conductance_kg_m2_s =
+               workspace.bulk.surface_drag_conductance_kg_m2_s,
+           .heat_capacity_cp_j_kg_k = planet.heat_capacity_cp_j_kg_k,
+           .time_step_s = time_step_s},
+          workspace.column, workspace.column_workspace);
+      tracer_mass_change_kg_m2 += workspace.column.diagnostics.tracer_mass_change_kg_m2;
+      for (std::size_t level = 0; level < levels; ++level) {
+        const Real mass = workspace.vertical_geometry.air_mass_kg_m2[level];
+        const auto q =
+            dry_hydrostatic_tracer_offset(tracer_index, cell, level, cells, levels);
+        state.tracer_mass_kg_m2[q] = mass * workspace.column.tracer_mixing_ratio[level];
+      }
+    }
 
     for (std::size_t level = 0; level < levels; ++level) {
       const Real mass = workspace.vertical_geometry.air_mass_kg_m2[level];
@@ -109,8 +122,6 @@ void apply_dry_boundary_layer(
           mass * workspace.column.potential_temperature_k[level];
       state.horizontal_momentum_mass_kg_m_s[begin + level] =
           mass * workspace.column.velocity_m_s[level];
-      state.tracer_mass_kg_m2[begin + level] =
-          mass * workspace.column.tracer_mixing_ratio[level];
     }
     state.surface_temperature_k[cell] = workspace.column.surface_temperature_k;
 
@@ -147,7 +158,7 @@ void apply_dry_boundary_layer(
         area * column.kinetic_energy_identity_residual_j_m2;
     diagnostics.momentum_budget_residual_n_s +=
         area * norm(column.momentum_budget_residual_kg_m_s);
-    diagnostics.tracer_mass_change_kg += area * column.tracer_mass_change_kg_m2;
+    diagnostics.tracer_mass_change_kg += area * tracer_mass_change_kg_m2;
   }
   if (!(total_area > 0.0))
     throw std::runtime_error("dry boundary-layer grid area is invalid");

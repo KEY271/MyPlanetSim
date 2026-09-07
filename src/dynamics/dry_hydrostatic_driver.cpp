@@ -36,8 +36,9 @@ namespace {
         scale * tendency.tendency.momentum[n];
     result.potential_temperature_mass_k_kg_m2[n] +=
         scale * tendency.tendency.potential_temperature_mass[n];
-    result.tracer_mass_kg_m2[n] += scale * tendency.tendency.tracer_mass[n];
   }
+  for (std::size_t n = 0; n < result.tracer_mass_kg_m2.size(); ++n)
+    result.tracer_mass_kg_m2[n] += scale * tendency.tendency.tracer_mass[n];
   for (std::size_t cell = 0; cell < result.surface_temperature_k.size(); ++cell)
     result.surface_temperature_k[cell] +=
         scale * tendency.surface_temperature_k_s[cell];
@@ -66,11 +67,12 @@ namespace {
         initial_weight * initial.potential_temperature_mass_k_kg_m2[n] +
         stage_weight * (stage.potential_temperature_mass_k_kg_m2[n] +
                         time_step_s * tendency.tendency.potential_temperature_mass[n]);
+  }
+  for (std::size_t n = 0; n < result.tracer_mass_kg_m2.size(); ++n)
     result.tracer_mass_kg_m2[n] =
         initial_weight * initial.tracer_mass_kg_m2[n] +
         stage_weight * (stage.tracer_mass_kg_m2[n] +
                         time_step_s * tendency.tendency.tracer_mass[n]);
-  }
   for (std::size_t cell = 0; cell < result.surface_temperature_k.size(); ++cell)
     result.surface_temperature_k[cell] =
         initial_weight * initial.surface_temperature_k[cell] +
@@ -193,24 +195,25 @@ void halve_time_step(const DryHydrostaticState& state, Real& time_step_s) {
 }
 
 void resize_zero_rhs_term(DryHydrostaticRhsTerm& term, const std::size_t cells,
-                          const std::size_t levels) {
+                          const std::size_t levels, const std::size_t tracer_count) {
   const auto cell_levels = cells * levels;
   term.surface_pressure_pa_s.assign(cells, 0.0);
   term.tendency.air_mass.assign(cell_levels, 0.0);
   term.tendency.momentum.assign(cell_levels, {});
   term.tendency.potential_temperature_mass.assign(cell_levels, 0.0);
-  term.tendency.tracer_mass.assign(cell_levels, 0.0);
+  term.tendency.tracer_mass.assign(tracer_count * cell_levels, 0.0);
   term.surface_temperature_k_s.assign(cells, 0.0);
 }
 
 void resize_zero_rhs_components(DryHydrostaticRhsComponents& components,
-                                const std::size_t cells, const std::size_t levels) {
-  resize_zero_rhs_term(components.horizontal_transport, cells, levels);
-  resize_zero_rhs_term(components.vertical_transport, cells, levels);
-  resize_zero_rhs_term(components.pressure_gradient, cells, levels);
-  resize_zero_rhs_term(components.coriolis, cells, levels);
-  resize_zero_rhs_term(components.diffusion, cells, levels);
-  resize_zero_rhs_term(components.physics, cells, levels);
+                                const std::size_t cells, const std::size_t levels,
+                                const std::size_t tracer_count) {
+  resize_zero_rhs_term(components.horizontal_transport, cells, levels, tracer_count);
+  resize_zero_rhs_term(components.vertical_transport, cells, levels, tracer_count);
+  resize_zero_rhs_term(components.pressure_gradient, cells, levels, tracer_count);
+  resize_zero_rhs_term(components.coriolis, cells, levels, tracer_count);
+  resize_zero_rhs_term(components.diffusion, cells, levels, tracer_count);
+  resize_zero_rhs_term(components.physics, cells, levels, tracer_count);
 }
 
 [[nodiscard]] bool surface_temperature_is_positive(const DryHydrostaticState& state) {
@@ -246,11 +249,12 @@ void resize_zero_rhs_components(DryHydrostaticRhsComponents& components,
         time_step_s *
             (initial_weight * initial_rhs.tendency.potential_temperature_mass[n] +
              implicit_weight * candidate_rhs.tendency.potential_temperature_mass[n]);
+  }
+  for (std::size_t n = 0; n < residual.tracer_mass_kg_m2.size(); ++n)
     residual.tracer_mass_kg_m2[n] =
         candidate.tracer_mass_kg_m2[n] - initial.tracer_mass_kg_m2[n] -
         time_step_s * (initial_weight * initial_rhs.tendency.tracer_mass[n] +
                        implicit_weight * candidate_rhs.tendency.tracer_mass[n]);
-  }
   for (std::size_t cell = 0; cell < residual.surface_temperature_k.size(); ++cell) {
     residual.surface_temperature_k[cell] =
         candidate.surface_temperature_k[cell] - initial.surface_temperature_k[cell] -
@@ -300,10 +304,11 @@ struct ScaledCrankNicolsonResidual {
                  std::max({1.0, reference.potential_temperature_mass_k_kg_m2[level],
                            std::abs(initial.potential_temperature_mass_k_kg_m2[n])}),
              "potential_temperature_mass");
+  }
+  for (std::size_t n = 0; n < residual.tracer_mass_kg_m2.size(); ++n)
     consider(std::abs(residual.tracer_mass_kg_m2[n]) /
                  std::max(1.0, std::abs(initial.tracer_mass_kg_m2[n])),
              "tracer_mass");
-  }
   for (std::size_t cell = 0; cell < residual.surface_temperature_k.size(); ++cell) {
     consider(std::abs(residual.surface_temperature_k[cell]) /
                  std::max({1.0, reference.temperature_k,
@@ -340,8 +345,9 @@ void add_semi_implicit_correction(DryHydrostaticState& state,
         fast_correction.potential_temperature_mass_k_kg_m2[n];
     // Tracer and surface reservoirs are outside L_ref, so their quasi-Newton
     // correction is the identity solve.
-    state.tracer_mass_kg_m2[n] -= residual.tracer_mass_kg_m2[n];
   }
+  for (std::size_t n = 0; n < state.tracer_mass_kg_m2.size(); ++n)
+    state.tracer_mass_kg_m2[n] -= residual.tracer_mass_kg_m2[n];
   for (std::size_t cell = 0; cell < state.surface_temperature_k.size(); ++cell)
     state.surface_temperature_k[cell] -= residual.surface_temperature_k[cell];
 }
@@ -515,6 +521,18 @@ void DryHydrostaticDriver::update_semi_implicit_reference(
 DryHydrostaticState DryHydrostaticDriver::initial_state() const {
   auto state =
       initialize_dry_hydrostatic_benchmark(config_, grid_, coordinate_, orography_);
+  if (!config_.tracers.empty()) {
+    const auto cells = grid_.cell_count();
+    const auto levels = coordinate_.levels();
+    const auto volume = cells * levels;
+    const auto derived = diagnose(state);
+    state.tracer_count = config_.tracers.size();
+    state.tracer_mass_kg_m2.resize(state.tracer_count * volume);
+    for (std::size_t tracer = 0; tracer < state.tracer_count; ++tracer)
+      for (std::size_t n = 0; n < volume; ++n)
+        state.tracer_mass_kg_m2[tracer * volume + n] =
+            derived.air_mass_kg_m2[n] * config_.tracers[tracer].initial_mixing_ratio;
+  }
   if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance ||
       config_.physics.kind == PhysicsKind::kGrayRadiation)
     state.surface_temperature_k.assign(grid_.cell_count(),
@@ -568,12 +586,13 @@ void DryHydrostaticDriver::rhs_with_components(
       workspace.column_potential_temperature);
   const auto& d = workspace.derived;
   auto C = d.cells, K = d.levels;
-  if (components != nullptr) resize_zero_rhs_components(*components, C, K);
+  if (components != nullptr)
+    resize_zero_rhs_components(*components, C, K, d.tracer_count);
   auto& h = workspace.horizontal_tendency;
   h.air_mass.assign(C * K, 0.0);
   h.momentum.assign(C * K, {});
   h.potential_temperature_mass.assign(C * K, 0.0);
-  h.tracer_mass.assign(C * K, 0.0);
+  h.tracer_mass.assign(d.tracer_count * C * K, 0.0);
   // Per-cell Courant condition (ADR 0011): dt * sum_f(lambda_f * L_f) / A_cell <= cfl,
   // the same definition the transport and shallow-water solvers already use. The
   // previous per-edge form was about four times weaker on a quadrilateral cell.
@@ -603,7 +622,13 @@ void DryHydrostaticDriver::rhs_with_components(
         h.momentum[n] = h.momentum[n] + scale * f.momentum_kg_s2;
         h.potential_temperature_mass[n] +=
             scale * f.potential_temperature_mass_k_kg_m_s;
-        h.tracer_mass[n] += scale * f.tracer_mass_kg_m_s;
+        for (std::size_t tracer = 0; tracer < d.tracer_count; ++tracer) {
+          const auto q = dry_hydrostatic_tracer_offset(tracer, c, k, C, K);
+          const Real tracer_flux = rusanov_dry_hydrostatic_tracer_flux(
+              face.left, face.right, reconstructed.tracer_at(true, tracer, e.id, k),
+              reconstructed.tracer_at(false, tracer, e.id, k), basis);
+          h.tracer_mass[q] += scale * tracer_flux;
+        }
         if (compute_fast_wave_cfl)
           face_fast_wave_speed_length[n] += e.length_m * f.maximum_wave_speed_m_s;
         face_advective_speed_length[n] += e.length_m * f.maximum_dissipation_speed_m_s;
@@ -652,9 +677,10 @@ void DryHydrostaticDriver::rhs_with_components(
       components->vertical_transport.tendency.potential_temperature_mass[n] =
           coupled.tendency.potential_temperature_mass[n] -
           h.potential_temperature_mass[n];
+    }
+    for (std::size_t n = 0; n < d.tracer_count * C * K; ++n)
       components->vertical_transport.tendency.tracer_mass[n] =
           coupled.tendency.tracer_mass[n] - h.tracer_mass[n];
-    }
   }
   Real vertical_dt = std::numeric_limits<Real>::infinity();
   for (std::size_t c = 0; c < C; ++c) {
@@ -695,8 +721,9 @@ void DryHydrostaticDriver::rhs_with_components(
           coupled.tendency.momentum[n] + diffusion.momentum[n];
       coupled.tendency.potential_temperature_mass[n] +=
           diffusion.potential_temperature_mass[n];
-      coupled.tendency.tracer_mass[n] += diffusion.tracer_mass[n];
     }
+    for (std::size_t n = 0; n < d.tracer_count * C * K; ++n)
+      coupled.tendency.tracer_mass[n] += diffusion.tracer_mass[n];
     diffusion_rate = diffusion.kinetic_energy_rate_w;
     if (components != nullptr) {
       components->diffusion.tendency.momentum = diffusion.momentum;

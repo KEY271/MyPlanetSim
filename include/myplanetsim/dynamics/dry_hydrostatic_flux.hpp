@@ -22,4 +22,7 @@ struct DryHydrostaticEdgeFlux {
     const DryHydrostaticPrimitive& left, const DryHydrostaticPrimitive& right,
     const EdgeTangentBasis& basis, Real gas_constant_j_kg_k,
     Real heat_capacity_cp_j_kg_k, bool compute_maximum_wave_speed = true);
+[[nodiscard]] Real rusanov_dry_hydrostatic_tracer_flux(
+    const DryHydrostaticPrimitive& left, const DryHydrostaticPrimitive& right,
+    Real left_mixing_ratio, Real right_mixing_ratio, const EdgeTangentBasis& basis);
 }  // namespace mps
