@@ -769,10 +769,12 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                                    const DryHydrostaticObserver& obs,
                                    const DryHydrostaticCancel& cancel) const {
   const std::uint64_t initial_observer_step = s.step;
+  std::uint64_t last_sampled_step = initial_observer_step;
   const auto observe = [&](const DryHydrostaticState& state,
-                           const DryHydrostaticStepDiagnostics& step) {
+                           const DryHydrostaticStepDiagnostics& step,
+                           const bool force_sample = false) {
     if (!obs) return;
-    const bool needs_sample = state.step == initial_observer_step ||
+    const bool needs_sample = force_sample || state.step == initial_observer_step ||
                               state.step % config_.diagnostics.interval_steps == 0 ||
                               state.time_s >= end;
     if (!needs_sample) {
@@ -785,6 +787,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         workspace_.derived, workspace_.vertical_geometry, workspace_.hydrostatic_column,
         workspace_.column_potential_temperature);
     const auto& derived = workspace_.derived;
+    last_sampled_step = state.step;
     auto sampled = step;
     if (config_.physics.kind == PhysicsKind::kHeldSuarez) {
       held_suarez_tendency(grid_, coordinate_, derived, state.surface_pressure_pa,
@@ -871,7 +874,12 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         config_.physics.kind != PhysicsKind::kSurfaceEnergyBalance &&
         config_.physics.kind != PhysicsKind::kGrayRadiation;
     while (s.time_s < end) {
-      if (cancel && cancel()) return;
+      if (cancel && cancel()) {
+        // A cancellation can arrive between observations. Flush the pending
+        // diagnostic interval without counting an accepted step a second time.
+        if (last_sampled_step != s.step) observe(s, {}, true);
+        return;
+      }
       const auto step_wall_start = std::chrono::steady_clock::now();
       Real rhs_wall_seconds = 0.0;
       Real linear_solve_wall_seconds = 0.0;
@@ -1110,7 +1118,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       step.wall_seconds_total = std::chrono::duration<Real>(
                                     std::chrono::steady_clock::now() - step_wall_start)
                                     .count();
-      observe(s, step);
+      const bool cancelled = cancel && cancel();
+      observe(s, step, cancelled);
+      if (cancelled) return;
     }
     return;
   }
@@ -1118,7 +1128,12 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
   DryHydrostaticRhs rhs2;
   DryHydrostaticRhs rhs3;
   while (s.time_s < end) {
-    if (cancel && cancel()) return;
+    if (cancel && cancel()) {
+      // A cancellation can arrive between observations. Flush the pending
+      // diagnostic interval without counting an accepted step a second time.
+      if (last_sampled_step != s.step) observe(s, {}, true);
+      return;
+    }
     const DryHydrostaticState initial = s;
     const Real requested_dt = std::min(config_.run.time_step_s, end - initial.time_s);
     std::size_t cfl_retry_count = 0;
@@ -1227,7 +1242,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
             s.surface_temperature_k, dt, rhs1.surface_diagnostics,
             rhs2.surface_diagnostics, rhs3.surface_diagnostics);
       }
-      observe(s, step);
+      const bool cancelled = cancel && cancel();
+      observe(s, step, cancelled);
+      if (cancelled) return;
       break;
     }
   }

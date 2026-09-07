@@ -309,4 +309,33 @@ MPS_TEST_CASE("rejected radiation attempts do not enter accepted energy budgets"
   MPS_CHECK_NEAR(incident_energy, expected, 1e-8 * expected);
 }
 
+MPS_TEST_CASE("cancellation flushes an unsampled radiative interval once") {
+  for (const bool implicit : {false, true}) {
+    auto config = implicit ? semi_implicit_config(10.0, 5) : gray_config();
+    config.diagnostics.interval_steps = 100;
+    const mps::DryHydrostaticDriver driver(config);
+    auto state = driver.initial_state();
+    std::size_t accepted_callbacks = 0, samples = 0;
+    double pending_energy = 0.0, written_energy = 0.0;
+    driver.advance(
+        state, config.run.end_time_s,
+        [&](const mps::DryHydrostaticState&, const mps::DryHydrostaticDerived* derived,
+            const mps::DryHydrostaticStepDiagnostics& step) {
+          if (step.accepted_time_step_s > 0.0) ++accepted_callbacks;
+          pending_energy += step.radiation_budget.toa_incoming_shortwave_energy_j;
+          if (derived != nullptr) {
+            ++samples;
+            written_energy += pending_energy;
+            pending_energy = 0.0;
+          }
+        },
+        [&] { return state.step >= 1; });
+    MPS_CHECK_EQ(state.step, 1U);
+    MPS_CHECK_EQ(accepted_callbacks, 1U);
+    MPS_CHECK_EQ(samples, 2U);
+    MPS_CHECK_NEAR(pending_energy, 0.0, 0.0);
+    MPS_CHECK(written_energy > 0.0);
+  }
+}
+
 int main() { return mps::test::run_all(); }
