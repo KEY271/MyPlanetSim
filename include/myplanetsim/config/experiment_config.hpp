@@ -236,16 +236,16 @@ struct ExperimentConfig {
   ShallowWaterParameters shallow_water{};
   VerticalColumnParameters vertical{};
   DryHydrostaticParameters dry_hydrostatic{};
-  std::optional<SemiImplicitParameters> semi_implicit;
+  std::optional<SemiImplicitParameters> semi_implicit{};
   OrographyParameters orography{};
   PhysicsParameters physics{};
   DiagnosticsParameters diagnostics{};
   std::string output_directory;
   // Runtime-only origin used to resolve portable config-relative inputs.
-  std::filesystem::path source_directory;
-  std::optional<OrbitParameters> orbit;
-  std::optional<SurfaceParameters> surface;
-  std::optional<RadiationParameters> radiation;
+  std::filesystem::path source_directory{};
+  std::optional<OrbitParameters> orbit{};
+  std::optional<SurfaceParameters> surface{};
+  std::optional<RadiationParameters> radiation{};
 
   void validate() const;
 };

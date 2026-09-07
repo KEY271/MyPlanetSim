@@ -110,6 +110,21 @@ MPS_TEST_CASE("one-layer gray greenhouse equilibrium has zero source") {
   const auto source = mps::gray_radiative_column_tendency(input);
   MPS_CHECK_NEAR(source.potential_temperature_mass_k_kg_m2_s.front(), 0.0, 1e-15);
   MPS_CHECK_NEAR(source.surface_temperature_k_s, 0.0, 1e-18);
+  std::vector<double> perturbed{air_temperature - 5.0, surface_temperature + 5.0};
+  mps::SspRk3 stepper(2);
+  const auto rhs = [&](double, std::span<const double> values,
+                       std::span<double> rates) {
+    const std::vector<double> air{values[0]};
+    auto forcing = source_input(pressure, air, exner, values[1], parameters);
+    forcing.radiation.stellar_flux_w_m2 = incoming;
+    forcing.radiation.cosine_solar_zenith = 1.0;
+    const auto tendency = mps::gray_radiative_column_tendency(forcing);
+    rates[0] = tendency.potential_temperature_mass_k_kg_m2_s[0] / 10000.0;
+    rates[1] = tendency.surface_temperature_k_s;
+  };
+  for (int step = 0; step < 2000; ++step) stepper.step(step * 1e5, 1e5, perturbed, rhs);
+  MPS_CHECK_NEAR(perturbed[0], air_temperature, 1e-4);
+  MPS_CHECK_NEAR(perturbed[1], surface_temperature, 1e-4);
 }
 
 MPS_TEST_CASE("O K temperature rate bound encloses finite difference Jacobian") {
@@ -192,6 +207,76 @@ MPS_TEST_CASE("radiative safety bound causes an oversized step to be retried") {
   }
   MPS_CHECK_EQ(retries, 2U);
   MPS_CHECK(attempted <= source.stable_time_step_s);
+}
+
+MPS_TEST_CASE("centered surface cooling has second-order temporal convergence") {
+  auto parameters = radiation_parameters();
+  parameters.longwave_absorption_ref_m2_kg = 0.0;
+  const std::vector<mps::Real> pressure{0.0, 100000.0}, temperature{250.0}, exner{1.0};
+  constexpr double final_time = 1e6, capacity = 1e7;
+  const double exact = std::pow(
+      std::pow(300.0, -3.0) + 3.0 * mps::kStefanBoltzmannWm2K4 * final_time / capacity,
+      -1.0 / 3.0);
+  const auto rhs = [&](double value) {
+    auto input = source_input(pressure, temperature, exner, value, parameters);
+    input.surface_heat_capacity_j_m2_k = capacity;
+    return mps::gray_radiative_column_tendency(input).surface_temperature_k_s;
+  };
+  double previous_error = 0.0;
+  for (const int steps : {10, 20, 40}) {
+    double state = 300.0;
+    const double dt = final_time / steps;
+    for (int step = 0; step < steps; ++step) {
+      double candidate = state;
+      const double initial_rate = rhs(state);
+      for (int iteration = 0; iteration < 30; ++iteration)
+        candidate = state + 0.5 * dt * (initial_rate + rhs(candidate));
+      state = candidate;
+    }
+    const double error = std::abs(state - exact);
+    if (previous_error > 0.0) MPS_CHECK(std::log2(previous_error / error) >= 1.7);
+    previous_error = error;
+  }
+}
+
+MPS_TEST_CASE("smooth time-dependent insolation respects source time accuracy") {
+  auto parameters = radiation_parameters();
+  parameters.longwave_absorption_ref_m2_kg = 0.0;
+  parameters.shortwave_absorption_m2_kg = 0.0;
+  const std::vector<double> pressure{0.0, 100000.0}, temperature{250.0}, exner{1.0};
+  constexpr double final_time = 1000.0, capacity = 10000.0;
+  const double exact =
+      300.0 + 1000.0 / capacity *
+                  (0.5 * final_time + 40.0 * (1.0 - std::cos(final_time / 200.0)));
+  const auto rate = [&](double time, double value) {
+    auto input = source_input(pressure, temperature, exner, value, parameters);
+    input.surface_heat_capacity_j_m2_k = capacity;
+    input.radiation.surface_emissivity = 0.0;
+    input.radiation.stellar_flux_w_m2 = 1000.0;
+    input.radiation.cosine_solar_zenith = 0.5 + 0.2 * std::sin(time / 200.0);
+    return mps::gray_radiative_column_tendency(input).surface_temperature_k_s;
+  };
+  for (const bool centered : {false, true}) {
+    double previous_error = 0.0;
+    for (const int steps : {10, 20, 40}) {
+      std::vector<double> state{300.0};
+      mps::SspRk3 stepper(1);
+      const double dt = final_time / steps;
+      for (int step = 0; step < steps; ++step) {
+        const double time = step * dt;
+        if (centered)
+          state[0] += 0.5 * dt * (rate(time, state[0]) + rate(time + dt, state[0]));
+        else
+          stepper.step(time, dt, state,
+                       [&](double t, std::span<const double> value,
+                           std::span<double> rhs) { rhs[0] = rate(t, value[0]); });
+      }
+      const double error = std::abs(state[0] - exact);
+      if (previous_error > 0.0)
+        MPS_CHECK(std::log2(previous_error / error) >= (centered ? 1.7 : 2.7));
+      previous_error = error;
+    }
+  }
 }
 
 int main() { return mps::test::run_all(); }

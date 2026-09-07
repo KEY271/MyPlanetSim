@@ -1,6 +1,6 @@
 # Phase 11 実装計画 — 乾燥大気の灰色放射
 
-**状態:** 実装中（2026-09-07）。Phase 11 を放射導入に割り当てる。方式・ゲートは
+**状態:** P11.09 の1200日 pilot・主要検証まで実施（2026-09-07）。全系 residual の力学/時間積分への厳密分離は継続。方式・ゲートは
 [ADR 0017](adr/0017-gray-radiation-column-and-energy-attribution.md) で固定し、段階ごとに実装・検証する。
 
 ## 1. 到達点
@@ -224,7 +224,7 @@ CLI の CSV dispatch にある physics kind の分岐をすべて点検する。
 | P11.06 | dry driver/workspace、SSP-RK3 と semi-implicit | 完了: 同時刻 RHS、質量非干渉、積分重み、反復数・刻み感度、旧経路回帰 |
 | P11.07 | CLI/CSV、checkpoint、統計、理由別 counter | 完了: 再開時の温度・flux・orbit・積算値一致、棄却分の二重計上なし |
 | P11.08 | 全球 preset と比較・性能測定 | 1日行列完了: 透明大気回帰、地形・陸海・同期回転、水平/鉛直/時間・上端感度。30日比較は P11.09 で実施 |
-| P11.09 | 長時間 pilot、検証報告、README 更新 | 登録した数値ゲートの結果・再現コマンド・未解決範囲を記録 |
+| P11.09 | 長時間 pilot、検証報告、README 更新 | 実施: 1200日完走、30日比較、失敗例・再現コマンド・未解決範囲を記録。全系 residual の厳密分離は未完了 |
 
 各段階に必要な tests を追加する。主な対象は `tests/test_gray_radiation.cpp`、
 `tests/test_radiative_column.cpp`、`tests/test_radiative_dry_core.cpp` と config/CSV/checkpoint 回帰。
@@ -284,11 +284,11 @@ TOA imbalance は蓄熱とともに報告し、1200 日の完走だけで統計�
 ### 7.3 完了条件
 
 - [ ] P11.01--P11.09 と column の解析・保存・時間収束ゲートを通過した。
-- [ ] 大気・地表は同一界面 flux を使用し、source 変換誤差と既存力学の energy defect を区別できる。
-- [ ] 指定した全球行列と 1200 日 pilot が終了し、刻み・精度・性能の適用範囲が明記されている。
-- [ ] restart と積算診断が連続 run と一致し、旧 config/checkpoint/Frame に回帰がない。
-- [ ] C++ 全回帰、GCC/Clang、ASan/UBSan、format-check が通る。
-- [ ] `docs/validation/phase-11.md` に再現手順、定量結果、失敗例、既知の制約がある。
+- [x] 大気・地表は同一界面 flux を使用し、source 変換誤差と既存力学の energy defect を区別できる。
+- [x] 指定した全球行列と 1200 日 pilot が終了し、刻み・精度・性能の適用範囲が明記されている。
+- [x] restart と積算診断が連続 run と一致し、旧 config/checkpoint/Frame に回帰がない。
+- [x] C++ 全回帰、GCC/Clang、ASan/UBSan、format-check が通る（GCC 全回帰は既定の warnings-as-errors OFF）。
+- [x] `docs/validation/phase-11.md` に再現手順、定量結果、失敗例、既知の制約がある。
 
 全系 energy defect が残る場合、放射 scheme の局所保存と気候のエネルギー閉鎖を混同しない。
 climate conformance は未完了として残し、原因となる core の修正を後続課題にする。

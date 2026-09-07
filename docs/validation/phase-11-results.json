@@ -1,0 +1,1048 @@
+{
+  "one_day": {
+    "time-1800-i3": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "1800",
+        "3",
+        "1000",
+        "output/phase11-comparison/time-1800-i3.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6815744.0,
+        "elapsed_s": 0.207274458,
+        "seconds_per_model_day": 0.207274458,
+        "accepted_steps": 48.0,
+        "median_dt_s": 1800.0,
+        "minimum_dt_s": 1800.0,
+        "radiation_seconds": 0.04745838200000001,
+        "radiation_calls": 41688.0,
+        "retries": 0.0,
+        "linear_iterations": 105.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 3.88608689199423e-15,
+        "toa_net_upward_w_m2": 78.25720582740996,
+        "minimum_temperature_k": 269.6693962856508,
+        "maximum_temperature_k": 285.18812245877643,
+        "mean_temperature_k": 277.9650974315493
+      }
+    },
+    "time-1800-i4": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "1800",
+        "4",
+        "1000",
+        "output/phase11-comparison/time-1800-i4.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6422528.0,
+        "elapsed_s": 0.214943542,
+        "seconds_per_model_day": 0.21494354200000002,
+        "accepted_steps": 48.0,
+        "median_dt_s": 1800.0,
+        "minimum_dt_s": 1800.0,
+        "radiation_seconds": 0.048566458999999985,
+        "radiation_calls": 52056.0,
+        "retries": 0.0,
+        "linear_iterations": 105.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 5.131862361587672e-15,
+        "toa_net_upward_w_m2": 78.25720657331455,
+        "minimum_temperature_k": 269.6693827132494,
+        "maximum_temperature_k": 285.18808755491267,
+        "mean_temperature_k": 277.96509712311024
+      }
+    },
+    "time-1800-i5": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "1800",
+        "5",
+        "1000",
+        "output/phase11-comparison/time-1800-i5.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6471680.0,
+        "elapsed_s": 0.258283459,
+        "seconds_per_model_day": 0.258283459,
+        "accepted_steps": 48.0,
+        "median_dt_s": 1800.0,
+        "minimum_dt_s": 1800.0,
+        "radiation_seconds": 0.05841179399999999,
+        "radiation_calls": 62424.0,
+        "retries": 0.0,
+        "linear_iterations": 105.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 2.8088885395205986e-15,
+        "toa_net_upward_w_m2": 78.25720655299108,
+        "minimum_temperature_k": 269.66938044178977,
+        "maximum_temperature_k": 285.1880900039427,
+        "mean_temperature_k": 277.96509712455816
+      }
+    },
+    "time-900-i3": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "900",
+        "3",
+        "1000",
+        "output/phase11-comparison/time-900-i3.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6438912.0,
+        "elapsed_s": 0.332891042,
+        "seconds_per_model_day": 0.332891042,
+        "accepted_steps": 96.0,
+        "median_dt_s": 900.0,
+        "minimum_dt_s": 900.0,
+        "radiation_seconds": 0.07716142199999997,
+        "radiation_calls": 83160.0,
+        "retries": 0.0,
+        "linear_iterations": 62.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 3.7351933804959064e-15,
+        "toa_net_upward_w_m2": 78.25730971445381,
+        "minimum_temperature_k": 269.6696426690655,
+        "maximum_temperature_k": 285.18869985110933,
+        "mean_temperature_k": 277.9651359159299
+      }
+    },
+    "time-900-i4": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "900",
+        "4",
+        "1000",
+        "output/phase11-comparison/time-900-i4.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6488064.0,
+        "elapsed_s": 0.419451208,
+        "seconds_per_model_day": 0.41945120799999996,
+        "accepted_steps": 96.0,
+        "median_dt_s": 900.0,
+        "minimum_dt_s": 900.0,
+        "radiation_seconds": 0.096771298,
+        "radiation_calls": 103896.0,
+        "retries": 0.0,
+        "linear_iterations": 62.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 4.159739292548842e-15,
+        "toa_net_upward_w_m2": 78.25730978821169,
+        "minimum_temperature_k": 269.66963467191556,
+        "maximum_temperature_k": 285.18869971174456,
+        "mean_temperature_k": 277.9651358866114
+      }
+    },
+    "time-900-i5": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "900",
+        "5",
+        "1000",
+        "output/phase11-comparison/time-900-i5.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6438912.0,
+        "elapsed_s": 0.506143209,
+        "seconds_per_model_day": 0.506143209,
+        "accepted_steps": 96.0,
+        "median_dt_s": 900.0,
+        "minimum_dt_s": 900.0,
+        "radiation_seconds": 0.116838334,
+        "radiation_calls": 124632.0,
+        "retries": 0.0,
+        "linear_iterations": 62.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 4.48239531406366e-15,
+        "toa_net_upward_w_m2": 78.25730980328535,
+        "minimum_temperature_k": 269.66967333853466,
+        "maximum_temperature_k": 285.18870105410883,
+        "mean_temperature_k": 277.965135870212
+      }
+    },
+    "time-450-i3": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "450",
+        "3",
+        "1000",
+        "output/phase11-comparison/time-450-i3.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6324224.0,
+        "elapsed_s": 0.664571917,
+        "seconds_per_model_day": 0.664571917,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.15462195100000004,
+        "radiation_calls": 166104.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 4.555591499845249e-15,
+        "toa_net_upward_w_m2": 78.25733457337358,
+        "minimum_temperature_k": 269.6694193452979,
+        "maximum_temperature_k": 285.188847484712,
+        "mean_temperature_k": 277.96514475037424
+      }
+    },
+    "time-450-i4": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "450",
+        "4",
+        "1000",
+        "output/phase11-comparison/time-450-i4.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6340608.0,
+        "elapsed_s": 0.830851875,
+        "seconds_per_model_day": 0.830851875,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.19280013799999987,
+        "radiation_calls": 207576.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 3.68676333592753e-15,
+        "toa_net_upward_w_m2": 78.25733458432201,
+        "minimum_temperature_k": 269.6694196164643,
+        "maximum_temperature_k": 285.1888448406413,
+        "mean_temperature_k": 277.9651447450643
+      }
+    },
+    "time-450-i5": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "450",
+        "5",
+        "1000",
+        "output/phase11-comparison/time-450-i5.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6291456.0,
+        "elapsed_s": 1.010114583,
+        "seconds_per_model_day": 1.010114583,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.23342189800000002,
+        "radiation_calls": 249048.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 4.738763607011271e-15,
+        "toa_net_upward_w_m2": 78.25733458615888,
+        "minimum_temperature_k": 269.669419582105,
+        "maximum_temperature_k": 285.1888444948852,
+        "mean_temperature_k": 277.96514474509064
+      }
+    },
+    "explicit": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "30",
+        "0",
+        "1000",
+        "output/phase11-comparison/explicit.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 5767168.0,
+        "elapsed_s": 6.423166209,
+        "seconds_per_model_day": 6.423166208999999,
+        "accepted_steps": 2880.0,
+        "median_dt_s": 30.0,
+        "minimum_dt_s": 30.0,
+        "radiation_seconds": 1.741440511999998,
+        "radiation_calls": 1866240.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": -1.409791555747683e-13,
+        "interface_residual_w_m2": 6.871303424127606e-15,
+        "toa_net_upward_w_m2": 78.25734338419163,
+        "minimum_temperature_k": 269.6694411641635,
+        "maximum_temperature_k": 285.18889637714454,
+        "mean_temperature_k": 277.96514809127245
+      }
+    },
+    "space-n6-k20": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "20",
+        "450",
+        "5",
+        "1000",
+        "output/phase11-comparison/space-n6-k20.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 8847360.0,
+        "elapsed_s": 1.855194125,
+        "seconds_per_model_day": 1.855194125,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.44201213599999983,
+        "radiation_calls": 249048.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 5.157621611059329e-15,
+        "toa_net_upward_w_m2": 77.79838512806072,
+        "minimum_temperature_k": 268.4836574447391,
+        "maximum_temperature_k": 287.02102277893607,
+        "mean_temperature_k": 277.85208032315836
+      }
+    },
+    "space-n6-k40": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "40",
+        "450",
+        "5",
+        "1000",
+        "output/phase11-comparison/space-n6-k40.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 13647872.0,
+        "elapsed_s": 3.723047833,
+        "seconds_per_model_day": 3.723047833,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.8674646199999996,
+        "radiation_calls": 249048.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 4.218359919168336e-15,
+        "toa_net_upward_w_m2": 77.66076781147122,
+        "minimum_temperature_k": 267.82213668341495,
+        "maximum_temperature_k": 288.2646464074789,
+        "mean_temperature_k": 277.73835356103166
+      }
+    },
+    "space-n12-k10": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "12",
+        "10",
+        "450",
+        "5",
+        "1000",
+        "output/phase11-comparison/space-n12-k10.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 15990784.0,
+        "elapsed_s": 3.968792666,
+        "seconds_per_model_day": 3.9687926660000006,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.9247702379999998,
+        "radiation_calls": 996192.0,
+        "retries": 0.0,
+        "linear_iterations": 149.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 2.771276549291634e-15,
+        "toa_net_upward_w_m2": 79.22161819060234,
+        "minimum_temperature_k": 269.66915838826196,
+        "maximum_temperature_k": 285.19402428369534,
+        "mean_temperature_k": 277.9651329568561
+      }
+    },
+    "space-n12-k20": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "12",
+        "20",
+        "450",
+        "5",
+        "1000",
+        "output/phase11-comparison/space-n12-k20.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 24985600.0,
+        "elapsed_s": 7.576606333,
+        "seconds_per_model_day": 7.576606333,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 1.7694644299999993,
+        "radiation_calls": 996192.0,
+        "retries": 0.0,
+        "linear_iterations": 136.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 2.2405737243010075e-15,
+        "toa_net_upward_w_m2": 78.7626599463061,
+        "minimum_temperature_k": 268.4830047167131,
+        "maximum_temperature_k": 287.0263810726153,
+        "mean_temperature_k": 277.85206672940865
+      }
+    },
+    "transparent_surface": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_transparent_surface.cfg",
+        "1",
+        "6",
+        "10",
+        "450",
+        "5",
+        "1000",
+        "output/phase11-comparison/transparent_surface.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6455296.0,
+        "elapsed_s": 0.9745925,
+        "seconds_per_model_day": 0.9745925,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.21741531199999986,
+        "radiation_calls": 249048.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": -1.9884225045806528e-16,
+        "interface_residual_w_m2": 0.0,
+        "toa_net_upward_w_m2": 146.20836217032232,
+        "minimum_temperature_k": 279.99233985030577,
+        "maximum_temperature_k": 284.5669690732018,
+        "mean_temperature_k": 280.43095519328426
+      }
+    },
+    "gray_shortwave": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_shortwave.cfg",
+        "1",
+        "6",
+        "10",
+        "450",
+        "5",
+        "1000",
+        "output/phase11-comparison/gray_shortwave.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6291456.0,
+        "elapsed_s": 0.991333792,
+        "seconds_per_model_day": 0.991333792,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.231526604,
+        "radiation_calls": 249048.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 6.351689905482344e-15,
+        "toa_net_upward_w_m2": 31.98390416257315,
+        "minimum_temperature_k": 270.31877391357636,
+        "maximum_temperature_k": 285.69766443210494,
+        "mean_temperature_k": 278.9349088292959
+      }
+    },
+    "gray_land_ocean": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_land_ocean.cfg",
+        "1",
+        "6",
+        "10",
+        "450",
+        "5",
+        "1000",
+        "output/phase11-comparison/gray_land_ocean.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 18219008.0,
+        "elapsed_s": 0.994103416,
+        "seconds_per_model_day": 0.994103416,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.23097704200000005,
+        "radiation_calls": 249048.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 3.3168645186837106e-15,
+        "toa_net_upward_w_m2": 80.14403324887762,
+        "minimum_temperature_k": 256.04293028245337,
+        "maximum_temperature_k": 308.8020014937645,
+        "mean_temperature_k": 278.3021459403666
+      }
+    },
+    "gray_tidally_locked": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_tidally_locked.cfg",
+        "1",
+        "6",
+        "10",
+        "450",
+        "5",
+        "1000",
+        "output/phase11-comparison/gray_tidally_locked.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6340608.0,
+        "elapsed_s": 0.983071875,
+        "seconds_per_model_day": 0.983071875,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.232078225,
+        "radiation_calls": 249048.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 6.361112626196437e-15,
+        "toa_net_upward_w_m2": 78.25812033334732,
+        "minimum_temperature_k": 269.66142835945664,
+        "maximum_temperature_k": 285.91285518477,
+        "mean_temperature_k": 277.9655808423078
+      }
+    },
+    "top-500": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "450",
+        "5",
+        "500",
+        "output/phase11-comparison/top-500.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6373376.0,
+        "elapsed_s": 0.98033925,
+        "seconds_per_model_day": 0.98033925,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.230964609,
+        "radiation_calls": 249048.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": 1.9784304316933132e-16,
+        "interface_residual_w_m2": 4.482630979013258e-15,
+        "toa_net_upward_w_m2": 78.24680722184814,
+        "minimum_temperature_k": 269.6797079270546,
+        "maximum_temperature_k": 285.177984752265,
+        "mean_temperature_k": 277.9754558558074
+      }
+    },
+    "top-250": {
+      "command": [
+        "build/release/tools/benchmark_radiation",
+        "configs/phase11_gray_uniform.cfg",
+        "1",
+        "6",
+        "10",
+        "450",
+        "5",
+        "250",
+        "output/phase11-comparison/top-250.csv"
+      ],
+      "returncode": 0,
+      "metrics": {
+        "peak_rss_bytes": 6275072.0,
+        "elapsed_s": 0.984045458,
+        "seconds_per_model_day": 0.984045458,
+        "accepted_steps": 192.0,
+        "median_dt_s": 450.0,
+        "minimum_dt_s": 450.0,
+        "radiation_seconds": 0.2313441580000002,
+        "radiation_calls": 249048.0,
+        "retries": 0.0,
+        "linear_iterations": 0.0,
+        "mass_relative_drift": 0.0,
+        "interface_residual_w_m2": 5.175263066752151e-15,
+        "toa_net_upward_w_m2": 78.24197659954162,
+        "minimum_temperature_k": 269.6846374186804,
+        "maximum_temperature_k": 285.1726468272964,
+        "mean_temperature_k": 277.98060480109
+      }
+    }
+  },
+  "one_day_comparisons": {
+    "time-1800-i3_vs_time-450-i5": {
+      "reference": "time-450-i5",
+      "temperature_rms_k": 0.00013839689393903396,
+      "toa_difference_w_m2": 0.00012875874891449257,
+      "passes_one_day_accuracy": true
+    },
+    "time-1800-i4_vs_time-450-i5": {
+      "reference": "time-450-i5",
+      "temperature_rms_k": 0.00014104542967348322,
+      "toa_difference_w_m2": 0.00012801284432839566,
+      "passes_one_day_accuracy": true
+    },
+    "time-1800-i5_vs_time-450-i5": {
+      "reference": "time-450-i5",
+      "temperature_rms_k": 0.00014088261454890352,
+      "toa_difference_w_m2": 0.0001280331677975255,
+      "passes_one_day_accuracy": true
+    },
+    "time-900-i3_vs_time-450-i5": {
+      "reference": "time-450-i5",
+      "temperature_rms_k": 5.3396573675131814e-05,
+      "toa_difference_w_m2": 2.4871705065265814e-05,
+      "passes_one_day_accuracy": true
+    },
+    "time-900-i4_vs_time-450-i5": {
+      "reference": "time-450-i5",
+      "temperature_rms_k": 5.3773176238161524e-05,
+      "toa_difference_w_m2": 2.4797947190791092e-05,
+      "passes_one_day_accuracy": true
+    },
+    "time-900-i5_vs_time-450-i5": {
+      "reference": "time-450-i5",
+      "temperature_rms_k": 5.061184547236696e-05,
+      "toa_difference_w_m2": 2.4782873524031857e-05,
+      "passes_one_day_accuracy": true
+    },
+    "time-450-i3_vs_time-450-i5": {
+      "reference": "time-450-i5",
+      "temperature_rms_k": 1.2909029372496144e-06,
+      "toa_difference_w_m2": 1.2785292824446515e-08,
+      "passes_one_day_accuracy": true
+    },
+    "time-450-i4_vs_time-450-i5": {
+      "reference": "time-450-i5",
+      "temperature_rms_k": 2.4126577995274947e-07,
+      "toa_difference_w_m2": 1.8368666587775806e-09,
+      "passes_one_day_accuracy": true
+    },
+    "time-450-i5_vs_time-450-i5": {
+      "reference": "time-450-i5",
+      "temperature_rms_k": 0.0,
+      "toa_difference_w_m2": 0.0,
+      "passes_one_day_accuracy": true
+    },
+    "time-1800-i5_vs_explicit": {
+      "reference": "explicit",
+      "temperature_rms_k": 0.00015024261942701768,
+      "toa_difference_w_m2": 0.00013683120054963638,
+      "passes_one_day_accuracy": true
+    },
+    "time-1800-i3_vs_time-1800-i5": {
+      "reference": "time-1800-i5",
+      "temperature_rms_k": 1.8275116970119246e-05,
+      "toa_difference_w_m2": 7.255811169670778e-07,
+      "passes_one_day_accuracy": true
+    },
+    "time-1800-i4_vs_time-1800-i5": {
+      "reference": "time-1800-i5",
+      "temperature_rms_k": 2.1567218659525386e-06,
+      "toa_difference_w_m2": 2.0323469129834848e-08,
+      "passes_one_day_accuracy": true
+    }
+  },
+  "pilot": {
+    "final_day": 1200.0,
+    "accepted_steps": 57610,
+    "windows": {
+      "first_100_days": {
+        "accepted_steps": 4800,
+        "median_dt_s": 1800.0,
+        "minimum_dt_s": 1800.0,
+        "maximum_dt_s": 1800.0,
+        "linear_iterations_per_step": 18.03729166666667,
+        "cfl_retries": 0.0,
+        "invariant_retries": 0.0,
+        "solver_retries": 0.0,
+        "toa_net_j": -2.738820979657931e+23,
+        "surface_storage_j": 3.531712648479613e+23,
+        "dry_thermal_j": -7.861758759581031e+22,
+        "drag_j": -2.6309155902715205e+21,
+        "diffusion_j": 0.0,
+        "surface_integration_residual_j": 3.0103198529912736e+16,
+        "integrated_toa_net_w_m2": -62.143375014600146,
+        "integrated_surface_storage_w_m2": 80.13395004214063,
+        "mean_temperature_k": {
+          "time_mean": 262.39201019839214,
+          "minimum": 257.35168139022096,
+          "maximum": 280.00000000000415
+        },
+        "mean_surface_temperature_k": {
+          "time_mean": 308.41040829314426,
+          "minimum": 288.00000000000006,
+          "maximum": 320.9693965887661
+        },
+        "maximum_wind_m_s": {
+          "time_mean": 27.94374640417767,
+          "minimum": 0.0,
+          "maximum": 46.90509418520828
+        },
+        "toa_net_w_m2": {
+          "time_mean": -63.56931590761171,
+          "minimum": -83.1595398279086,
+          "maximum": 109.34754649376227
+        },
+        "surface_storage_w_m2": {
+          "time_mean": 81.51932010305161,
+          "minimum": 42.851095215491355,
+          "maximum": 176.06595173314574
+        },
+        "unstable_fraction": {
+          "time_mean": 0.09313058670288267,
+          "minimum": 0.0,
+          "maximum": 0.10818543682486002
+        },
+        "minimum_dtheta_dz_k_m": {
+          "time_mean": -0.006422448979840587,
+          "minimum": -0.010185219578433217,
+          "maximum": 0.0
+        }
+      },
+      "last_100_days": {
+        "accepted_steps": 4801,
+        "median_dt_s": 1800.0,
+        "minimum_dt_s": 450.0,
+        "maximum_dt_s": 1800.0,
+        "linear_iterations_per_step": 16.660903978337846,
+        "cfl_retries": 0.0,
+        "invariant_retries": 0.0,
+        "solver_retries": 0.0,
+        "toa_net_j": 2.179186421221337e+22,
+        "surface_storage_j": -6.170282703030447e+20,
+        "dry_thermal_j": -1.5878083453171028e+22,
+        "drag_j": -4.4840903712181736e+21,
+        "diffusion_j": 0.0,
+        "surface_integration_residual_j": -1.3464414592304054e+16,
+        "integrated_toa_net_w_m2": 4.94427883913087,
+        "integrated_surface_storage_w_m2": -0.13999535745524017,
+        "mean_temperature_k": {
+          "time_mean": 287.8728103537306,
+          "minimum": 287.78259294095216,
+          "maximum": 288.04014684257174
+        },
+        "mean_surface_temperature_k": {
+          "time_mean": 342.2069061758331,
+          "minimum": 342.1424781722267,
+          "maximum": 342.2530532743859
+        },
+        "maximum_wind_m_s": {
+          "time_mean": 56.29145809138178,
+          "minimum": 51.28889191199576,
+          "maximum": 61.08720567423627
+        },
+        "toa_net_w_m2": {
+          "time_mean": 5.3331820325670485,
+          "minimum": 4.138109918580271,
+          "maximum": 5.932608907637929
+        },
+        "surface_storage_w_m2": {
+          "time_mean": -0.5247643282240457,
+          "minimum": -1.876846933921353,
+          "maximum": 1.8294766559490803
+        },
+        "unstable_fraction": {
+          "time_mean": 0.09790545299646426,
+          "minimum": 0.09313728884358183,
+          "maximum": 0.10220135815966883
+        },
+        "minimum_dtheta_dz_k_m": {
+          "time_mean": -0.007768046237934635,
+          "minimum": -0.010273452382480055,
+          "maximum": -0.005522588059626557
+        }
+      },
+      "after_200_days": {
+        "accepted_steps": 48010,
+        "median_dt_s": 1800.0,
+        "minimum_dt_s": 112.5,
+        "maximum_dt_s": 1800.0,
+        "linear_iterations_per_step": 16.466048739845867,
+        "cfl_retries": 0.0,
+        "invariant_retries": 0.0,
+        "solver_retries": 26.0,
+        "toa_net_j": 8.124523582437934e+22,
+        "surface_storage_j": 9.81726226764433e+22,
+        "dry_thermal_j": -1.2303331955056154e+23,
+        "drag_j": -5.070597772818181e+22,
+        "diffusion_j": 0.0,
+        "surface_integration_residual_j": -4.760615428608419e+16,
+        "integrated_toa_net_w_m2": 1.8434403692258172,
+        "integrated_surface_storage_w_m2": 2.227519853419196,
+        "mean_temperature_k": {
+          "time_mean": 286.98591394470924,
+          "minimum": 279.40712935180716,
+          "maximum": 288.04014684257174
+        },
+        "mean_surface_temperature_k": {
+          "time_mean": 341.157315754891,
+          "minimum": 332.97956041258897,
+          "maximum": 342.2530532743859
+        },
+        "maximum_wind_m_s": {
+          "time_mean": 55.28597473330017,
+          "minimum": 50.0776913880505,
+          "maximum": 63.412571414328426
+        },
+        "toa_net_w_m2": {
+          "time_mean": 2.170034432024812,
+          "minimum": -24.453152361892755,
+          "maximum": 5.932608907637929
+        },
+        "surface_storage_w_m2": {
+          "time_mean": 1.9007285451116516,
+          "minimum": -2.366287632961597,
+          "maximum": 20.250527051534025
+        },
+        "unstable_fraction": {
+          "time_mean": 0.09748605927473501,
+          "minimum": 0.09096145486155462,
+          "maximum": 0.10220135815966883
+        },
+        "minimum_dtheta_dz_k_m": {
+          "time_mean": -0.007136989773588183,
+          "minimum": -0.010273452382480055,
+          "maximum": -0.004698866982075077
+        }
+      }
+    },
+    "maximum_sampled_mass_relative_drift": 6.561794265116155e-15,
+    "final_energy_residual_j": 2.5276539643198425e+23,
+    "maximum_interface_residual_power_w": 3.335653547902626
+  },
+  "failed_pilot": {
+    "final_day": 896.2436710993449,
+    "accepted_steps": 43036,
+    "windows": {
+      "first_100_days": {
+        "accepted_steps": 4800,
+        "median_dt_s": 1800.0,
+        "minimum_dt_s": 1800.0,
+        "maximum_dt_s": 1800.0,
+        "linear_iterations_per_step": 11.687083333333334,
+        "cfl_retries": 0.0,
+        "invariant_retries": 0.0,
+        "solver_retries": 0.0,
+        "toa_net_j": -2.740839676268795e+23,
+        "surface_storage_j": 3.534301039924793e+23,
+        "dry_thermal_j": -7.868998417442549e+22,
+        "drag_j": -3.195108362799728e+21,
+        "diffusion_j": 0.0,
+        "surface_integration_residual_j": 1.0165629337596448e+16,
+        "mean_temperature_k": {
+          "time_mean": 262.3951906228427,
+          "minimum": 257.3466572782673,
+          "maximum": 280.00000000000415
+        },
+        "mean_surface_temperature_k": {
+          "time_mean": 308.4053819353596,
+          "minimum": 288.00000000000006,
+          "maximum": 320.9935598524789
+        },
+        "maximum_wind_m_s": {
+          "time_mean": 28.18107203387093,
+          "minimum": 0.0,
+          "maximum": 46.701558310720436
+        },
+        "toa_net_w_m2": {
+          "time_mean": -63.61571456170258,
+          "minimum": -83.29116238461837,
+          "maximum": 109.34754649376227
+        },
+        "surface_storage_w_m2": {
+          "time_mean": 81.57681805640526,
+          "minimum": 44.53324477462312,
+          "maximum": 176.06595173683027
+        },
+        "unstable_fraction": {
+          "time_mean": 0.09252370421542079,
+          "minimum": 0.0,
+          "maximum": 0.10801189058732541
+        },
+        "minimum_dtheta_dz_k_m": {
+          "time_mean": -0.006531048835043525,
+          "minimum": -0.011162169608960963,
+          "maximum": 0.0
+        }
+      },
+      "last_100_days": {
+        "accepted_steps": 4808,
+        "median_dt_s": 1800.0,
+        "minimum_dt_s": 0.0274658203125,
+        "maximum_dt_s": 1800.0,
+        "linear_iterations_per_step": 9.592346089850249,
+        "cfl_retries": 0.0,
+        "invariant_retries": 0.0,
+        "solver_retries": 79.0,
+        "toa_net_j": 2.083977495991744e+22,
+        "surface_storage_j": 1.1329679538362065e+21,
+        "dry_thermal_j": -1.6394585757291133e+22,
+        "drag_j": -5.202848913453911e+21,
+        "diffusion_j": 0.0,
+        "surface_integration_residual_j": -3181774120440540.5,
+        "mean_temperature_k": {
+          "time_mean": 287.87021680632563,
+          "minimum": 287.7522233917188,
+          "maximum": 288.05662669912226
+        },
+        "mean_surface_temperature_k": {
+          "time_mean": 342.1718682728634,
+          "minimum": 342.1260209507509,
+          "maximum": 342.23059473785975
+        },
+        "maximum_wind_m_s": {
+          "time_mean": 57.34116108925087,
+          "minimum": 52.55827285169564,
+          "maximum": 62.365738173089554
+        },
+        "toa_net_w_m2": {
+          "time_mean": 4.599681882599084,
+          "minimum": 4.152105711842918,
+          "maximum": 5.358760468005219
+        },
+        "surface_storage_w_m2": {
+          "time_mean": 0.3882818845693813,
+          "minimum": -1.3473316446362857,
+          "maximum": 2.004670054959647
+        },
+        "unstable_fraction": {
+          "time_mean": 0.09766467024907988,
+          "minimum": 0.09154559815422146,
+          "maximum": 0.10092076119129977
+        },
+        "minimum_dtheta_dz_k_m": {
+          "time_mean": -0.0074049910430200195,
+          "minimum": -0.00951816996685753,
+          "maximum": -0.00562344017201746
+        }
+      },
+      "after_200_days": {
+        "accepted_steps": 33436,
+        "median_dt_s": 1800.0,
+        "minimum_dt_s": 0.0274658203125,
+        "maximum_dt_s": 1800.0,
+        "linear_iterations_per_step": 9.640118435219524,
+        "cfl_retries": 0.0,
+        "invariant_retries": 0.0,
+        "solver_retries": 100.0,
+        "toa_net_j": 7.208559503525673e+21,
+        "surface_storage_j": 9.868540155766319e+22,
+        "dry_thermal_j": -6.81409316847279e+22,
+        "drag_j": -3.406330588209584e+22,
+        "diffusion_j": 0.0,
+        "surface_integration_residual_j": -4.151398216475599e+16,
+        "mean_temperature_k": {
+          "time_mean": 286.4926649979263,
+          "minimum": 279.5870462562746,
+          "maximum": 288.05662669912226
+        },
+        "mean_surface_temperature_k": {
+          "time_mean": 340.6309148564432,
+          "minimum": 333.0186025887472,
+          "maximum": 342.23059473785975
+        },
+        "maximum_wind_m_s": {
+          "time_mean": 56.11171273763537,
+          "minimum": 49.184924744197815,
+          "maximum": 62.365738173089554
+        },
+        "toa_net_w_m2": {
+          "time_mean": 0.17225942169199837,
+          "minimum": -23.824549110716905,
+          "maximum": 5.473029228799426
+        },
+        "surface_storage_w_m2": {
+          "time_mean": 3.2781730922619925,
+          "minimum": -2.4415655346686376,
+          "maximum": 19.344966276698926
+        },
+        "unstable_fraction": {
+          "time_mean": 0.09738739359225525,
+          "minimum": 0.09154559815422146,
+          "maximum": 0.10154908411019013
+        },
+        "minimum_dtheta_dz_k_m": {
+          "time_mean": -0.007655569588039009,
+          "minimum": -0.011088897735604815,
+          "maximum": -0.00562344017201746
+        }
+      }
+    },
+    "maximum_sampled_mass_relative_drift": 4.175687259619371e-15,
+    "final_energy_residual_j": 1.819396077476727e+23,
+    "maximum_interface_residual_power_w": 3.224091133422838
+  }
+}

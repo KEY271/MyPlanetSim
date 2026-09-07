@@ -1,5 +1,6 @@
 #include <cmath>
 #include <limits>
+#include <random>
 #include <vector>
 
 #include "myplanetsim/physics/gray_radiation.hpp"
@@ -290,6 +291,96 @@ MPS_TEST_CASE("small positive zenith cosine is not replaced by a floor") {
   const auto result = mps::gray_radiation_column(input);
   MPS_CHECK(result.shortwave_down_w_m2.front() > 0.0);
   MPS_CHECK_NEAR(result.shortwave_down_w_m2.back(), 0.0, 0.0);
+}
+
+MPS_TEST_CASE("smooth gray emission converges vertically to an independent integral") {
+  auto p = parameters();
+  p.shortwave_absorption_m2_kg = 0.0;
+  constexpr double top = 1000.0, bottom = 100000.0;
+  constexpr double source_top = 200.0, slope = 0.001;
+  const double attenuation =
+      p.longwave_diffusivity_factor * p.longwave_absorption_ref_m2_kg / 10.0;
+  const double surface_emission = mps::kStefanBoltzmannWm2K4 * std::pow(300.0, 4);
+  const auto exact_down = [&](double pressure) {
+    const auto b = source_top + slope * (pressure - top);
+    return b - slope / attenuation -
+           (source_top - slope / attenuation) *
+               std::exp(-attenuation * (pressure - top));
+  };
+  const auto exact_up = [&](double pressure) {
+    const auto b = source_top + slope * (pressure - top);
+    const auto bottom_b = source_top + slope * (bottom - top);
+    return b + slope / attenuation +
+           (surface_emission - bottom_b - slope / attenuation) *
+               std::exp(-attenuation * (bottom - pressure));
+  };
+  double previous_flux_error = 0.0, previous_heating_error = 0.0;
+  for (const std::size_t levels : {10U, 20U, 40U, 80U}) {
+    std::vector<double> pressure(levels + 1), temperature(levels);
+    for (std::size_t k = 0; k <= levels; ++k)
+      pressure[k] = top + (bottom - top) * static_cast<double>(k) / levels;
+    for (std::size_t k = 0; k < levels; ++k) {
+      const auto midpoint = 0.5 * (pressure[k] + pressure[k + 1]);
+      temperature[k] = std::pow(
+          (source_top + slope * (midpoint - top)) / mps::kStefanBoltzmannWm2K4, 0.25);
+    }
+    auto input = column_input(pressure, temperature, p);
+    input.stellar_flux_w_m2 = 0.0;
+    const auto result = mps::gray_radiation_column(input);
+    const double flux_error =
+        std::abs(result.longwave_up_w_m2.front() - exact_up(top)) +
+        std::abs(result.longwave_down_w_m2.back() - exact_down(bottom));
+    double heating_error = 0.0;
+    for (std::size_t k = 0; k < levels; ++k) {
+      const double exact = exact_up(pressure[k + 1]) - exact_down(pressure[k + 1]) -
+                           exact_up(pressure[k]) + exact_down(pressure[k]);
+      heating_error += std::abs(result.longwave_convergence_w_m2[k] - exact);
+    }
+    if (previous_flux_error > 0.0) {
+      MPS_CHECK(std::log2(previous_flux_error / flux_error) >= 1.9);
+      MPS_CHECK(std::log2(previous_heating_error / heating_error) >= 1.9);
+    }
+    previous_flux_error = flux_error;
+    previous_heating_error = heating_error;
+  }
+}
+
+MPS_TEST_CASE("randomized gray columns conserve each band independently") {
+  std::mt19937 random(11);
+  std::uniform_real_distribution<double> unit(0.0, 1.0);
+  for (int trial = 0; trial < 100; ++trial) {
+    const std::size_t levels = 1 + random() % 8;
+    std::vector<double> pressure(levels + 1), temperature(levels);
+    pressure[0] = 1000.0 * unit(random);
+    for (std::size_t k = 0; k < levels; ++k) {
+      pressure[k + 1] = pressure[k] + 100.0 + 20000.0 * unit(random);
+      temperature[k] = 150.0 + 200.0 * unit(random);
+    }
+    auto p = parameters();
+    p.shortwave_absorption_m2_kg *= 10.0 * unit(random);
+    p.longwave_absorption_ref_m2_kg *= 10.0 * unit(random);
+    p.longwave_pressure_exponent = 1.0 + unit(random);
+    auto input = column_input(pressure, temperature, p);
+    input.surface_albedo = unit(random);
+    input.surface_emissivity = unit(random);
+    input.cosine_solar_zenith = unit(random);
+    const auto result = mps::gray_radiation_column(input);
+    double sw = 0.0, lw = 0.0;
+    for (std::size_t k = 0; k < levels; ++k) {
+      sw += result.shortwave_convergence_w_m2[k];
+      lw += result.longwave_convergence_w_m2[k];
+    }
+    MPS_CHECK_NEAR(sw,
+                   result.shortwave_up_w_m2.back() - result.shortwave_down_w_m2.back() -
+                       result.shortwave_up_w_m2.front() +
+                       result.shortwave_down_w_m2.front(),
+                   1e-9);
+    MPS_CHECK_NEAR(lw,
+                   result.longwave_up_w_m2.back() - result.longwave_down_w_m2.back() -
+                       result.longwave_up_w_m2.front() +
+                       result.longwave_down_w_m2.front(),
+                   1e-9);
+  }
 }
 
 int main() { return mps::test::run_all(); }
