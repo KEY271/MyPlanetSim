@@ -217,7 +217,7 @@ CLI の CSV dispatch にある physics kind の分岐をすべて点検する。
 | 段階 | 作業・主な変更対象 | 受け入れ条件 |
 |---|---|---|
 | P11.01 | ADR 0017、符号・opacity・離散エネルギー関係、旧 baseline 固定 | 完了: 境界条件、source 変換、有限上端、比較条件を実装前に記録 |
-| P11.02 | config/metadata、gray column API、opacity | 不正設定拒否、薄層・`ps/g` 感度・全柱光学厚さ、旧 canonical identity |
+| P11.02 | config/metadata、gray column API、opacity | 完了: 不正設定拒否、薄層・`ps/g` 感度・全柱光学厚さ、旧 canonical identity |
 | P11.03 | 長波 sweep、透明短波、地表境界 | 等温柱の解析 flux、透明・厚い極限、`epsilon<1` の反射と保存 |
 | P11.04 | 短波吸収・地表反射の再吸収 | Beer--Lambert、昼夜・terminator、柱ごとの入射＝反射＋吸収 |
 | P11.05 | 独立 column の熱源・surface 結合、安定刻み | 一層平衡、過渡冷却、顕熱相殺、source-only 時間収束、retry |

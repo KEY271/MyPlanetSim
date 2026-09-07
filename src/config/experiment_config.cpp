@@ -56,6 +56,16 @@ constexpr std::array<std::string_view, 7> kSurfacePhysicsRequiredKeys{
     "surface.internal_heat_flux_w_m2",
 };
 
+constexpr std::array<std::string_view, 7> kRadiationRequiredKeys{
+    "radiation.shortwave_absorption_m2_kg",
+    "radiation.longwave_absorption_ref_m2_kg",
+    "radiation.reference_pressure_pa",
+    "radiation.longwave_pressure_exponent",
+    "radiation.longwave_diffusivity_factor",
+    "radiation.shortwave_diffuse_factor",
+    "radiation.cfl",
+};
+
 constexpr std::array<std::string_view, 2> kOdeRequiredKeys{"ode.initial_value",
                                                            "ode.decay_rate_s_1"};
 
@@ -589,6 +599,8 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.physics.kind = PhysicsKind::kPlanetaryNewtonian;
     else if (value == "surface_energy_balance")
       config.physics.kind = PhysicsKind::kSurfaceEnergyBalance;
+    else if (value == "gray_radiation")
+      config.physics.kind = PhysicsKind::kGrayRadiation;
     else
       throw parse_error(line, "unknown physics.kind " + std::string(value));
   } else if (key == "forcing.geometry") {
@@ -641,6 +653,25 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.surface->internal_heat_flux_w_m2 = parsed;
     else if (key == "surface.cfl")
       config.surface->cfl = parsed;
+    else
+      throw parse_error(line, "unknown key " + std::string(key));
+  } else if (key.starts_with("radiation.")) {
+    if (!config.radiation.has_value()) config.radiation.emplace();
+    const Real parsed = parse_real(value, line, key);
+    if (key == "radiation.shortwave_absorption_m2_kg")
+      config.radiation->shortwave_absorption_m2_kg = parsed;
+    else if (key == "radiation.longwave_absorption_ref_m2_kg")
+      config.radiation->longwave_absorption_ref_m2_kg = parsed;
+    else if (key == "radiation.reference_pressure_pa")
+      config.radiation->reference_pressure_pa = parsed;
+    else if (key == "radiation.longwave_pressure_exponent")
+      config.radiation->longwave_pressure_exponent = parsed;
+    else if (key == "radiation.longwave_diffusivity_factor")
+      config.radiation->longwave_diffusivity_factor = parsed;
+    else if (key == "radiation.shortwave_diffuse_factor")
+      config.radiation->shortwave_diffuse_factor = parsed;
+    else if (key == "radiation.cfl")
+      config.radiation->cfl = parsed;
     else
       throw parse_error(line, "unknown key " + std::string(key));
   } else if (key == "orography.input_file") {
@@ -941,10 +972,11 @@ void ExperimentConfig::validate() const {
       if (physics.geometry == ForcingGeometry::kSubstellar && !orbit.has_value())
         throw std::invalid_argument("substellar forcing requires orbit parameters");
     }
-    if (physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
+    if (physics.kind == PhysicsKind::kSurfaceEnergyBalance ||
+        physics.kind == PhysicsKind::kGrayRadiation) {
       if (!surface.has_value() || !orbit.has_value())
         throw std::invalid_argument(
-            "surface_energy_balance requires surface and orbit parameters");
+            "surface radiation physics requires surface and orbit parameters");
       require_positive(surface->land_heat_capacity_j_m2_k,
                        "surface.land_heat_capacity_j_m2_k");
       require_positive(surface->ocean_heat_capacity_j_m2_k,
@@ -961,6 +993,31 @@ void ExperimentConfig::validate() const {
                      "surface.internal_heat_flux_w_m2");
       if (!(surface->cfl > 0.0) || !(surface->cfl <= 1.0))
         throw std::invalid_argument("surface.cfl must be in (0, 1]");
+    }
+    if (physics.kind == PhysicsKind::kGrayRadiation) {
+      if (!radiation.has_value())
+        throw std::invalid_argument("gray_radiation requires radiation parameters");
+      require_non_negative(radiation->shortwave_absorption_m2_kg,
+                           "radiation.shortwave_absorption_m2_kg");
+      require_non_negative(radiation->longwave_absorption_ref_m2_kg,
+                           "radiation.longwave_absorption_ref_m2_kg");
+      require_positive(radiation->reference_pressure_pa,
+                       "radiation.reference_pressure_pa");
+      require_finite(radiation->longwave_pressure_exponent,
+                     "radiation.longwave_pressure_exponent");
+      if (radiation->longwave_pressure_exponent < 1.0)
+        throw std::invalid_argument(
+            "radiation.longwave_pressure_exponent must be at least one");
+      require_positive(radiation->longwave_diffusivity_factor,
+                       "radiation.longwave_diffusivity_factor");
+      require_positive(radiation->shortwave_diffuse_factor,
+                       "radiation.shortwave_diffuse_factor");
+      require_finite(radiation->cfl, "radiation.cfl");
+      if (!(radiation->cfl > 0.0 && radiation->cfl <= 1.0))
+        throw std::invalid_argument("radiation.cfl must be in (0, 1]");
+    } else if (radiation.has_value()) {
+      throw std::invalid_argument(
+          "radiation parameters are valid only for gray_radiation");
     }
     if (surface.has_value()) {
       require_finite(surface->uniform_land_fraction, "surface.uniform_land_fraction");
@@ -998,8 +1055,9 @@ void ExperimentConfig::validate() const {
     }
   } else if (physics.kind != PhysicsKind::kNone) {
     throw std::invalid_argument("physics is supported only for dry_hydrostatic");
-  } else if (surface.has_value()) {
-    throw std::invalid_argument("surface is supported only for dry_hydrostatic");
+  } else if (surface.has_value() || radiation.has_value()) {
+    throw std::invalid_argument(
+        "surface and radiation are supported only for dry_hydrostatic");
   }
 
   if (orography.kind == OrographyKind::kFlat) {
@@ -1084,7 +1142,7 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
       if (key.starts_with("grid.") || key.starts_with("transport.") ||
           key.starts_with("shallow_water.") || key.starts_with("diagnostics.") ||
           key.starts_with("orography.") || key.starts_with("physics.") ||
-          key.starts_with("surface.")) {
+          key.starts_with("surface.") || key.starts_with("radiation.")) {
         throw std::runtime_error("key " + key + " is not valid for ode experiment");
       }
     }
@@ -1093,7 +1151,8 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     for (const auto& key : seen_keys) {
       if (key.starts_with("ode.") || key.starts_with("shallow_water.") ||
           key.starts_with("diagnostics.") || key.starts_with("orography.") ||
-          key.starts_with("physics.") || key.starts_with("surface.")) {
+          key.starts_with("physics.") || key.starts_with("surface.") ||
+          key.starts_with("radiation.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for sphere_transport experiment");
       }
@@ -1102,7 +1161,8 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     require_keys(seen_keys, kShallowWaterRequiredKeys);
     for (const auto& key : seen_keys) {
       if (key.starts_with("ode.") || key.starts_with("transport.") ||
-          key.starts_with("physics.") || key.starts_with("surface.")) {
+          key.starts_with("physics.") || key.starts_with("surface.") ||
+          key.starts_with("radiation.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for shallow_water experiment");
       }
@@ -1113,7 +1173,7 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
       if (key.starts_with("ode.") || key.starts_with("grid.") ||
           key.starts_with("transport.") || key.starts_with("shallow_water.") ||
           key.starts_with("orography.") || key.starts_with("physics.") ||
-          key.starts_with("surface.")) {
+          key.starts_with("surface.") || key.starts_with("radiation.")) {
         throw std::runtime_error("key " + key +
                                  " is not valid for vertical_column experiment");
       }
@@ -1206,14 +1266,22 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
   const bool has_surface_physics_key =
       std::ranges::any_of(kSurfacePhysicsRequiredKeys,
                           [&](const auto key) { return seen_keys.contains(key); });
-  if (config.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
+  if (config.physics.kind == PhysicsKind::kSurfaceEnergyBalance ||
+      config.physics.kind == PhysicsKind::kGrayRadiation) {
     require_keys(seen_keys, kSurfacePhysicsRequiredKeys);
     if (!has_orbit_key || !has_surface_geography)
       throw std::runtime_error(
-          "surface_energy_balance requires orbit and surface geography keys");
+          "surface radiation physics requires orbit and surface geography keys");
   } else if (has_surface_physics_key) {
     throw std::runtime_error(
-        "surface physics parameters require surface_energy_balance");
+        "surface physics parameters require surface radiation physics");
+  }
+  const bool has_radiation_key = std::ranges::any_of(
+      kRadiationRequiredKeys, [&](const auto key) { return seen_keys.contains(key); });
+  if (config.physics.kind == PhysicsKind::kGrayRadiation) {
+    require_keys(seen_keys, kRadiationRequiredKeys);
+  } else if (has_radiation_key) {
+    throw std::runtime_error("radiation parameters require gray_radiation");
   }
 
   config.validate();
@@ -1420,7 +1488,8 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
                  << '\n'
                  << "surface.smoothing_passes = " << config.surface->smoothing_passes
                  << '\n';
-        if (config.physics.kind == PhysicsKind::kSurfaceEnergyBalance)
+        if (config.physics.kind == PhysicsKind::kSurfaceEnergyBalance ||
+            config.physics.kind == PhysicsKind::kGrayRadiation)
           output << "surface.land_heat_capacity_j_m2_k = "
                  << config.surface->land_heat_capacity_j_m2_k << '\n'
                  << "surface.ocean_heat_capacity_j_m2_k = "
@@ -1435,6 +1504,20 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
                  << config.surface->internal_heat_flux_w_m2 << '\n'
                  << "surface.cfl = " << config.surface->cfl << '\n';
       }
+      if (config.radiation.has_value())
+        output << "radiation.shortwave_absorption_m2_kg = "
+               << config.radiation->shortwave_absorption_m2_kg << '\n'
+               << "radiation.longwave_absorption_ref_m2_kg = "
+               << config.radiation->longwave_absorption_ref_m2_kg << '\n'
+               << "radiation.reference_pressure_pa = "
+               << config.radiation->reference_pressure_pa << '\n'
+               << "radiation.longwave_pressure_exponent = "
+               << config.radiation->longwave_pressure_exponent << '\n'
+               << "radiation.longwave_diffusivity_factor = "
+               << config.radiation->longwave_diffusivity_factor << '\n'
+               << "radiation.shortwave_diffuse_factor = "
+               << config.radiation->shortwave_diffuse_factor << '\n'
+               << "radiation.cfl = " << config.radiation->cfl << '\n';
     }
     if (config.orography.kind != OrographyKind::kFlat) {
       output << "orography.kind = " << orography_kind_name(config.orography.kind)
@@ -1540,6 +1623,8 @@ std::string_view physics_kind_name(const PhysicsKind kind) noexcept {
       return "planetary_newtonian";
     case PhysicsKind::kSurfaceEnergyBalance:
       return "surface_energy_balance";
+    case PhysicsKind::kGrayRadiation:
+      return "gray_radiation";
   }
   return "unknown";
 }

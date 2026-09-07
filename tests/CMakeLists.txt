@@ -67,6 +67,7 @@ target_compile_definitions(
 mps_add_test(unit.held_suarez test_held_suarez.cpp)
 mps_add_test(unit.planetary_newtonian test_planetary_newtonian.cpp)
 mps_add_test(unit.surface_energy_balance test_surface_energy_balance.cpp)
+mps_add_test(unit.gray_radiation test_gray_radiation.cpp)
 mps_add_test(phase8.planetary_core test_phase8_planetary_core.cpp)
 set_tests_properties(phase8.planetary_core PROPERTIES LABELS phase8_gate)
 set_tests_properties(

@@ -94,6 +94,7 @@ add_library(
   src/io/run_metadata.cpp
   src/phase0/ode_experiment.cpp
   src/physics/held_suarez.cpp
+  src/physics/gray_radiation.cpp
   src/physics/planetary_newtonian.cpp
   src/physics/surface_energy_balance.cpp
   src/numerics/compatible_operators.cpp

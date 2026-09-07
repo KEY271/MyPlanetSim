@@ -259,6 +259,62 @@ MPS_TEST_CASE("planetary forcing has conditional orbit requirements") {
   MPS_CHECK(parse(canonical.str()).orbit.has_value());
 }
 
+MPS_TEST_CASE("gray radiation configuration is strict and canonical") {
+  const std::string suffix = R"(
+physics.kind = gray_radiation
+orbit.period_s = 86400
+orbit.eccentricity = 0
+orbit.obliquity_rad = 0
+orbit.longitude_of_periapsis_rad = 0
+orbit.initial_mean_anomaly_rad = 0
+orbit.initial_substellar_longitude_rad = 0
+star.flux_at_semimajor_axis_w_m2 = 1361
+surface.geography = uniform
+surface.uniform_land_fraction = 0.25
+surface.land_heat_capacity_j_m2_k = 2000000
+surface.ocean_heat_capacity_j_m2_k = 200000000
+surface.initial_temperature_k = 288
+surface.albedo = 0.3
+surface.emissivity = 0.98
+surface.air_exchange_coefficient_w_m2_k = 10
+surface.internal_heat_flux_w_m2 = 0.1
+radiation.shortwave_absorption_m2_kg = 0
+radiation.longwave_absorption_ref_m2_kg = 0.0003
+radiation.reference_pressure_pa = 100000
+radiation.longwave_pressure_exponent = 2
+radiation.longwave_diffusivity_factor = 1.66
+radiation.shortwave_diffuse_factor = 1.66
+radiation.cfl = 0.5
+)";
+  const auto gray = parse(std::string(kValidDryHydrostaticConfig) + suffix);
+  MPS_CHECK(gray.physics.kind == mps::PhysicsKind::kGrayRadiation);
+  MPS_CHECK(gray.radiation.has_value());
+  MPS_CHECK_EQ(gray.radiation->longwave_pressure_exponent, 2.0);
+  std::ostringstream canonical;
+  mps::write_experiment_config(canonical, gray);
+  const auto round_trip = parse(canonical.str());
+  MPS_CHECK_EQ(mps::config_fingerprint(round_trip), mps::config_fingerprint(gray));
+  auto changed = round_trip;
+  changed.radiation->shortwave_absorption_m2_kg = 1e-5;
+  MPS_CHECK(mps::config_fingerprint(changed) != mps::config_fingerprint(gray));
+
+  auto missing = std::string(kValidDryHydrostaticConfig) + suffix;
+  const std::string required = "radiation.cfl = 0.5\n";
+  missing.erase(missing.find(required), required.size());
+  MPS_CHECK_THROWS_AS(parse(missing), std::runtime_error);
+
+  auto invalid = std::string(kValidDryHydrostaticConfig) + suffix;
+  const auto exponent = invalid.find("radiation.longwave_pressure_exponent = 2");
+  invalid.replace(exponent,
+                  std::string("radiation.longwave_pressure_exponent = 2").size(),
+                  "radiation.longwave_pressure_exponent = 0.5");
+  MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
+
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidDryHydrostaticConfig) +
+                            "radiation.shortwave_absorption_m2_kg = 0\n"),
+                      std::runtime_error);
+}
+
 MPS_TEST_CASE("registered Phase 8 presets parse and validate") {
   const auto root = std::filesystem::path(__FILE__).parent_path().parent_path();
   for (const auto* name :

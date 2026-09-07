@@ -52,7 +52,8 @@ enum class PhysicsKind {
   kNone,
   kHeldSuarez,
   kPlanetaryNewtonian,
-  kSurfaceEnergyBalance
+  kSurfaceEnergyBalance,
+  kGrayRadiation
 };
 enum class ForcingGeometry { kAxisymmetric, kSubstellar };
 enum class OrographyKind {
@@ -215,6 +216,16 @@ struct SurfaceParameters {
   Real cfl = 0.5;
 };
 
+struct RadiationParameters {
+  Real shortwave_absorption_m2_kg = 0.0;
+  Real longwave_absorption_ref_m2_kg = 0.0;
+  Real reference_pressure_pa = 0.0;
+  Real longwave_pressure_exponent = 1.0;
+  Real longwave_diffusivity_factor = 1.66;
+  Real shortwave_diffuse_factor = 1.66;
+  Real cfl = 0.5;
+};
+
 struct ExperimentConfig {
   ExperimentKind kind = ExperimentKind::kOde;
   PlanetParameters planet;
@@ -234,6 +245,7 @@ struct ExperimentConfig {
   std::filesystem::path source_directory;
   std::optional<OrbitParameters> orbit;
   std::optional<SurfaceParameters> surface;
+  std::optional<RadiationParameters> radiation;
 
   void validate() const;
 };
