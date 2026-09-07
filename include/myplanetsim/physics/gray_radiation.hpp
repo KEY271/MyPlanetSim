@@ -35,6 +35,8 @@ struct GrayRadiationColumn {
   std::vector<Real> longwave_down_w_m2;
   std::vector<Real> longwave_up_w_m2;
   std::vector<Real> net_flux_w_m2;
+  std::vector<Real> shortwave_convergence_w_m2;
+  std::vector<Real> longwave_convergence_w_m2;
   std::vector<Real> radiative_convergence_w_m2;
 };
 

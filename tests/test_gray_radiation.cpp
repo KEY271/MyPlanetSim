@@ -215,4 +215,81 @@ MPS_TEST_CASE("gray column flux convergence telescopes exactly") {
                  1e-12);
 }
 
+MPS_TEST_CASE("shortwave sweeps match Beer Lambert attenuation") {
+  auto p = parameters();
+  p.shortwave_absorption_m2_kg = 1.5e-4;
+  p.longwave_absorption_ref_m2_kg = 0.0;
+  const std::vector<mps::Real> pressure{1000.0, 20000.0, 70000.0, 100000.0};
+  const std::vector<mps::Real> temperature{220.0, 250.0, 280.0};
+  auto input = column_input(pressure, temperature, p);
+  input.cosine_solar_zenith = 0.4;
+  input.surface_albedo = 0.6;
+  const auto result = mps::gray_radiation_column(input);
+
+  mps::Real direct_path = 0.0;
+  for (std::size_t interface = 0; interface < pressure.size(); ++interface) {
+    MPS_CHECK_NEAR(result.shortwave_down_w_m2[interface],
+                   input.stellar_flux_w_m2 * input.cosine_solar_zenith *
+                       std::exp(-direct_path / input.cosine_solar_zenith),
+                   1e-12);
+    if (interface + 1 < pressure.size())
+      direct_path += result.optical_depth.shortwave[interface];
+  }
+  mps::Real diffuse_path = 0.0;
+  const mps::Real reflected = input.surface_albedo * result.shortwave_down_w_m2.back();
+  for (std::size_t reverse = pressure.size(); reverse > 0; --reverse) {
+    const std::size_t interface = reverse - 1;
+    MPS_CHECK_NEAR(result.shortwave_up_w_m2[interface],
+                   reflected * std::exp(-p.shortwave_diffuse_factor * diffuse_path),
+                   1e-12);
+    if (interface > 0) diffuse_path += result.optical_depth.shortwave[interface - 1];
+  }
+}
+
+MPS_TEST_CASE("shortwave input partitions into reflection and absorption") {
+  auto p = parameters();
+  p.shortwave_absorption_m2_kg = 9e-5;
+  const std::vector<mps::Real> pressure{0.0, 10000.0, 45000.0, 100000.0};
+  const std::vector<mps::Real> temperature{210.0, 250.0, 290.0};
+  auto input = column_input(pressure, temperature, p);
+  input.cosine_solar_zenith = 0.7;
+  input.surface_albedo = 0.35;
+  const auto result = mps::gray_radiation_column(input);
+  mps::Real atmospheric_absorption = 0.0;
+  for (const mps::Real convergence : result.shortwave_convergence_w_m2)
+    atmospheric_absorption += convergence;
+  const mps::Real surface_absorption =
+      (1.0 - input.surface_albedo) * result.shortwave_down_w_m2.back();
+  MPS_CHECK_NEAR(
+      result.shortwave_down_w_m2.front(),
+      result.shortwave_up_w_m2.front() + atmospheric_absorption + surface_absorption,
+      1e-12);
+}
+
+MPS_TEST_CASE("night and exact terminator have no shortwave flux") {
+  auto p = parameters();
+  p.shortwave_absorption_m2_kg = 1e8;
+  const std::vector<mps::Real> pressure{0.0, 100000.0};
+  const std::vector<mps::Real> temperature{250.0};
+  auto input = column_input(pressure, temperature, p);
+  input.cosine_solar_zenith = 0.0;
+  const auto result = mps::gray_radiation_column(input);
+  for (const mps::Real flux : result.shortwave_down_w_m2)
+    MPS_CHECK_NEAR(flux, 0.0, 0.0);
+  for (const mps::Real flux : result.shortwave_up_w_m2) MPS_CHECK_NEAR(flux, 0.0, 0.0);
+  MPS_CHECK_NEAR(result.shortwave_convergence_w_m2.front(), 0.0, 0.0);
+}
+
+MPS_TEST_CASE("small positive zenith cosine is not replaced by a floor") {
+  auto p = parameters();
+  p.shortwave_absorption_m2_kg = 1e-10;
+  const std::vector<mps::Real> pressure{0.0, 100000.0};
+  const std::vector<mps::Real> temperature{250.0};
+  auto input = column_input(pressure, temperature, p);
+  input.cosine_solar_zenith = 1e-12;
+  const auto result = mps::gray_radiation_column(input);
+  MPS_CHECK(result.shortwave_down_w_m2.front() > 0.0);
+  MPS_CHECK_NEAR(result.shortwave_down_w_m2.back(), 0.0, 0.0);
+}
+
 int main() { return mps::test::run_all(); }

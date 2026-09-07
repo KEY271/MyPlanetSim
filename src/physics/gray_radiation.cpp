@@ -107,9 +107,6 @@ void gray_radiation_column(const GrayRadiationColumnInput& input,
   if (input.surface_albedo < 0.0 || input.surface_albedo > 1.0 ||
       input.surface_emissivity < 0.0 || input.surface_emissivity > 1.0)
     throw std::invalid_argument("surface albedo and emissivity must be in [0, 1]");
-  if (input.parameters.shortwave_absorption_m2_kg != 0.0)
-    throw std::invalid_argument(
-        "shortwave absorption is not available in this radiation stage");
   for (const Real temperature : input.temperature_k)
     require_positive(temperature, "atmospheric temperature");
 
@@ -120,13 +117,32 @@ void gray_radiation_column(const GrayRadiationColumnInput& input,
   result.longwave_down_w_m2.resize(levels + 1);
   result.longwave_up_w_m2.resize(levels + 1);
   result.net_flux_w_m2.resize(levels + 1);
+  result.shortwave_convergence_w_m2.resize(levels);
+  result.longwave_convergence_w_m2.resize(levels);
   result.radiative_convergence_w_m2.resize(levels);
 
   const Real incoming_shortwave = input.stellar_flux_w_m2 * input.cosine_solar_zenith;
-  std::fill(result.shortwave_down_w_m2.begin(), result.shortwave_down_w_m2.end(),
-            incoming_shortwave);
-  std::fill(result.shortwave_up_w_m2.begin(), result.shortwave_up_w_m2.end(),
-            input.surface_albedo * incoming_shortwave);
+  result.shortwave_down_w_m2[0] = incoming_shortwave;
+  if (input.cosine_solar_zenith == 0.0) {
+    std::fill(result.shortwave_down_w_m2.begin(), result.shortwave_down_w_m2.end(),
+              0.0);
+    std::fill(result.shortwave_up_w_m2.begin(), result.shortwave_up_w_m2.end(), 0.0);
+  } else {
+    for (std::size_t level = 0; level < levels; ++level) {
+      result.shortwave_down_w_m2[level + 1] =
+          result.shortwave_down_w_m2[level] *
+          std::exp(-result.optical_depth.shortwave[level] / input.cosine_solar_zenith);
+    }
+    result.shortwave_up_w_m2[levels] =
+        input.surface_albedo * result.shortwave_down_w_m2[levels];
+    for (std::size_t reverse = levels; reverse > 0; --reverse) {
+      const std::size_t level = reverse - 1;
+      result.shortwave_up_w_m2[level] =
+          result.shortwave_up_w_m2[level + 1] *
+          std::exp(-input.parameters.shortwave_diffuse_factor *
+                   result.optical_depth.shortwave[level]);
+    }
+  }
 
   result.longwave_down_w_m2[0] = 0.0;
   for (std::size_t level = 0; level < levels; ++level) {
@@ -167,9 +183,17 @@ void gray_radiation_column(const GrayRadiationColumnInput& input,
         result.longwave_up_w_m2[interface] - result.longwave_down_w_m2[interface] +
         result.shortwave_up_w_m2[interface] - result.shortwave_down_w_m2[interface];
   }
-  for (std::size_t level = 0; level < levels; ++level)
+  for (std::size_t level = 0; level < levels; ++level) {
+    result.shortwave_convergence_w_m2[level] =
+        (result.shortwave_up_w_m2[level + 1] - result.shortwave_down_w_m2[level + 1]) -
+        (result.shortwave_up_w_m2[level] - result.shortwave_down_w_m2[level]);
+    result.longwave_convergence_w_m2[level] =
+        (result.longwave_up_w_m2[level + 1] - result.longwave_down_w_m2[level + 1]) -
+        (result.longwave_up_w_m2[level] - result.longwave_down_w_m2[level]);
     result.radiative_convergence_w_m2[level] =
-        result.net_flux_w_m2[level + 1] - result.net_flux_w_m2[level];
+        result.shortwave_convergence_w_m2[level] +
+        result.longwave_convergence_w_m2[level];
+  }
 }
 
 }  // namespace mps
