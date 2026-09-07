@@ -298,6 +298,46 @@ radiation.cfl = 0.5
   changed.radiation->shortwave_absorption_m2_kg = 1e-5;
   MPS_CHECK(mps::config_fingerprint(changed) != mps::config_fingerprint(gray));
 
+  const auto convection = parse(std::string(kValidDryHydrostaticConfig) + suffix +
+                                "convection.kind = dry_adjustment\n"
+                                "convection.stability_tolerance_k = 1e-10\n");
+  MPS_CHECK(convection.convection.kind == mps::ConvectionKind::kDryAdjustment);
+  std::ostringstream convection_text;
+  mps::write_experiment_config(convection_text, convection);
+  MPS_CHECK_EQ(mps::config_fingerprint(parse(convection_text.str())),
+               mps::config_fingerprint(convection));
+
+  auto boundary_suffix = suffix;
+  const auto exchange =
+      boundary_suffix.find("surface.air_exchange_coefficient_w_m2_k = 10");
+  boundary_suffix.replace(
+      exchange, std::string("surface.air_exchange_coefficient_w_m2_k = 10").size(),
+      "surface.air_exchange_coefficient_w_m2_k = 0");
+  const std::string boundary_keys = R"(
+boundary_layer.kind = bulk_k_profile
+boundary_layer.integrator = backward_euler
+boundary_layer.critical_richardson = 1
+boundary_layer.turbulent_prandtl = 1
+boundary_layer.gustiness_m_s = 1
+surface.land_roughness_momentum_m = 0.1
+surface.land_roughness_heat_m = 0.01
+surface.ocean_roughness_momentum_m = 0.001
+surface.ocean_roughness_heat_m = 0.0001
+)";
+  const auto boundary =
+      parse(std::string(kValidDryHydrostaticConfig) + boundary_suffix + boundary_keys);
+  MPS_CHECK(boundary.boundary_layer.kind == mps::BoundaryLayerKind::kBulkKProfile);
+  std::ostringstream boundary_text;
+  mps::write_experiment_config(boundary_text, boundary);
+  MPS_CHECK_EQ(mps::config_fingerprint(parse(boundary_text.str())),
+               mps::config_fingerprint(boundary));
+  MPS_CHECK_THROWS_AS(
+      parse(std::string(kValidDryHydrostaticConfig) + suffix + boundary_keys),
+      std::invalid_argument);
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidDryHydrostaticConfig) + suffix +
+                            "convection.kind = dry_adjustment\n"),
+                      std::runtime_error);
+
   auto missing = std::string(kValidDryHydrostaticConfig) + suffix;
   const std::string required = "radiation.cfl = 0.5\n";
   missing.erase(missing.find(required), required.size());

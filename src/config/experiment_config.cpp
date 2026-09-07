@@ -66,6 +66,18 @@ constexpr std::array<std::string_view, 7> kRadiationRequiredKeys{
     "radiation.cfl",
 };
 
+constexpr std::array<std::string_view, 2> kConvectionRequiredKeys{
+    "convection.kind", "convection.stability_tolerance_k"};
+
+constexpr std::array<std::string_view, 5> kBoundaryLayerRequiredKeys{
+    "boundary_layer.kind", "boundary_layer.integrator",
+    "boundary_layer.critical_richardson", "boundary_layer.turbulent_prandtl",
+    "boundary_layer.gustiness_m_s"};
+
+constexpr std::array<std::string_view, 4> kBoundaryLayerSurfaceRequiredKeys{
+    "surface.land_roughness_momentum_m", "surface.land_roughness_heat_m",
+    "surface.ocean_roughness_momentum_m", "surface.ocean_roughness_heat_m"};
+
 constexpr std::array<std::string_view, 2> kOdeRequiredKeys{"ode.initial_value",
                                                            "ode.decay_rate_s_1"};
 
@@ -603,6 +615,34 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.physics.kind = PhysicsKind::kGrayRadiation;
     else
       throw parse_error(line, "unknown physics.kind " + std::string(value));
+  } else if (key == "convection.kind") {
+    if (value == "none")
+      config.convection.kind = ConvectionKind::kNone;
+    else if (value == "dry_adjustment")
+      config.convection.kind = ConvectionKind::kDryAdjustment;
+    else
+      throw parse_error(line, "unknown convection.kind " + std::string(value));
+  } else if (key == "convection.stability_tolerance_k") {
+    config.convection.stability_tolerance_k = parse_real(value, line, key);
+  } else if (key == "boundary_layer.kind") {
+    if (value == "none")
+      config.boundary_layer.kind = BoundaryLayerKind::kNone;
+    else if (value == "bulk_k_profile")
+      config.boundary_layer.kind = BoundaryLayerKind::kBulkKProfile;
+    else
+      throw parse_error(line, "unknown boundary_layer.kind " + std::string(value));
+  } else if (key == "boundary_layer.integrator") {
+    if (value == "backward_euler")
+      config.boundary_layer.integrator = BoundaryLayerIntegrator::kBackwardEuler;
+    else
+      throw parse_error(line,
+                        "unknown boundary_layer.integrator " + std::string(value));
+  } else if (key == "boundary_layer.critical_richardson") {
+    config.boundary_layer.critical_richardson = parse_real(value, line, key);
+  } else if (key == "boundary_layer.turbulent_prandtl") {
+    config.boundary_layer.turbulent_prandtl = parse_real(value, line, key);
+  } else if (key == "boundary_layer.gustiness_m_s") {
+    config.boundary_layer.gustiness_m_s = parse_real(value, line, key);
   } else if (key == "forcing.geometry") {
     if (value == "axisymmetric")
       config.physics.geometry = ForcingGeometry::kAxisymmetric;
@@ -651,6 +691,14 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.surface->air_exchange_coefficient_w_m2_k = parsed;
     else if (key == "surface.internal_heat_flux_w_m2")
       config.surface->internal_heat_flux_w_m2 = parsed;
+    else if (key == "surface.land_roughness_momentum_m")
+      config.surface->land_roughness_momentum_m = parsed;
+    else if (key == "surface.land_roughness_heat_m")
+      config.surface->land_roughness_heat_m = parsed;
+    else if (key == "surface.ocean_roughness_momentum_m")
+      config.surface->ocean_roughness_momentum_m = parsed;
+    else if (key == "surface.ocean_roughness_heat_m")
+      config.surface->ocean_roughness_heat_m = parsed;
     else if (key == "surface.cfl")
       config.surface->cfl = parsed;
     else
@@ -708,6 +756,11 @@ void ExperimentConfig::validate() const {
        semi_implicit.has_value()))
     throw std::invalid_argument(
         "semi-implicit integration is valid only for dry_hydrostatic");
+  if (kind != ExperimentKind::kDryHydrostatic &&
+      (convection.kind != ConvectionKind::kNone ||
+       boundary_layer.kind != BoundaryLayerKind::kNone))
+    throw std::invalid_argument(
+        "convection and boundary layer are valid only for dry_hydrostatic");
   require_non_negative(run.start_time_s, "run.start_time_s");
   require_finite(run.end_time_s, "run.end_time_s");
   require_positive(run.time_step_s, "run.time_step_s");
@@ -852,6 +905,35 @@ void ExperimentConfig::validate() const {
       throw std::invalid_argument("grid.cells_per_panel must be positive");
     if (vertical.surface_geopotential_m2_s2 != 0.0)
       throw std::invalid_argument("dry_hydrostatic requires flat surface geopotential");
+    if (convection.kind != ConvectionKind::kNone) {
+      if (physics.kind != PhysicsKind::kGrayRadiation)
+        throw std::invalid_argument(
+            "dry convective adjustment requires gray_radiation physics");
+      require_non_negative(convection.stability_tolerance_k,
+                           "convection.stability_tolerance_k");
+    }
+    if (boundary_layer.kind != BoundaryLayerKind::kNone) {
+      if (physics.kind != PhysicsKind::kGrayRadiation)
+        throw std::invalid_argument("boundary layer requires gray_radiation physics");
+      require_positive(boundary_layer.critical_richardson,
+                       "boundary_layer.critical_richardson");
+      require_positive(boundary_layer.turbulent_prandtl,
+                       "boundary_layer.turbulent_prandtl");
+      require_non_negative(boundary_layer.gustiness_m_s,
+                           "boundary_layer.gustiness_m_s");
+      if (!surface.has_value())
+        throw std::invalid_argument("boundary layer requires surface parameters");
+      require_positive(surface->land_roughness_momentum_m,
+                       "surface.land_roughness_momentum_m");
+      require_positive(surface->land_roughness_heat_m, "surface.land_roughness_heat_m");
+      require_positive(surface->ocean_roughness_momentum_m,
+                       "surface.ocean_roughness_momentum_m");
+      require_positive(surface->ocean_roughness_heat_m,
+                       "surface.ocean_roughness_heat_m");
+      if (surface->air_exchange_coefficient_w_m2_k != 0.0)
+        throw std::invalid_argument(
+            "boundary layer requires zero legacy air exchange coefficient");
+    }
     require_finite(dry_hydrostatic.cfl, "dry_hydrostatic.cfl");
     if (!(dry_hydrostatic.cfl > 0.0 && dry_hydrostatic.cfl <= 1.0))
       throw std::invalid_argument("dry_hydrostatic.cfl must be in (0, 1]");
@@ -1284,6 +1366,35 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     throw std::runtime_error("radiation parameters require gray_radiation");
   }
 
+  const bool has_convection_key = std::ranges::any_of(
+      seen_keys, [](const auto& key) { return key.starts_with("convection."); });
+  if (config.kind != ExperimentKind::kDryHydrostatic && has_convection_key)
+    throw std::runtime_error("convection keys are valid only for dry_hydrostatic");
+  if (config.convection.kind == ConvectionKind::kDryAdjustment) {
+    require_keys(seen_keys, kConvectionRequiredKeys);
+  } else if (seen_keys.contains("convection.stability_tolerance_k")) {
+    throw std::runtime_error("convection parameters require dry_adjustment");
+  }
+
+  const bool has_boundary_layer_key = std::ranges::any_of(
+      seen_keys, [](const auto& key) { return key.starts_with("boundary_layer."); });
+  const bool has_boundary_surface_key =
+      std::ranges::any_of(kBoundaryLayerSurfaceRequiredKeys,
+                          [&](const auto key) { return seen_keys.contains(key); });
+  if (config.kind != ExperimentKind::kDryHydrostatic &&
+      (has_boundary_layer_key || has_boundary_surface_key))
+    throw std::runtime_error("boundary-layer keys are valid only for dry_hydrostatic");
+  if (config.boundary_layer.kind == BoundaryLayerKind::kBulkKProfile) {
+    require_keys(seen_keys, kBoundaryLayerRequiredKeys);
+    require_keys(seen_keys, kBoundaryLayerSurfaceRequiredKeys);
+  } else if (has_boundary_surface_key ||
+             std::ranges::any_of(seen_keys, [](const auto& key) {
+               return key.starts_with("boundary_layer.") &&
+                      key != "boundary_layer.kind";
+             })) {
+    throw std::runtime_error("boundary-layer parameters require bulk_k_profile");
+  }
+
   config.validate();
   return config;
 }
@@ -1471,6 +1582,23 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
       }
       if (config.physics.kind != PhysicsKind::kNone)
         output << "physics.kind = " << physics_kind_name(config.physics.kind) << '\n';
+      if (config.convection.kind != ConvectionKind::kNone)
+        output << "convection.kind = " << convection_kind_name(config.convection.kind)
+               << '\n'
+               << "convection.stability_tolerance_k = "
+               << config.convection.stability_tolerance_k << '\n';
+      if (config.boundary_layer.kind != BoundaryLayerKind::kNone)
+        output << "boundary_layer.kind = "
+               << boundary_layer_kind_name(config.boundary_layer.kind) << '\n'
+               << "boundary_layer.integrator = "
+               << boundary_layer_integrator_name(config.boundary_layer.integrator)
+               << '\n'
+               << "boundary_layer.critical_richardson = "
+               << config.boundary_layer.critical_richardson << '\n'
+               << "boundary_layer.turbulent_prandtl = "
+               << config.boundary_layer.turbulent_prandtl << '\n'
+               << "boundary_layer.gustiness_m_s = "
+               << config.boundary_layer.gustiness_m_s << '\n';
       if (config.physics.kind == PhysicsKind::kPlanetaryNewtonian)
         output << "forcing.geometry = "
                << forcing_geometry_name(config.physics.geometry) << '\n';
@@ -1503,6 +1631,15 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
                  << "surface.internal_heat_flux_w_m2 = "
                  << config.surface->internal_heat_flux_w_m2 << '\n'
                  << "surface.cfl = " << config.surface->cfl << '\n';
+        if (config.boundary_layer.kind != BoundaryLayerKind::kNone)
+          output << "surface.land_roughness_momentum_m = "
+                 << config.surface->land_roughness_momentum_m << '\n'
+                 << "surface.land_roughness_heat_m = "
+                 << config.surface->land_roughness_heat_m << '\n'
+                 << "surface.ocean_roughness_momentum_m = "
+                 << config.surface->ocean_roughness_momentum_m << '\n'
+                 << "surface.ocean_roughness_heat_m = "
+                 << config.surface->ocean_roughness_heat_m << '\n';
       }
       if (config.radiation.has_value())
         output << "radiation.shortwave_absorption_m2_kg = "
@@ -1625,6 +1762,35 @@ std::string_view physics_kind_name(const PhysicsKind kind) noexcept {
       return "surface_energy_balance";
     case PhysicsKind::kGrayRadiation:
       return "gray_radiation";
+  }
+  return "unknown";
+}
+
+std::string_view convection_kind_name(const ConvectionKind kind) noexcept {
+  switch (kind) {
+    case ConvectionKind::kNone:
+      return "none";
+    case ConvectionKind::kDryAdjustment:
+      return "dry_adjustment";
+  }
+  return "unknown";
+}
+
+std::string_view boundary_layer_kind_name(const BoundaryLayerKind kind) noexcept {
+  switch (kind) {
+    case BoundaryLayerKind::kNone:
+      return "none";
+    case BoundaryLayerKind::kBulkKProfile:
+      return "bulk_k_profile";
+  }
+  return "unknown";
+}
+
+std::string_view boundary_layer_integrator_name(
+    const BoundaryLayerIntegrator integrator) noexcept {
+  switch (integrator) {
+    case BoundaryLayerIntegrator::kBackwardEuler:
+      return "backward_euler";
   }
   return "unknown";
 }

@@ -55,6 +55,9 @@ enum class PhysicsKind {
   kSurfaceEnergyBalance,
   kGrayRadiation
 };
+enum class ConvectionKind { kNone, kDryAdjustment };
+enum class BoundaryLayerKind { kNone, kBulkKProfile };
+enum class BoundaryLayerIntegrator { kBackwardEuler };
 enum class ForcingGeometry { kAxisymmetric, kSubstellar };
 enum class OrographyKind {
   kFlat,
@@ -197,6 +200,19 @@ struct PhysicsParameters {
   ForcingGeometry geometry = ForcingGeometry::kAxisymmetric;
 };
 
+struct ConvectionParameters {
+  ConvectionKind kind = ConvectionKind::kNone;
+  Real stability_tolerance_k = 1e-10;
+};
+
+struct BoundaryLayerParameters {
+  BoundaryLayerKind kind = BoundaryLayerKind::kNone;
+  BoundaryLayerIntegrator integrator = BoundaryLayerIntegrator::kBackwardEuler;
+  Real critical_richardson = 1.0;
+  Real turbulent_prandtl = 1.0;
+  Real gustiness_m_s = 1.0;
+};
+
 struct SurfaceParameters {
   SurfaceGeography geography = SurfaceGeography::kUniform;
   Real uniform_land_fraction = 0.0;
@@ -211,6 +227,10 @@ struct SurfaceParameters {
   Real emissivity = 0.0;
   Real air_exchange_coefficient_w_m2_k = 0.0;
   Real internal_heat_flux_w_m2 = 0.0;
+  Real land_roughness_momentum_m = 0.0;
+  Real land_roughness_heat_m = 0.0;
+  Real ocean_roughness_momentum_m = 0.0;
+  Real ocean_roughness_heat_m = 0.0;
   // Stability fraction for the explicit surface reservoir (ADR 0011):
   // dt <= cfl * min_c C_surface[c] / (4 eps sigma_SB T_s[c]^3).
   Real cfl = 0.5;
@@ -239,6 +259,8 @@ struct ExperimentConfig {
   std::optional<SemiImplicitParameters> semi_implicit{};
   OrographyParameters orography{};
   PhysicsParameters physics{};
+  ConvectionParameters convection{};
+  BoundaryLayerParameters boundary_layer{};
   DiagnosticsParameters diagnostics{};
   std::string output_directory;
   // Runtime-only origin used to resolve portable config-relative inputs.
@@ -276,6 +298,11 @@ struct ExperimentConfig {
     DryHydrostaticTimeIntegrator integrator) noexcept;
 [[nodiscard]] std::string_view orography_kind_name(OrographyKind kind) noexcept;
 [[nodiscard]] std::string_view physics_kind_name(PhysicsKind kind) noexcept;
+[[nodiscard]] std::string_view convection_kind_name(ConvectionKind kind) noexcept;
+[[nodiscard]] std::string_view boundary_layer_kind_name(
+    BoundaryLayerKind kind) noexcept;
+[[nodiscard]] std::string_view boundary_layer_integrator_name(
+    BoundaryLayerIntegrator integrator) noexcept;
 [[nodiscard]] std::string_view forcing_geometry_name(ForcingGeometry geometry) noexcept;
 [[nodiscard]] std::string_view surface_geography_name(
     SurfaceGeography geography) noexcept;

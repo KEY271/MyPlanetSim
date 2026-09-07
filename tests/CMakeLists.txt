@@ -65,6 +65,7 @@ target_compile_definitions(
   smoke.presets PRIVATE MPS_CONFIG_DIRECTORY="${CMAKE_SOURCE_DIR}/configs"
 )
 mps_add_test(unit.held_suarez test_held_suarez.cpp)
+mps_add_test(unit.dry_convective_adjustment test_dry_convective_adjustment.cpp)
 mps_add_test(unit.planetary_newtonian test_planetary_newtonian.cpp)
 mps_add_test(unit.surface_energy_balance test_surface_energy_balance.cpp)
 mps_add_test(unit.gray_radiation test_gray_radiation.cpp)
