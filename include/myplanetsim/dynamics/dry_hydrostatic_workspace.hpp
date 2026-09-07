@@ -4,6 +4,7 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_reconstruction.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
 #include "myplanetsim/physics/dry_convective_adjustment.hpp"
+#include "myplanetsim/physics/dry_mixing_coupling.hpp"
 #include "myplanetsim/physics/gray_radiation_coupling.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
 #include "myplanetsim/physics/surface_energy_balance.hpp"
@@ -32,6 +33,8 @@ struct DryHydrostaticWorkspace {
   GrayRadiationCouplingWorkspace gray_radiation_workspace;
   DryConvectiveAdjustmentResult convective_adjustment;
   DryConvectiveAdjustmentWorkspace convective_adjustment_workspace;
+  DryMixingStepDiagnostics dry_mixing_diagnostics;
+  DryMixingCouplingWorkspace dry_mixing_workspace;
 };
 
 }  // namespace mps

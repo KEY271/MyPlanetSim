@@ -784,11 +784,11 @@ void DryHydrostaticDriver::rhs_with_components(
         evaluate_orbit(*config_.orbit, config_.planet.rotation_rate_rad_s,
                        s.time_s - config_.run.start_time_s);
     const auto radiation_wall_start = std::chrono::steady_clock::now();
-    gray_radiation_tendency(grid_, coordinate_, *surface_boundary_,
-                            s.surface_temperature_k, d, s.surface_pressure_pa,
-                            config_.planet, *config_.surface, *config_.radiation,
-                            orbit_state, workspace.gray_radiation_physics,
-                            workspace.gray_radiation_workspace);
+    gray_radiation_tendency(
+        grid_, coordinate_, *surface_boundary_, s.surface_temperature_k, d,
+        s.surface_pressure_pa, config_.planet, *config_.surface, *config_.radiation,
+        orbit_state, config_.boundary_layer.kind == BoundaryLayerKind::kNone,
+        workspace.gray_radiation_physics, workspace.gray_radiation_workspace);
     radiation_wall_seconds =
         std::chrono::duration<Real>(std::chrono::steady_clock::now() -
                                     radiation_wall_start)
@@ -886,8 +886,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       gray_radiation_tendency(
           grid_, coordinate_, *surface_boundary_, state.surface_temperature_k, derived,
           state.surface_pressure_pa, config_.planet, *config_.surface,
-          *config_.radiation, orbit_state, workspace_.gray_radiation_physics,
-          workspace_.gray_radiation_workspace);
+          *config_.radiation, orbit_state,
+          config_.boundary_layer.kind == BoundaryLayerKind::kNone,
+          workspace_.gray_radiation_physics, workspace_.gray_radiation_workspace);
       sampled.radiation_rates = workspace_.gray_radiation_physics.diagnostics;
       if (step.accepted_time_step_s == 0.0)
         sampled.radiation_stable_time_step_s =
@@ -960,9 +961,12 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       std::size_t invariant_retry_count = 0;
       std::size_t solver_retry_count = 0;
       std::size_t radiation_column_call_count = 0;
+      std::size_t boundary_layer_column_call_count = 0;
       std::size_t convection_column_call_count = 0;
       Real radiation_wall_seconds = 0.0;
+      DryMixingStepDiagnostics accepted_boundary_layer{};
       DryConvectionDiagnostics accepted_convection{};
+      std::vector<Real> accepted_radiation_surface_temperature;
       const DryHydrostaticState initial = s;
       if (reference_is_per_step) update_semi_implicit_reference(initial);
       const auto& reference = *semi_implicit_reference_column_;
@@ -1069,6 +1073,15 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
               final_scaled.component, attempted_dt));
         candidate.step = initial.step + 1;
         diagnose_and_validate(candidate);
+        accepted_radiation_surface_temperature = candidate.surface_temperature_k;
+        if (config_.boundary_layer.kind != BoundaryLayerKind::kNone) {
+          apply_dry_boundary_layer(
+              grid_, coordinate_, *surface_boundary_, candidate, workspace_.derived,
+              config_.planet, *config_.surface, config_.boundary_layer, attempted_dt,
+              accepted_boundary_layer, workspace_.dry_mixing_workspace);
+          boundary_layer_column_call_count += grid_.cell_count();
+          diagnose_and_validate(candidate);
+        }
         accepted_convection =
             apply_dry_convection(config_, grid_, candidate, workspace_.derived,
                                  workspace_.convective_adjustment,
@@ -1120,6 +1133,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
               (explicit_weight * initial_rhs.physics_diagnostics.rayleigh_drag_work_w +
                parameters.implicit_weight *
                    candidate_rhs.physics_diagnostics.rayleigh_drag_work_w),
+          .boundary_layer = accepted_boundary_layer,
           .convection = accepted_convection,
           .diffusion_energy_contribution_j =
               dt * (explicit_weight * initial_rhs.diffusion_kinetic_energy_rate_w +
@@ -1155,6 +1169,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           .invariant_retry_count = invariant_retry_count,
           .solver_retry_count = solver_retry_count,
           .radiation_column_call_count = radiation_column_call_count,
+          .boundary_layer_column_call_count = boundary_layer_column_call_count,
           .convection_column_call_count = convection_column_call_count,
           .radiation_wall_seconds = radiation_wall_seconds,
           .wall_seconds_rhs = rhs_wall_seconds,
@@ -1166,7 +1181,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       if (config_.physics.kind == PhysicsKind::kGrayRadiation)
         step.radiation_budget = integrate_gray_radiation_budget(
             grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,
-            s.surface_temperature_k, dt, step.radiation_rates);
+            accepted_radiation_surface_temperature, dt, step.radiation_rates);
       if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
         const auto weighted = [&](const Real first, const Real second) {
           return explicit_weight * first + parameters.implicit_weight * second;
@@ -1191,7 +1206,8 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
             grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,
             s.surface_temperature_k, dt, rates, rates, rates);
       }
-      if (config_.convection.kind == ConvectionKind::kNone) {
+      if (config_.convection.kind == ConvectionKind::kNone &&
+          config_.boundary_layer.kind == BoundaryLayerKind::kNone) {
         std::swap(initial_rhs, candidate_rhs);
         initial_rhs_is_current = true;
       } else {
@@ -1220,8 +1236,11 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     const Real requested_dt = std::min(config_.run.time_step_s, end - initial.time_s);
     std::size_t cfl_retry_count = 0;
     std::size_t invariant_retry_count = 0;
+    std::size_t boundary_layer_column_call_count = 0;
     std::size_t convection_column_call_count = 0;
+    DryMixingStepDiagnostics accepted_boundary_layer{};
     DryConvectionDiagnostics accepted_convection{};
+    std::vector<Real> accepted_radiation_surface_temperature;
     rhs(initial, rhs1);
     std::size_t radiation_column_call_count = rhs1.radiation_column_call_count;
     Real radiation_wall_seconds = rhs1.radiation_wall_seconds;
@@ -1289,6 +1308,15 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       project_momentum(next);
       try {
         diagnose_and_validate(next);
+        accepted_radiation_surface_temperature = next.surface_temperature_k;
+        if (config_.boundary_layer.kind != BoundaryLayerKind::kNone) {
+          apply_dry_boundary_layer(grid_, coordinate_, *surface_boundary_, next,
+                                   workspace_.derived, config_.planet, *config_.surface,
+                                   config_.boundary_layer, dt, accepted_boundary_layer,
+                                   workspace_.dry_mixing_workspace);
+          boundary_layer_column_call_count += grid_.cell_count();
+          diagnose_and_validate(next);
+        }
         accepted_convection = apply_dry_convection(
             config_, grid_, next, workspace_.derived, workspace_.convective_adjustment,
             workspace_.convective_adjustment_workspace);
@@ -1311,6 +1339,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
               dt * (rhs1.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
                     rhs2.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
                     2.0 * rhs3.physics_diagnostics.rayleigh_drag_work_w / 3.0),
+          .boundary_layer = accepted_boundary_layer,
           .convection = accepted_convection,
           .diffusion_energy_contribution_j =
               dt * (rhs1.diffusion_kinetic_energy_rate_w / 6.0 +
@@ -1325,6 +1354,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           .cfl_retry_count = cfl_retry_count,
           .invariant_retry_count = invariant_retry_count,
           .radiation_column_call_count = radiation_column_call_count,
+          .boundary_layer_column_call_count = boundary_layer_column_call_count,
           .convection_column_call_count = convection_column_call_count,
           .radiation_wall_seconds = radiation_wall_seconds};
       if (config_.physics.kind == PhysicsKind::kGrayRadiation)
@@ -1334,7 +1364,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       if (config_.physics.kind == PhysicsKind::kGrayRadiation)
         step.radiation_budget = integrate_gray_radiation_budget(
             grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,
-            s.surface_temperature_k, dt, step.radiation_rates);
+            accepted_radiation_surface_temperature, dt, step.radiation_rates);
       if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
         step.surface_budget = integrate_surface_energy_budget(
             grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,

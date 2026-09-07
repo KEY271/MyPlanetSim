@@ -15,8 +15,8 @@ void gray_radiation_tendency(
     const DryHydrostaticDerived& atmosphere,
     const std::span<const Real> surface_pressure_pa, const PlanetParameters& planet,
     const SurfaceParameters& surface, const RadiationParameters& radiation,
-    const OrbitState& orbit_state, GrayRadiationTendency& result,
-    GrayRadiationCouplingWorkspace& workspace) {
+    const OrbitState& orbit_state, const bool include_legacy_surface_exchange,
+    GrayRadiationTendency& result, GrayRadiationCouplingWorkspace& workspace) {
   const std::size_t cells = atmosphere.cells;
   const std::size_t levels = atmosphere.levels;
   const std::size_t volume = cells * levels;
@@ -80,7 +80,9 @@ void gray_radiation_tendency(
         .exner_full = exner,
         .heat_capacity_cp_j_kg_k = planet.heat_capacity_cp_j_kg_k,
         .surface_heat_capacity_j_m2_k = capacity,
-        .air_exchange_coefficient_w_m2_k = surface.air_exchange_coefficient_w_m2_k,
+        .air_exchange_coefficient_w_m2_k = include_legacy_surface_exchange
+                                               ? surface.air_exchange_coefficient_w_m2_k
+                                               : 0.0,
         .internal_heat_flux_w_m2 = surface.internal_heat_flux_w_m2,
     };
     gray_radiative_column_tendency(input, workspace.column_tendency,
@@ -93,11 +95,13 @@ void gray_radiation_tendency(
       const auto offset = dry_hydrostatic_offset(cell, level, levels);
       result.potential_temperature_mass_k_kg_m2_s[offset] =
           column.potential_temperature_mass_k_kg_m2_s[level];
-      const Real sigma = atmosphere.pressure_pa[offset] / surface_pressure_pa[cell];
-      const Real drag_rate = std::max(0.0, (sigma - 0.7) / 0.3) / 86400.0;
-      result.horizontal_momentum_mass_kg_m_s2[offset] =
-          -atmosphere.air_mass_kg_m2[offset] * drag_rate *
-          atmosphere.velocity_m_s[offset];
+      if (include_legacy_surface_exchange) {
+        const Real sigma = atmosphere.pressure_pa[offset] / surface_pressure_pa[cell];
+        const Real drag_rate = std::max(0.0, (sigma - 0.7) / 0.3) / 86400.0;
+        result.horizontal_momentum_mass_kg_m_s2[offset] =
+            -atmosphere.air_mass_kg_m2[offset] * drag_rate *
+            atmosphere.velocity_m_s[offset];
+      }
     }
 
     const Real area = grid.cells()[cell].area_m2;

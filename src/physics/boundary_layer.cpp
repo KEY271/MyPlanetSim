@@ -456,18 +456,34 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
                       input.time_step_s, workspace.lower, workspace.diagonal,
                       workspace.upper);
   workspace.rhs.resize(levels + 1);
-  for (std::size_t level = 0; level < levels; ++level)
+  const Real old_surface_theta = input.surface_temperature_k / input.surface_exner;
+  for (std::size_t level = 0; level < levels; ++level) {
+    Real old_flux_convergence = 0.0;
+    if (level > 0)
+      old_flux_convergence += workspace.heat_conductance[level] *
+                              (input.potential_temperature_k[level - 1] -
+                               input.potential_temperature_k[level]);
+    if (level + 1 < levels)
+      old_flux_convergence += workspace.heat_conductance[level + 1] *
+                              (input.potential_temperature_k[level + 1] -
+                               input.potential_temperature_k[level]);
+    else
+      old_flux_convergence +=
+          workspace.heat_conductance[levels] *
+          (old_surface_theta - input.potential_temperature_k[level]);
     workspace.rhs[level] =
-        workspace.heat_capacity[level] * input.potential_temperature_k[level] +
-        result.dissipated_heat_j_m2[level];
-  workspace.rhs.back() =
-      input.surface_heat_capacity_j_m2_k * input.surface_temperature_k;
+        input.time_step_s * old_flux_convergence + result.dissipated_heat_j_m2[level];
+  }
+  workspace.rhs.back() = input.time_step_s * workspace.heat_conductance[levels] *
+                         (input.potential_temperature_k.back() - old_surface_theta);
   solve_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper, workspace.rhs,
                     workspace.solution);
-  result.potential_temperature_k.assign(
-      workspace.solution.begin(),
-      workspace.solution.begin() + static_cast<std::ptrdiff_t>(levels));
-  result.surface_temperature_k = input.surface_exner * workspace.solution.back();
+  result.potential_temperature_k.resize(levels);
+  for (std::size_t level = 0; level < levels; ++level)
+    result.potential_temperature_k[level] =
+        input.potential_temperature_k[level] + workspace.solution[level];
+  result.surface_temperature_k =
+      input.surface_temperature_k + input.surface_exner * workspace.solution.back();
 
   result.heat_flux_w_m2.assign(levels + 1, 0.0);
   result.momentum_flux_kg_m_s2.assign(levels + 1, {});
@@ -494,8 +510,7 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
   Real tracer_change = 0.0;
   for (std::size_t level = 0; level < levels; ++level) {
     atmospheric_heat_change +=
-        workspace.heat_capacity[level] *
-        (result.potential_temperature_k[level] - input.potential_temperature_k[level]);
+        workspace.heat_capacity[level] * workspace.solution[level];
     momentum_change =
         momentum_change + input.air_mass_kg_m2[level] *
                               (result.velocity_m_s[level] - input.velocity_m_s[level]);
@@ -503,8 +518,7 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
                                                     input.tracer_mixing_ratio[level]);
   }
   const Real surface_heat_change =
-      input.surface_heat_capacity_j_m2_k *
-      (result.surface_temperature_k - input.surface_temperature_k);
+      workspace.heat_capacity.back() * workspace.solution.back();
   const Vec3 surface_impulse = input.time_step_s * result.momentum_flux_kg_m_s2.back();
   const Real kinetic_change = final_kinetic_energy - initial_kinetic_energy;
   result.diagnostics = {

@@ -96,6 +96,7 @@ add_library(
   src/physics/held_suarez.cpp
   src/physics/boundary_layer.cpp
   src/physics/dry_convective_adjustment.cpp
+  src/physics/dry_mixing_coupling.cpp
   src/physics/gray_radiation.cpp
   src/physics/gray_radiation_coupling.cpp
   src/physics/planetary_newtonian.cpp
@@ -239,6 +240,15 @@ if(BUILD_TESTING)
       -DMPS_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR} -P
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase11_cli.cmake
   )
+  add_test(
+    NAME phase12.dry_mixing_cli
+    COMMAND
+      ${CMAKE_COMMAND} -DMPS_EXECUTABLE=$<TARGET_FILE:my_planet_sim>
+      -DMPS_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/tests/data/phase11_diagnostics.cfg
+      -DMPS_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR} -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase12_cli.cmake
+  )
+  set_tests_properties(phase12.dry_mixing_cli PROPERTIES LABELS phase12_gate)
   set_tests_properties(phase11.radiation_cli PROPERTIES LABELS phase11_gate)
   set_tests_properties(
     phase10.semi_implicit_diagnostics PROPERTIES LABELS phase10_gate

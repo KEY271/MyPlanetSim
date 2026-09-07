@@ -66,7 +66,8 @@ void gray_radiation_tendency(
     const DryHydrostaticDerived& atmosphere, std::span<const Real> surface_pressure_pa,
     const PlanetParameters& planet, const SurfaceParameters& surface,
     const RadiationParameters& radiation, const OrbitState& orbit_state,
-    GrayRadiationTendency& result, GrayRadiationCouplingWorkspace& workspace);
+    bool include_legacy_surface_exchange, GrayRadiationTendency& result,
+    GrayRadiationCouplingWorkspace& workspace);
 
 [[nodiscard]] GrayRadiationBudget integrate_gray_radiation_budget(
     const CubedSphereGrid& grid, const SurfaceBoundary& boundary,

@@ -67,6 +67,7 @@ target_compile_definitions(
 mps_add_test(unit.held_suarez test_held_suarez.cpp)
 mps_add_test(unit.dry_convective_adjustment test_dry_convective_adjustment.cpp)
 mps_add_test(unit.boundary_layer test_boundary_layer.cpp)
+mps_add_test(unit.dry_mixing_core test_dry_mixing_core.cpp)
 mps_add_test(unit.planetary_newtonian test_planetary_newtonian.cpp)
 mps_add_test(unit.surface_energy_balance test_surface_energy_balance.cpp)
 mps_add_test(unit.gray_radiation test_gray_radiation.cpp)

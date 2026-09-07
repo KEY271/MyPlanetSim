@@ -11,6 +11,7 @@
 #include "myplanetsim/dynamics/surface_boundary.hpp"
 #include "myplanetsim/dynamics/surface_orography.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
+#include "myplanetsim/physics/dry_mixing_coupling.hpp"
 #include "myplanetsim/physics/gray_radiation_coupling.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
 #include "myplanetsim/physics/surface_energy_balance.hpp"
@@ -75,6 +76,7 @@ struct DryHydrostaticStepDiagnostics {
   SurfaceEnergyBudget surface_budget{};
   GrayRadiationDiagnostics radiation_rates{};
   GrayRadiationBudget radiation_budget{};
+  DryMixingStepDiagnostics boundary_layer{};
   DryConvectionDiagnostics convection{};
   Real diffusion_energy_contribution_j = 0.0;
   Real requested_time_step_s = 0.0;
@@ -94,6 +96,7 @@ struct DryHydrostaticStepDiagnostics {
   std::size_t invariant_retry_count = 0;
   std::size_t solver_retry_count = 0;
   std::size_t radiation_column_call_count = 0;
+  std::size_t boundary_layer_column_call_count = 0;
   std::size_t convection_column_call_count = 0;
   Real radiation_wall_seconds = 0.0;
   Real wall_seconds_rhs = 0.0;

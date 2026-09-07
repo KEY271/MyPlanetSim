@@ -654,6 +654,91 @@ struct SemiImplicitDiagnosticsRow {
   mps::DryHydrostaticStepDiagnostics diagnostics;
 };
 
+struct DryMixingDiagnosticsRow {
+  mps::Real time_s;
+  std::uint64_t step;
+  mps::Real segment_start_time_s;
+  std::uint64_t segment_start_step;
+  mps::DryHydrostaticStepDiagnostics diagnostics;
+};
+
+void write_dry_mixing_diagnostics(const mps::ExperimentConfig& config,
+                                  const mps::CubedSphereGrid& grid,
+                                  const std::span<const DryMixingDiagnosticsRow> rows) {
+  const std::filesystem::path directory(config.output_directory);
+  std::filesystem::create_directories(directory);
+  if (config.boundary_layer.kind != mps::BoundaryLayerKind::kNone) {
+    std::ofstream output(directory / "boundary_layer_diagnostics.csv", std::ios::trunc);
+    if (!output)
+      throw std::runtime_error("unable to open boundary-layer diagnostics CSV");
+    output << "time_s,step,segment_start_time_s,segment_start_step,requested_dt_s,"
+              "accepted_dt_s,sensible_w_m2,surface_stress_impulse_n_s,mean_h_m,"
+              "maximum_k_m_m2_s,maximum_k_h_m2_s,shallow_unresolved_area_fraction,"
+              "model_top_area_fraction,atmospheric_heat_change_j,"
+              "surface_heat_change_j,physical_shear_dissipation_j,"
+              "physical_surface_drag_dissipation_j,backward_euler_dissipation_j,"
+              "returned_dissipation_heat_j,heat_budget_residual_j,"
+              "kinetic_energy_change_j,kinetic_energy_identity_residual_j,"
+              "momentum_budget_residual_n_s,tracer_mass_change_kg,"
+              "column_call_count,retry_count\n"
+           << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+    for (const auto& row : rows) {
+      const auto& step = row.diagnostics;
+      const auto& value = step.boundary_layer;
+      const mps::Real sensible_w_m2 =
+          value.sensible_to_atmosphere_energy_j /
+          (step.accepted_time_step_s * grid.total_area_m2());
+      output << row.time_s << ',' << row.step << ',' << row.segment_start_time_s << ','
+             << row.segment_start_step << ',' << step.requested_time_step_s << ','
+             << step.accepted_time_step_s << ',' << sensible_w_m2 << ','
+             << value.surface_stress_impulse_magnitude_n_s << ','
+             << value.mean_boundary_layer_height_m << ','
+             << value.maximum_momentum_diffusivity_m2_s << ','
+             << value.maximum_heat_diffusivity_m2_s << ','
+             << value.shallow_unresolved_area_fraction << ','
+             << value.model_top_area_fraction << ',' << value.atmospheric_heat_change_j
+             << ',' << value.surface_heat_change_j << ','
+             << value.physical_shear_dissipation_j << ','
+             << value.physical_surface_drag_dissipation_j << ','
+             << value.backward_euler_dissipation_j << ','
+             << value.returned_dissipation_heat_j << ',' << value.heat_budget_residual_j
+             << ',' << value.kinetic_energy_change_j << ','
+             << value.kinetic_energy_identity_residual_j << ','
+             << value.momentum_budget_residual_n_s << ',' << value.tracer_mass_change_kg
+             << ',' << step.boundary_layer_column_call_count << ',' << step.retry_count
+             << '\n';
+    }
+  }
+  if (config.convection.kind != mps::ConvectionKind::kNone) {
+    std::ofstream output(directory / "convection_diagnostics.csv", std::ios::trunc);
+    if (!output) throw std::runtime_error("unable to open convection diagnostics CSV");
+    output << "time_s,step,segment_start_time_s,segment_start_step,requested_dt_s,"
+              "accepted_dt_s,minimum_theta_difference_before_k,"
+              "minimum_theta_difference_after_k,unstable_interface_fraction_before,"
+              "unstable_interface_fraction_after,adjusted_column_count,"
+              "adjusted_layer_count,adjusted_block_count,"
+              "maximum_temperature_increment_k,enthalpy_change_j,"
+              "dry_energy_attributed_change_j,column_call_count,retry_count\n"
+           << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+    for (const auto& row : rows) {
+      const auto& step = row.diagnostics;
+      const auto& value = step.convection;
+      output << row.time_s << ',' << row.step << ',' << row.segment_start_time_s << ','
+             << row.segment_start_step << ',' << step.requested_time_step_s << ','
+             << step.accepted_time_step_s << ','
+             << value.minimum_theta_difference_before_k << ','
+             << value.minimum_theta_difference_after_k << ','
+             << value.unstable_interface_fraction_before << ','
+             << value.unstable_interface_fraction_after << ','
+             << value.adjusted_column_count << ',' << value.adjusted_layer_count << ','
+             << value.adjusted_block_count << ','
+             << value.maximum_temperature_increment_k << ',' << value.enthalpy_change_j
+             << ',' << value.dry_energy_attributed_change_j << ','
+             << step.convection_column_call_count << ',' << step.retry_count << '\n';
+    }
+  }
+}
+
 void write_semi_implicit_diagnostics(
     const mps::ExperimentConfig& config,
     const std::span<const SemiImplicitDiagnosticsRow> rows) {
@@ -840,6 +925,117 @@ void write_radiation_column(const mps::ExperimentConfig& config,
            << column.longwave_convergence_w_m2[level] << ','
            << column.radiative_convergence_w_m2[level] << '\n';
   if (!output) throw std::runtime_error("failed while writing radiation column CSV");
+}
+
+void write_mixing_column(const mps::ExperimentConfig& config,
+                         const mps::DryHydrostaticDriver& driver,
+                         const mps::DryHydrostaticState& state,
+                         const mps::DryHydrostaticDerived& derived) {
+  const std::size_t levels = static_cast<std::size_t>(config.vertical.levels);
+  const mps::AtmosphericHybridCoordinate coordinate(
+      {config.vertical.a_half_pa, config.vertical.b_half},
+      config.vertical.minimum_surface_pressure_pa,
+      config.vertical.maximum_surface_pressure_pa,
+      config.vertical.minimum_pressure_thickness_pa);
+  const auto geometry = coordinate.geometry(
+      state.surface_pressure_pa.front(), config.planet.gravity_m_s2,
+      config.planet.gas_constant_j_kg_k, config.planet.heat_capacity_cp_j_kg_k,
+      config.planet.reference_pressure_pa);
+  const auto theta =
+      std::span<const mps::Real>(derived.potential_temperature_k.data(), levels);
+  const auto temperature =
+      std::span<const mps::Real>(derived.temperature_k.data(), levels);
+  const auto velocity = std::span<const mps::Vec3>(derived.velocity_m_s.data(), levels);
+  const auto tracer =
+      std::span<const mps::Real>(derived.tracer_mixing_ratio.data(), levels);
+  const auto& boundary = *driver.surface_boundary();
+  const mps::Real surface_geopotential = boundary.surface_geopotential_m2_s2().front();
+  const auto hydrostatic = mps::integrate_hydrostatic_column(
+      geometry, std::vector<mps::Real>(theta.begin(), theta.end()),
+      config.planet.heat_capacity_cp_j_kg_k, config.planet.gravity_m_s2,
+      surface_geopotential);
+  const mps::Real surface_height = surface_geopotential / config.planet.gravity_m_s2;
+  std::vector<mps::Real> height_half(levels + 1);
+  std::vector<mps::Real> height_full(levels);
+  for (std::size_t interface = 0; interface <= levels; ++interface)
+    height_half[interface] = hydrostatic.height_half_m[interface] - surface_height;
+  height_half.back() = 0.0;
+  for (std::size_t level = 0; level < levels; ++level)
+    height_full[level] = hydrostatic.height_full_m[level] - surface_height;
+  const auto bulk = mps::diagnose_boundary_layer_column(
+      {.potential_temperature_k = theta,
+       .temperature_k = temperature,
+       .velocity_m_s = velocity,
+       .pressure_half_pa = geometry.pressure_half_pa,
+       .exner_half = geometry.exner_half,
+       .height_half_m = height_half,
+       .height_full_m = height_full,
+       .surface_temperature_k = state.surface_temperature_k.front(),
+       .surface_exner = geometry.exner_half.back(),
+       .gravity_m_s2 = config.planet.gravity_m_s2,
+       .gas_constant_j_kg_k = config.planet.gas_constant_j_kg_k,
+       .heat_capacity_cp_j_kg_k = config.planet.heat_capacity_cp_j_kg_k,
+       .critical_richardson = config.boundary_layer.critical_richardson,
+       .turbulent_prandtl = config.boundary_layer.turbulent_prandtl,
+       .gustiness_m_s = config.boundary_layer.gustiness_m_s,
+       .land_fraction = boundary.land_fraction().front(),
+       .land_roughness = {.momentum_m = config.surface->land_roughness_momentum_m,
+                          .heat_m = config.surface->land_roughness_heat_m},
+       .ocean_roughness = {.momentum_m = config.surface->ocean_roughness_momentum_m,
+                           .heat_m = config.surface->ocean_roughness_heat_m}});
+
+  const std::filesystem::path directory(config.output_directory);
+  std::filesystem::create_directories(directory);
+  std::ofstream output(directory / "mixing_column.csv", std::ios::trunc);
+  if (!output) throw std::runtime_error("unable to open mixing column CSV");
+  output << "time_s,cell_id,record_kind,index,pressure_pa,height_m,theta_k,"
+            "temperature_k,velocity_x_m_s,velocity_y_m_s,velocity_z_m_s,tracer,"
+            "density_kg_m3,k_m_m2_s,k_h_m2_s,k_q_m2_s,heat_flux_w_m2,"
+            "momentum_flux_x_kg_m_s2,momentum_flux_y_kg_m_s2,"
+            "momentum_flux_z_kg_m_s2,tracer_flux_kg_m2_s,boundary_layer_height_m,"
+            "flux_kind\n"
+         << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+  for (std::size_t interface = 0; interface <= levels; ++interface) {
+    mps::Real heat_flux = 0.0;
+    mps::Vec3 momentum_flux{};
+    mps::Real tracer_flux = 0.0;
+    std::string_view flux_kind = "diagnosed_zero_boundary";
+    if (interface > 0 && interface < levels) {
+      const mps::Real distance = height_full[interface - 1] - height_full[interface];
+      heat_flux =
+          bulk.density_half_kg_m3[interface] * config.planet.heat_capacity_cp_j_kg_k *
+          geometry.exner_half[interface] * bulk.eddy_diffusivity_heat_m2_s[interface] *
+          (theta[interface] - theta[interface - 1]) / distance;
+      momentum_flux = bulk.density_half_kg_m3[interface] *
+                      bulk.eddy_diffusivity_momentum_m2_s[interface] *
+                      (velocity[interface] - velocity[interface - 1]) / distance;
+      tracer_flux = bulk.density_half_kg_m3[interface] *
+                    bulk.eddy_diffusivity_tracer_m2_s[interface] *
+                    (tracer[interface] - tracer[interface - 1]) / distance;
+      flux_kind = "final_diagnosed";
+    } else if (interface == levels) {
+      heat_flux = bulk.diagnostics.sensible_heat_flux_w_m2;
+      momentum_flux = bulk.diagnostics.surface_stress_kg_m_s2;
+      flux_kind = "final_diagnosed_surface";
+    }
+    output << state.time_s << ",0,interface," << interface << ','
+           << geometry.pressure_half_pa[interface] << ',' << height_half[interface]
+           << ",,,,,,," << bulk.density_half_kg_m3[interface] << ','
+           << bulk.eddy_diffusivity_momentum_m2_s[interface] << ','
+           << bulk.eddy_diffusivity_heat_m2_s[interface] << ','
+           << bulk.eddy_diffusivity_tracer_m2_s[interface] << ',' << heat_flux << ','
+           << momentum_flux.x << ',' << momentum_flux.y << ',' << momentum_flux.z << ','
+           << tracer_flux << ',' << bulk.diagnostics.boundary_layer_height_m << ','
+           << flux_kind << '\n';
+  }
+  for (std::size_t level = 0; level < levels; ++level)
+    output << state.time_s << ",0,full," << level << ','
+           << geometry.pressure_full_pa[level] << ',' << height_full[level] << ','
+           << theta[level] << ',' << temperature[level] << ',' << velocity[level].x
+           << ',' << velocity[level].y << ',' << velocity[level].z << ','
+           << tracer[level] << ",,,,,,,,,," << bulk.diagnostics.boundary_layer_height_m
+           << ",state_after_mixing\n";
+  if (!output) throw std::runtime_error("failed while writing mixing column CSV");
 }
 
 class PhysicsDiagnosticsAccumulator {
@@ -1173,6 +1369,7 @@ int main(const int argc, const char* const argv[]) {
       std::vector<SurfaceDiagnosticsRow> surface_diagnostics;
       std::vector<RadiationDiagnosticsRow> radiation_diagnostics;
       std::vector<SemiImplicitDiagnosticsRow> semi_implicit_diagnostics;
+      std::vector<DryMixingDiagnosticsRow> dry_mixing_diagnostics;
       mps::SurfaceEnergyBudget pending_surface_budget;
       mps::GrayRadiationBudget pending_radiation_budget;
       std::size_t pending_cfl_retries = 0;
@@ -1192,8 +1389,8 @@ int main(const int argc, const char* const argv[]) {
            &radiation_diagnostics, &pending_surface_budget, &pending_radiation_budget,
            &pending_cfl_retries, &pending_invariant_retries, &pending_solver_retries,
            &pending_radiation_column_calls, &pending_radiation_wall_seconds,
-           &semi_implicit_diagnostics, &progress, segment_start_time_s,
-           segment_start_step,
+           &semi_implicit_diagnostics, &dry_mixing_diagnostics, &progress,
+           segment_start_time_s, segment_start_step,
            &config](const mps::DryHydrostaticState& sampled,
                     const mps::DryHydrostaticDerived* derived,
                     const mps::DryHydrostaticStepDiagnostics& step) {
@@ -1210,6 +1407,16 @@ int main(const int argc, const char* const argv[]) {
               semi_implicit_diagnostics.push_back({.time_s = sampled.time_s,
                                                    .step = sampled.step,
                                                    .diagnostics = step});
+            }
+            if ((config.convection.kind != mps::ConvectionKind::kNone ||
+                 config.boundary_layer.kind != mps::BoundaryLayerKind::kNone) &&
+                step.accepted_time_step_s > 0.0) {
+              dry_mixing_diagnostics.push_back(
+                  {.time_s = sampled.time_s,
+                   .step = sampled.step,
+                   .segment_start_time_s = segment_start_time_s,
+                   .segment_start_step = segment_start_step,
+                   .diagnostics = step});
             }
             if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance) {
               add_surface_budget(pending_surface_budget, step.surface_budget);
@@ -1271,6 +1478,9 @@ int main(const int argc, const char* const argv[]) {
       }
       if (driver.semi_implicit_vertical_modes().has_value())
         write_semi_implicit_diagnostics(config, semi_implicit_diagnostics);
+      if (config.convection.kind != mps::ConvectionKind::kNone ||
+          config.boundary_layer.kind != mps::BoundaryLayerKind::kNone)
+        write_dry_mixing_diagnostics(config, driver.grid(), dry_mixing_diagnostics);
       if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance ||
           config.physics.kind == mps::PhysicsKind::kGrayRadiation) {
         const std::filesystem::path directory(config.output_directory);
@@ -1357,6 +1567,8 @@ int main(const int argc, const char* const argv[]) {
       const auto derived = driver.diagnose(state);
       if (config.physics.kind == mps::PhysicsKind::kGrayRadiation)
         write_radiation_column(config, driver, state, derived);
+      if (config.boundary_layer.kind != mps::BoundaryLayerKind::kNone)
+        write_mixing_column(config, driver, state, derived);
       const auto diagnostics = mps::diagnose_dry_hydrostatic_budgets(
           driver.grid(), state, derived, config.planet);
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
