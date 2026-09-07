@@ -3,12 +3,60 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 #include "myplanetsim/core/validation.hpp"
 
 namespace mps {
 namespace {
+
+constexpr Real kVonKarman = 0.4;
+
+[[nodiscard]] Real richardson_number(const Real gravity_m_s2, const Real height_m,
+                                     const Real theta_difference_k,
+                                     const Real theta_reference_k,
+                                     const Real speed_squared_m2_s2) {
+  if (speed_squared_m2_s2 == 0.0) {
+    if (theta_difference_k > 0.0) return std::numeric_limits<Real>::infinity();
+    if (theta_difference_k < 0.0) return -std::numeric_limits<Real>::infinity();
+    return 0.0;
+  }
+  return gravity_m_s2 * height_m * theta_difference_k /
+         (theta_reference_k * speed_squared_m2_s2);
+}
+
+[[nodiscard]] Real stability_factor(const Real richardson,
+                                    const Real critical_richardson) {
+  if (richardson <= 0.0) return 1.0;
+  if (richardson >= critical_richardson) return 0.0;
+  const Real remaining = 1.0 - richardson / critical_richardson;
+  return remaining * remaining;
+}
+
+struct TileTransfer {
+  Real drag_coefficient = 0.0;
+  Real heat_coefficient = 0.0;
+  Real friction_velocity_m_s = 0.0;
+};
+
+[[nodiscard]] TileTransfer tile_transfer(const SurfaceRoughness roughness,
+                                         const Real measurement_height_m,
+                                         const Real stability,
+                                         const Real effective_speed_m_s) {
+  require_positive(roughness.momentum_m, "momentum roughness");
+  require_positive(roughness.heat_m, "heat roughness");
+  if (!(roughness.momentum_m < measurement_height_m) ||
+      !(roughness.heat_m < measurement_height_m))
+    throw std::invalid_argument("surface roughness must be below the lowest level");
+  const Real momentum_log = std::log(measurement_height_m / roughness.momentum_m);
+  const Real heat_log = std::log(measurement_height_m / roughness.heat_m);
+  const Real drag = kVonKarman * kVonKarman * stability / (momentum_log * momentum_log);
+  const Real heat = kVonKarman * kVonKarman * stability / (momentum_log * heat_log);
+  return {.drag_coefficient = drag,
+          .heat_coefficient = heat,
+          .friction_velocity_m_s = std::sqrt(drag) * effective_speed_m_s};
+}
 
 void solve_tridiagonal(std::vector<Real>& lower, std::vector<Real>& diagonal,
                        std::vector<Real>& upper, std::vector<Real>& rhs,
@@ -72,6 +120,175 @@ void set_component(Vec3& value, const std::size_t index, const Real component_va
 }
 
 }  // namespace
+
+void diagnose_boundary_layer_column(const BoundaryLayerBulkInput& input,
+                                    BoundaryLayerBulkResult& result) {
+  const std::size_t levels = input.potential_temperature_k.size();
+  if (levels == 0 || input.temperature_k.size() != levels ||
+      input.velocity_m_s.size() != levels ||
+      input.pressure_half_pa.size() != levels + 1 ||
+      input.exner_half.size() != levels + 1 ||
+      input.height_half_m.size() != levels + 1 || input.height_full_m.size() != levels)
+    throw std::invalid_argument("boundary-layer bulk shape mismatch");
+  require_positive(input.surface_temperature_k, "surface temperature");
+  require_positive(input.surface_exner, "surface Exner function");
+  require_positive(input.gravity_m_s2, "gravity");
+  require_positive(input.gas_constant_j_kg_k, "gas constant");
+  require_positive(input.heat_capacity_cp_j_kg_k, "heat capacity cp");
+  require_positive(input.critical_richardson, "critical Richardson number");
+  require_positive(input.turbulent_prandtl, "turbulent Prandtl number");
+  require_non_negative(input.gustiness_m_s, "gustiness");
+  require_finite(input.land_fraction, "land fraction");
+  if (input.land_fraction < 0.0 || input.land_fraction > 1.0)
+    throw std::invalid_argument("land fraction must be in [0, 1]");
+
+  for (std::size_t interface = 0; interface <= levels; ++interface) {
+    require_positive(input.pressure_half_pa[interface], "half-level pressure");
+    require_positive(input.exner_half[interface], "half-level Exner function");
+    require_finite(input.height_half_m[interface], "half-level height");
+    if (interface > 0) {
+      if (!(input.pressure_half_pa[interface] > input.pressure_half_pa[interface - 1]))
+        throw std::invalid_argument("half-level pressure must increase downward");
+      if (!(input.height_half_m[interface] < input.height_half_m[interface - 1]))
+        throw std::invalid_argument("half-level height must decrease downward");
+    }
+  }
+  if (input.height_half_m.back() != 0.0)
+    throw std::invalid_argument("boundary-layer surface height must be zero");
+  for (std::size_t level = 0; level < levels; ++level) {
+    require_positive(input.potential_temperature_k[level], "potential temperature");
+    require_positive(input.temperature_k[level], "temperature");
+    require_positive(input.height_full_m[level], "full-level height");
+    if (!is_finite(input.velocity_m_s[level]))
+      throw std::invalid_argument("velocity must be finite");
+    if (level > 0 && !(input.height_full_m[level] < input.height_full_m[level - 1]))
+      throw std::invalid_argument("full-level height must decrease downward");
+  }
+
+  const std::size_t bottom = levels - 1;
+  const Real theta_surface = input.surface_temperature_k / input.surface_exner;
+  const Real theta_air = input.potential_temperature_k[bottom];
+  const Real theta_reference = 0.5 * (theta_surface + theta_air);
+  require_positive(theta_reference, "surface reference potential temperature");
+  const Real wind_squared = norm_squared(input.velocity_m_s[bottom]);
+  const Real effective_speed_squared =
+      wind_squared + input.gustiness_m_s * input.gustiness_m_s;
+  const Real effective_speed = std::sqrt(effective_speed_squared);
+  const Real surface_richardson = richardson_number(
+      input.gravity_m_s2, input.height_full_m[bottom], theta_air - theta_surface,
+      theta_reference, effective_speed_squared);
+  const Real surface_stability =
+      stability_factor(surface_richardson, input.critical_richardson);
+  const auto land = tile_transfer(input.land_roughness, input.height_full_m[bottom],
+                                  surface_stability, effective_speed);
+  const auto ocean = tile_transfer(input.ocean_roughness, input.height_full_m[bottom],
+                                   surface_stability, effective_speed);
+  const Real ocean_fraction = 1.0 - input.land_fraction;
+  const Real drag_coefficient = input.land_fraction * land.drag_coefficient +
+                                ocean_fraction * ocean.drag_coefficient;
+  const Real heat_coefficient = input.land_fraction * land.heat_coefficient +
+                                ocean_fraction * ocean.heat_coefficient;
+
+  bool shallow_unresolved = false;
+  bool reaches_top = false;
+  Real boundary_layer_height = input.height_full_m[bottom];
+  if (surface_richardson >= input.critical_richardson) {
+    shallow_unresolved = true;
+  } else {
+    Real previous_height = input.height_full_m[bottom];
+    Real previous_richardson = 0.0;
+    bool crossed = false;
+    for (std::size_t reverse = bottom; reverse > 0; --reverse) {
+      const std::size_t level = reverse - 1;
+      const Real reference = 0.5 * (input.potential_temperature_k[level] + theta_air);
+      const Real speed_squared = norm_squared(input.velocity_m_s[level]) +
+                                 input.gustiness_m_s * input.gustiness_m_s;
+      const Real bulk_richardson = richardson_number(
+          input.gravity_m_s2, input.height_full_m[level],
+          input.potential_temperature_k[level] - theta_air, reference, speed_squared);
+      if (bulk_richardson >= input.critical_richardson) {
+        Real fraction = 0.0;
+        if (std::isfinite(bulk_richardson))
+          fraction = std::clamp((input.critical_richardson - previous_richardson) /
+                                    (bulk_richardson - previous_richardson),
+                                0.0, 1.0);
+        boundary_layer_height =
+            previous_height + fraction * (input.height_full_m[level] - previous_height);
+        crossed = true;
+        break;
+      }
+      previous_height = input.height_full_m[level];
+      previous_richardson = bulk_richardson;
+    }
+    if (!crossed) {
+      boundary_layer_height = input.height_half_m.front();
+      reaches_top = true;
+    }
+  }
+
+  result.density_half_kg_m3.resize(levels + 1);
+  result.eddy_diffusivity_momentum_m2_s.assign(levels + 1, 0.0);
+  result.eddy_diffusivity_heat_m2_s.assign(levels + 1, 0.0);
+  result.eddy_diffusivity_tracer_m2_s.assign(levels + 1, 0.0);
+  for (std::size_t interface = 0; interface <= levels; ++interface) {
+    Real interface_temperature = input.surface_temperature_k;
+    if (interface == 0)
+      interface_temperature = input.temperature_k.front();
+    else if (interface < levels)
+      interface_temperature =
+          0.5 * (input.temperature_k[interface - 1] + input.temperature_k[interface]);
+    result.density_half_kg_m3[interface] =
+        input.pressure_half_pa[interface] /
+        (input.gas_constant_j_kg_k * interface_temperature);
+    if (interface == 0 || interface == levels) continue;
+    const Real height = input.height_half_m[interface];
+    if (!(height > 0.0) || !(height < boundary_layer_height)) continue;
+    const Real shape = height * (1.0 - height / boundary_layer_height) *
+                       (1.0 - height / boundary_layer_height);
+    const Real land_k = kVonKarman * land.friction_velocity_m_s * shape;
+    const Real ocean_k = kVonKarman * ocean.friction_velocity_m_s * shape;
+    const Real momentum_k = input.land_fraction * land_k + ocean_fraction * ocean_k;
+    result.eddy_diffusivity_momentum_m2_s[interface] = momentum_k;
+    result.eddy_diffusivity_heat_m2_s[interface] = momentum_k / input.turbulent_prandtl;
+    result.eddy_diffusivity_tracer_m2_s[interface] =
+        result.eddy_diffusivity_heat_m2_s[interface];
+  }
+
+  const Real surface_density = result.density_half_kg_m3.back();
+  result.surface_heat_conductance_w_m2_k =
+      surface_density * input.heat_capacity_cp_j_kg_k * heat_coefficient *
+      effective_speed * input.surface_exner;
+  result.surface_drag_conductance_kg_m2_s =
+      surface_density * drag_coefficient * effective_speed;
+  const Real sensible_heat =
+      result.surface_heat_conductance_w_m2_k * (theta_surface - theta_air);
+  const Vec3 stress =
+      -result.surface_drag_conductance_kg_m2_s * input.velocity_m_s[bottom];
+  result.diagnostics = {
+      .surface_richardson = surface_richardson,
+      .surface_stability_factor = surface_stability,
+      .drag_coefficient = drag_coefficient,
+      .heat_exchange_coefficient = heat_coefficient,
+      .boundary_layer_height_m = boundary_layer_height,
+      .maximum_momentum_diffusivity_m2_s =
+          *std::max_element(result.eddy_diffusivity_momentum_m2_s.begin(),
+                            result.eddy_diffusivity_momentum_m2_s.end()),
+      .maximum_heat_diffusivity_m2_s =
+          *std::max_element(result.eddy_diffusivity_heat_m2_s.begin(),
+                            result.eddy_diffusivity_heat_m2_s.end()),
+      .sensible_heat_flux_w_m2 = sensible_heat,
+      .surface_stress_kg_m_s2 = stress,
+      .shallow_stable_layer_unresolved = shallow_unresolved,
+      .reaches_model_top = reaches_top,
+  };
+}
+
+BoundaryLayerBulkResult diagnose_boundary_layer_column(
+    const BoundaryLayerBulkInput& input) {
+  BoundaryLayerBulkResult result;
+  diagnose_boundary_layer_column(input, result);
+  return result;
+}
 
 void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
                                     BoundaryLayerColumnResult& result,

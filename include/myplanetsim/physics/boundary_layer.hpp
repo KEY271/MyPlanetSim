@@ -8,6 +8,62 @@
 
 namespace mps {
 
+struct SurfaceRoughness {
+  Real momentum_m = 0.0;
+  Real heat_m = 0.0;
+};
+
+struct BoundaryLayerBulkInput {
+  std::span<const Real> potential_temperature_k;
+  std::span<const Real> temperature_k;
+  std::span<const Vec3> velocity_m_s;
+  std::span<const Real> pressure_half_pa;
+  std::span<const Real> exner_half;
+  std::span<const Real> height_half_m;
+  std::span<const Real> height_full_m;
+  Real surface_temperature_k = 0.0;
+  Real surface_exner = 0.0;
+  Real gravity_m_s2 = 0.0;
+  Real gas_constant_j_kg_k = 0.0;
+  Real heat_capacity_cp_j_kg_k = 0.0;
+  Real critical_richardson = 1.0;
+  Real turbulent_prandtl = 1.0;
+  Real gustiness_m_s = 1.0;
+  Real land_fraction = 0.0;
+  SurfaceRoughness land_roughness;
+  SurfaceRoughness ocean_roughness;
+};
+
+struct BoundaryLayerBulkDiagnostics {
+  Real surface_richardson = 0.0;
+  Real surface_stability_factor = 0.0;
+  Real drag_coefficient = 0.0;
+  Real heat_exchange_coefficient = 0.0;
+  Real boundary_layer_height_m = 0.0;
+  Real maximum_momentum_diffusivity_m2_s = 0.0;
+  Real maximum_heat_diffusivity_m2_s = 0.0;
+  Real sensible_heat_flux_w_m2 = 0.0;
+  Vec3 surface_stress_kg_m_s2{};
+  bool shallow_stable_layer_unresolved = false;
+  bool reaches_model_top = false;
+};
+
+struct BoundaryLayerBulkResult {
+  std::vector<Real> density_half_kg_m3;
+  std::vector<Real> eddy_diffusivity_momentum_m2_s;
+  std::vector<Real> eddy_diffusivity_heat_m2_s;
+  std::vector<Real> eddy_diffusivity_tracer_m2_s;
+  Real surface_heat_conductance_w_m2_k = 0.0;
+  Real surface_drag_conductance_kg_m2_s = 0.0;
+  BoundaryLayerBulkDiagnostics diagnostics;
+};
+
+void diagnose_boundary_layer_column(const BoundaryLayerBulkInput& input,
+                                    BoundaryLayerBulkResult& result);
+
+[[nodiscard]] BoundaryLayerBulkResult diagnose_boundary_layer_column(
+    const BoundaryLayerBulkInput& input);
+
 struct BoundaryLayerColumnInput {
   std::span<const Real> potential_temperature_k;
   std::span<const Vec3> velocity_m_s;
