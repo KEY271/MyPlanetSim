@@ -82,6 +82,20 @@ MPS_TEST_CASE("stable columns are identities and adjustment is idempotent") {
   MPS_CHECK(unchanged.adjusted_potential_temperature_k == stable);
   MPS_CHECK_EQ(unchanged.diagnostics.adjusted_layer_count, 0U);
 
+  // Round weights can hide a roundoff-level identity failure, so the same stable column
+  // is repeated on the irregular masses and Exner values a hybrid coordinate produces.
+  const std::vector<mps::Real> irregular_mass{1080.343469, 186.935824, 576.062394,
+                                              1013.056966};
+  const std::vector<mps::Real> irregular_exner{0.41, 0.62, 0.81, 0.95};
+  const std::vector<mps::Real> irregular_half{0.3, 0.515, 0.715, 0.88, 1.0};
+  const auto irregular = mps::dry_convective_adjustment(
+      input(stable, irregular_mass, irregular_exner, irregular_half));
+  MPS_CHECK(irregular.adjusted_potential_temperature_k == stable);
+  MPS_CHECK_EQ(irregular.diagnostics.adjusted_layer_count, 0U);
+  MPS_CHECK_EQ(irregular.diagnostics.adjusted_block_count, 0U);
+  MPS_CHECK_EQ(irregular.diagnostics.enthalpy_change_j_m2, 0.0);
+  MPS_CHECK_EQ(irregular.diagnostics.maximum_temperature_increment_k, 0.0);
+
   const std::vector<mps::Real> unstable{310.0, 330.0, 290.0, 350.0};
   const auto first =
       mps::dry_convective_adjustment(input(unstable, mass, exner, exner_half));

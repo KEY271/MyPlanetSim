@@ -81,8 +81,16 @@ void dry_convective_adjustment(const DryConvectiveAdjustmentInput& input,
 
   std::size_t adjusted_blocks = 0;
   for (const auto& block : workspace.blocks) {
+    if (block.end - block.begin == 1) {
+      // A layer that never merged is copied rather than recovered from its own weighted
+      // mean: dividing the weight back out perturbs it at roundoff, which would make a
+      // stable column report a spurious adjustment and break idempotence.
+      result.adjusted_potential_temperature_k[block.begin] =
+          input.potential_temperature_k[block.begin];
+      continue;
+    }
+    ++adjusted_blocks;
     const Real mean = block.weighted_theta / block.weight;
-    if (block.end - block.begin > 1) ++adjusted_blocks;
     for (std::size_t level = block.begin; level < block.end; ++level)
       result.adjusted_potential_temperature_k[level] = mean;
   }
