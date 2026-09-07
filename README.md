@@ -19,7 +19,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 9 実装計画](docs/phase-9-plan.md): 演算子・CFL・平衡ベンチマークの修正、静的 cache と性能ゲート、production gate の unblock
 - [Phase 10 実装計画](docs/phase-10-plan.md): 高速な Lamb・重力波の semi-implicit 化、鉛直 mode 分解、30 分時間刻みの精度・性能ゲート
 - [Phase 11 実装計画](docs/phase-11-plan.md): 短波・長波の灰色放射、大気・地表の熱収支、column から全球結合への実装・検証順序
-- [Phase 12 実装計画](docs/phase-12-plan.md): 既存モデルを参考にした乾燥対流調節・境界層、陰的地表交換、過程別収支と検証順序（計画段階）
+- [Phase 12 実装計画](docs/phase-12-plan.md): 既存モデルを参考にした乾燥対流調節・境界層、陰的地表交換、過程別収支と検証順序
 - [科学・数値規約](docs/conventions.md): 単位、座標、添字、符号、誤差・保存量の共通定義
 - [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
 - [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果
@@ -33,6 +33,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 9 検証報告](docs/validation/phase-9.md): 正しさの修正、平衡 benchmark、性能 gate と既知の数値的制約
 - [Phase 10 検証報告](docs/validation/phase-10.md): semi-implicit 実装の固定 baseline と段階的検証結果
 - [Phase 11 検証報告](docs/validation/phase-11.md): 灰色放射の解析・再開検証、全球比較、1200日 pilot と適用範囲
+- [Phase 12 検証報告](docs/validation/phase-12.md): 乾燥対流調節・境界層の column 検証、地表細分化格子、4通り比較と1200日 pilot
 - [cubed-sphere panel ADR](docs/adr/0001-cubed-sphere-panel-conventions.md): panel、edge、向き、flux 符号規約
 - [shallow-water state ADR](docs/adr/0002-shallow-water-state-and-staggering.md): 予報変数、staggering、flux/source 分割
 - [水平離散化 ADR](docs/adr/0003-shallow-water-horizontal-discretization.md): 基準 Rusanov 法と compatible 候補の比較と採否
@@ -232,3 +233,12 @@ MyPlanetSim/
 N=6/K=10・1200日候補です。pilot は1800秒の median accepted step で完走しましたが、
 全系エネルギー残差と対流不安定層が残るため、気候平衡の再現とは位置付けていません。
 詳細な比較と再現コマンドは [Phase 11 検証報告](docs/validation/phase-11.md) にあります。
+
+乾燥対流調節は `convection.kind = dry_adjustment`、bulk 境界層は
+`boundary_layer.kind = bulk_k_profile` で選択できます。両者は `physics.kind` と直交し、
+既定は `none` なので既存 config の結果と fingerprint は変わりません。境界層を有効にすると
+灰色放射 adapter の旧顕熱交換と下層 Rayleigh drag は無効になり、地表熱・運動量・tracer の
+鉛直交換を境界層が所有します。`configs/phase12_gray_dry_mixing.cfg` は地表付近を細分化した
+K=20 の1日基準、`configs/phase12_gray_pilot.cfg` は1200日候補です。過程別収支は
+`convection_diagnostics.csv` / `boundary_layer_diagnostics.csv` / `mixing_column.csv` に出力します。
+測定値・感度・適用範囲は [Phase 12 検証報告](docs/validation/phase-12.md) にあります。

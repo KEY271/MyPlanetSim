@@ -161,6 +161,10 @@ add_executable(benchmark_radiation tools/benchmark_radiation.cpp)
 target_link_libraries(benchmark_radiation PRIVATE myplanetsim_core myplanetsim_warnings myplanetsim_sanitizers)
 set_target_properties(benchmark_radiation PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools")
 
+add_executable(benchmark_dry_mixing tools/benchmark_dry_mixing.cpp)
+target_link_libraries(benchmark_dry_mixing PRIVATE myplanetsim_core myplanetsim_warnings myplanetsim_sanitizers)
+set_target_properties(benchmark_dry_mixing PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools")
+
 include(CTest)
 if(BUILD_TESTING)
   add_test(NAME smoke.help COMMAND my_planet_sim --help)
