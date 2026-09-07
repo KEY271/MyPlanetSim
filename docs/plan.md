@@ -344,6 +344,10 @@ semi-implicit 法で解き、既存 SSP-RK3 を比較基準として残したま
 完了ゲート: `N=12`, `K=20` の Held--Suarez で median accepted step が 1200 s 以上、同じモデル期間の
 explicit 200 s run より 3 倍以上速く、1 本の 1200 日 run が保存量・solver 診断付きで完走する。
 
+状況: 反復停止則を残差許容値から固定反復数へ変更した結果、Held--Suarez は要求 1800 s を retry なしで
+全ステップ受理し、explicit 200 s の 5.78 倍で走る。median step と速度の完了ゲートは達成済みで、
+残るのは 1200 日 run のみ。実測値は [Phase 10 検証報告](validation/phase-10.md) を参照。
+
 ### Phase 11 以後 — 物理拡張と並列性能
 
 候補:

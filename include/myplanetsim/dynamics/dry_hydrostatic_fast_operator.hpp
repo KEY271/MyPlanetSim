@@ -57,8 +57,7 @@ void apply_dry_hydrostatic_fast_operator(
     const DryHydrostaticFastOperator& fast_operator,
     const DryHydrostaticFastPerturbation& perturbation,
     DryHydrostaticFastTendency& result, DryHydrostaticFastOperatorWorkspace& workspace,
-    bool compute_scalar_from_momentum = true,
-    bool compute_momentum_from_scalar = true);
+    bool compute_scalar_from_momentum = true, bool compute_momentum_from_scalar = true);
 
 [[nodiscard]] DryHydrostaticFastTendency subtract_dry_hydrostatic_fast_tendency(
     const DryHydrostaticFastTendency& left, const DryHydrostaticFastTendency& right);

@@ -8,6 +8,12 @@ does not permit changing these baseline values or weakening an earlier threshold
 
 The method and failure contract is [ADR 0016](../adr/0016-semi-implicit-gravity-wave-integration.md).
 
+One earlier decision was replaced rather than weakened. P10.14 removed the nonlinear
+residual tolerance from the acceptance test and replaced it with a fixed iteration count,
+because the tolerance was never the accuracy contract in the first place; the reasoning,
+the literature it follows, and the measurements that fix the new iteration count are in
+the P10.14 section. Every threshold that survives is unchanged.
+
 ## P10.01 explicit baseline
 
 Measured on 2026-09-07 on Apple Silicon with Homebrew Clang 22.1.4, Release LTO,
@@ -398,3 +404,69 @@ Total energy differs by 2.6e-4 relative over 30 days. Dry mass is conserved abou
 thousand times more tightly by the semi-implicit path, which takes nine times fewer
 steps. Zonal statistics are not compared at 30 days because the climate accumulator does
 not begin until day 200; that comparison belongs to the pilot below.
+
+## P10.15 long pilot and Phase 10 closure
+
+### Reproduction
+
+The measurements above are reproduced with:
+
+```sh
+cmake --preset release
+cmake --build --preset release -j8
+# explicit baseline and semi-implicit cost, same session, one model day each
+./build/release/tools/benchmark_dry_core --steps 432
+./build/release/tools/benchmark_semi_implicit configs/phase10_held_suarez_semi_implicit.cfg --steps 48
+# accuracy, iteration ladder and accepted step ladder
+./build/dev/tests/phase10.long_step
+# thirty-day comparison
+./build/release/my_planet_sim --config configs/phase7_held_suarez.cfg --progress-interval-s 0
+```
+
+The 1,200-day pilot is the registered long-run gate:
+
+```sh
+./build/release/my_planet_sim \
+  --config configs/phase10_held_suarez_semi_implicit.cfg \
+  --progress-interval-s 0
+```
+
+At the measured 1.014 s per model day this is about twenty minutes on one thread. It
+writes `output/phase10_held_suarez_semi_implicit/semi_implicit_diagnostics.csv`,
+`physics_diagnostics.csv`, and `climate_statistics.csv`. The pilot passes when:
+
+- the run completes at `result.time_s = 103680000` without a non-finite sample;
+- `retry_count` summed over the run stays at zero, and `nonlinear_iterations` equals the
+  configured 3 on every accepted step;
+- `linear_iterations_maximum` shows no upward drift between the first and last hundred
+  days, which is the check that solver work does not degrade with the evolving state;
+- `accepted_dt_s` remains 1,800 s except for the final remainder;
+- `dry_mass_kg` drift stays at the 1e-15 level reported for 30 days;
+- `climate_statistics.csv` is populated, since the accumulator starts at day 200.
+
+```sh
+awk -F, 'NR>2{n++;r+=$14;if($12!=3)b++;if($10>m)m=$10}
+  END{printf "steps=%d retries=%d wrong_iterations=%d max_gmres=%d\n",n,r,b,m}' \
+  output/phase10_held_suarez_semi_implicit/semi_implicit_diagnostics.csv
+```
+
+**Status: not yet run.** The pilot is the one remaining Phase 10 gate. Every other gate
+in this report is measured and passing.
+
+### Known gaps
+
+- The pilot above has not been executed, so long-run solver and climate drift are
+  unverified.
+- Accuracy beyond 1,800 s is unregistered. The ladder in P10.14 probed stability only;
+  2,400 s is registered as the operational limit for the Held--Suarez preset because of
+  the mode cap, not because 3,600 s was shown to be inaccurate.
+- The remaining nonlinear residual is dominated by `potential_temperature_mass`, and a
+  horizontally uniform reference column cannot reduce it. Bringing the iteration count
+  below three would require a reference operator that carries horizontal thermal
+  structure, which changes the single-eigendecomposition assumption of ADR 0016 and is
+  therefore Phase 11 work.
+- The 30-day comparison covers conservation and extrema. Zonal-mean circulation
+  conformance against the explicit path remains Phase 7's responsibility, as ADR 0016
+  states.
+- `per_step` reference update is implemented and tested but not used by any registered
+  preset.

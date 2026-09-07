@@ -189,10 +189,8 @@ void apply_dry_hydrostatic_fast_operator(
     const CubedSphereGrid& grid, const PlanetParameters& planet,
     const DryHydrostaticFastOperator& op,
     const DryHydrostaticFastPerturbation& perturbation,
-    DryHydrostaticFastTendency& result,
-    DryHydrostaticFastOperatorWorkspace& workspace,
-    const bool compute_scalar_from_momentum,
-    const bool compute_momentum_from_scalar) {
+    DryHydrostaticFastTendency& result, DryHydrostaticFastOperatorWorkspace& workspace,
+    const bool compute_scalar_from_momentum, const bool compute_momentum_from_scalar) {
   const auto cells = grid.cell_count();
   const auto levels = op.levels;
   const auto volume = cells * levels;
@@ -267,17 +265,15 @@ void apply_dry_hydrostatic_fast_operator(
     workspace.geopotential_gradient.resize(cells);
     for (std::size_t level = 0; level < levels; ++level) {
       for (std::size_t cell = 0; cell < cells; ++cell) {
-        Real pressure_potential =
-            (op.geopotential_from_surface_pressure[level] +
-             op.reference_specific_volume_m3_kg[level] *
-                 op.pressure_from_surface_pressure[level]) *
-            perturbation.surface_pressure_pa[cell];
+        Real pressure_potential = (op.geopotential_from_surface_pressure[level] +
+                                   op.reference_specific_volume_m3_kg[level] *
+                                       op.pressure_from_surface_pressure[level]) *
+                                  perturbation.surface_pressure_pa[cell];
         for (std::size_t source = 0; source < levels; ++source) {
           pressure_potential +=
-              op.geopotential_from_potential_temperature_mass[level * levels +
-                                                                source] *
-              perturbation.potential_temperature_mass_k_kg_m2[
-                  dry_hydrostatic_offset(cell, source, levels)];
+              op.geopotential_from_potential_temperature_mass[level * levels + source] *
+              perturbation.potential_temperature_mass_k_kg_m2[dry_hydrostatic_offset(
+                  cell, source, levels)];
         }
         workspace.geopotential_perturbation[cell] = pressure_potential;
       }

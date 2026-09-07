@@ -545,8 +545,8 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       else if (value == "per_step")
         semi_implicit.reference_update = SemiImplicitReferenceUpdate::kPerStep;
       else
-        throw parse_error(line,
-                          "unknown semi_implicit.reference_update " + std::string(value));
+        throw parse_error(
+            line, "unknown semi_implicit.reference_update " + std::string(value));
     } else if (key == "semi_implicit.implicit_weight")
       semi_implicit.implicit_weight = parse_real(value, line, key);
     else if (key == "semi_implicit.wave_cfl_threshold")

@@ -310,8 +310,7 @@ void reconstruct_dry_hydrostatic_face_states(
     for (std::size_t cell = 0; cell < cells; ++cell) {
       if (mass_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
           theta_reconstruction.factor[cell] < 1.0 - 1.0e-14 ||
-          (!tracer_is_constant &&
-           tracer_reconstruction.factor[cell] < 1.0 - 1.0e-14) ||
+          (!tracer_is_constant && tracer_reconstruction.factor[cell] < 1.0 - 1.0e-14) ||
           (reconstruct_temperature &&
            temperature_reconstruction.factor[cell] < 1.0 - 1.0e-14) ||
           velocity_reconstruction.factor[cell] < 1.0 - 1.0e-14)
@@ -332,16 +331,14 @@ void reconstruct_dry_hydrostatic_face_states(
                                                  velocity_reconstruction),
             .potential_temperature_k =
                 reconstruct_scalar(cell, cell_edge, theta, theta_reconstruction),
-            .tracer_mixing_ratio =
-                tracer_is_constant
-                    ? tracer[cell]
-                    : reconstruct_scalar(cell, cell_edge, tracer,
-                                         tracer_reconstruction),
-            .temperature_k =
-                reconstruct_temperature
-                    ? reconstruct_scalar(cell, cell_edge, temperature,
-                                         temperature_reconstruction)
-                    : temperature[cell]};
+            .tracer_mixing_ratio = tracer_is_constant
+                                       ? tracer[cell]
+                                       : reconstruct_scalar(cell, cell_edge, tracer,
+                                                            tracer_reconstruction),
+            .temperature_k = reconstruct_temperature
+                                 ? reconstruct_scalar(cell, cell_edge, temperature,
+                                                      temperature_reconstruction)
+                                 : temperature[cell]};
       };
       result.edge_levels[edge.id * levels + level] = {.left = face(left),
                                                       .right = face(right)};

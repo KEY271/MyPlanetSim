@@ -329,7 +329,8 @@ DryHydrostaticReferenceColumn make_dry_hydrostatic_reference_column(
     result.potential_temperature_mass_k_kg_m2[level] =
         result.geometry.air_mass_kg_m2[level] * potential_temperature;
     mass += result.geometry.air_mass_kg_m2[level];
-    thermal_mass += result.geometry.air_mass_kg_m2[level] * temperature_profile_k[level];
+    thermal_mass +=
+        result.geometry.air_mass_kg_m2[level] * temperature_profile_k[level];
   }
   require_positive(mass, "semi-implicit reference column mass");
   result.temperature_k = thermal_mass / mass;

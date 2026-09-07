@@ -32,11 +32,11 @@ namespace {
                   expected.horizontal_momentum_mass_kg_m_s[n]) /
                  std::max(1.0, norm(expected.horizontal_momentum_mass_kg_m_s[n])),
              "momentum");
-    consider(std::abs(actual.potential_temperature_mass_k_kg_m2[n] -
-                      expected.potential_temperature_mass_k_kg_m2[n]) /
-                 std::max(1.0,
-                          std::abs(expected.potential_temperature_mass_k_kg_m2[n])),
-             "potential_temperature_mass");
+    consider(
+        std::abs(actual.potential_temperature_mass_k_kg_m2[n] -
+                 expected.potential_temperature_mass_k_kg_m2[n]) /
+            std::max(1.0, std::abs(expected.potential_temperature_mass_k_kg_m2[n])),
+        "potential_temperature_mass");
   }
   return residual;
 }
@@ -240,10 +240,9 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
   workspace.scalar_right_hand_side.horizontal_momentum_mass_kg_m_s.assign(volume, {});
   workspace.scalar_right_hand_side.potential_temperature_mass_k_kg_m2 =
       right_hand_side.potential_temperature_mass_k_kg_m2;
-  apply_dry_hydrostatic_fast_operator(grid, planet, fast_operator,
-                                      workspace.scalar_right_hand_side,
-                                      workspace.scalar_force, workspace.fast_operator,
-                                      false, true);
+  apply_dry_hydrostatic_fast_operator(
+      grid, planet, fast_operator, workspace.scalar_right_hand_side,
+      workspace.scalar_force, workspace.fast_operator, false, true);
   workspace.effective_momentum.resize(volume);
   for (std::size_t n = 0; n < volume; ++n) {
     workspace.effective_momentum[n] =
@@ -321,8 +320,7 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
     workspace.active_modal_coefficient_m2 = coefficient_m2;
     for (std::size_t cell = 0; cell < cells; ++cell) {
       workspace.helmholtz_inverse_diagonal[cell] =
-          1.0 /
-          (1.0 + coefficient_m2 * workspace.helmholtz_laplacian_diagonal[cell]);
+          1.0 / (1.0 + coefficient_m2 * workspace.helmholtz_laplacian_diagonal[cell]);
       workspace.modal_solution[cell] = workspace.modal_divergence[cell];
     }
     const auto linear =
@@ -353,8 +351,8 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
       right_hand_side.potential_temperature_mass_k_kg_m2;
   for (std::size_t cell = 0; cell < cells; ++cell) {
     for (std::size_t level = 0; level < levels; ++level) {
-      Vec3 value = correction.horizontal_momentum_mass_kg_m_s[
-          dry_hydrostatic_offset(cell, level, levels)];
+      Vec3 value = correction.horizontal_momentum_mass_kg_m_s[dry_hydrostatic_offset(
+          cell, level, levels)];
       for (std::size_t mode = 0; mode < levels; ++mode) {
         if (workspace.selected_mode_mask[mode] == 0) continue;
         const auto modal = dry_hydrostatic_offset(cell, mode, levels);

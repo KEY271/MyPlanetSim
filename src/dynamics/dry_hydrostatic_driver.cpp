@@ -225,13 +225,12 @@ struct ScaledCrankNicolsonResidual {
     const auto level = n % levels;
     const Real momentum_scale = std::max(
         1.0, reference.geometry.air_mass_kg_m2[level] * external.phase_speed_m_s);
-    consider(norm(residual.horizontal_momentum_mass_kg_m_s[n]) /
-                 std::max(momentum_scale,
-                          norm(initial.horizontal_momentum_mass_kg_m_s[n])),
-             "momentum");
+    consider(
+        norm(residual.horizontal_momentum_mass_kg_m_s[n]) /
+            std::max(momentum_scale, norm(initial.horizontal_momentum_mass_kg_m_s[n])),
+        "momentum");
     consider(std::abs(residual.potential_temperature_mass_k_kg_m2[n]) /
-                 std::max({1.0,
-                           reference.potential_temperature_mass_k_kg_m2[level],
+                 std::max({1.0, reference.potential_temperature_mass_k_kg_m2[level],
                            std::abs(initial.potential_temperature_mass_k_kg_m2[n])}),
              "potential_temperature_mass");
     consider(std::abs(residual.tracer_mass_kg_m2[n]) /
@@ -299,10 +298,10 @@ void add_semi_implicit_correction(DryHydrostaticState& state,
 }
 
 [[nodiscard]] std::string nonlinear_failure_message(const Real initial_residual,
-                                                     const Real residual,
-                                                     const Real rms_residual,
-                                                     const char* const component,
-                                                     const Real time_step_s) {
+                                                    const Real residual,
+                                                    const Real rms_residual,
+                                                    const char* const component,
+                                                    const Real time_step_s) {
   std::ostringstream message;
   message << std::setprecision(17)
           << "Crank-Nicolson iteration diverged: initial_residual=" << initial_residual
@@ -386,8 +385,9 @@ void DryHydrostaticDriver::update_semi_implicit_reference(
     area += cell_area;
     surface_pressure += cell_area * state.surface_pressure_pa[cell];
     for (std::size_t level = 0; level < levels; ++level)
-      profile[level] += cell_area * workspace_.derived.temperature_k[
-          dry_hydrostatic_offset(cell, level, levels)];
+      profile[level] +=
+          cell_area *
+          workspace_.derived.temperature_k[dry_hydrostatic_offset(cell, level, levels)];
   }
   if (!(area > 0.0)) throw std::runtime_error("grid area is invalid");
   surface_pressure /= area;
@@ -465,8 +465,7 @@ void DryHydrostaticDriver::rhs_with_components(
   // Per-cell Courant condition (ADR 0011): dt * sum_f(lambda_f * L_f) / A_cell <= cfl,
   // the same definition the transport and shallow-water solvers already use. The
   // previous per-edge form was about four times weaker on a quadrilateral cell.
-  if (compute_fast_wave_cfl)
-    workspace.face_fast_wave_speed_length.assign(C * K, 0.0);
+  if (compute_fast_wave_cfl) workspace.face_fast_wave_speed_length.assign(C * K, 0.0);
   workspace.face_advective_speed_length.assign(C * K, 0.0);
   auto& face_fast_wave_speed_length = workspace.face_fast_wave_speed_length;
   auto& face_advective_speed_length = workspace.face_advective_speed_length;
@@ -482,10 +481,9 @@ void DryHydrostaticDriver::rhs_with_components(
     const EdgeTangentBasis basis{cached_edge.normal, cached_edge.tangent};
     for (std::size_t k = 0; k < K; ++k) {
       const auto& face = reconstructed.at(e.id, k);
-      auto f = rusanov_dry_hydrostatic_flux(face.left, face.right, basis,
-                                            config_.planet.gas_constant_j_kg_k,
-                                            config_.planet.heat_capacity_cp_j_kg_k,
-                                            compute_fast_wave_cfl);
+      auto f = rusanov_dry_hydrostatic_flux(
+          face.left, face.right, basis, config_.planet.gas_constant_j_kg_k,
+          config_.planet.heat_capacity_cp_j_kg_k, compute_fast_wave_cfl);
       auto add = [&](std::size_t c, Real sign) {
         auto n = dry_hydrostatic_offset(c, k, K);
         auto scale = sign * e.length_m / grid_.cells()[c].area_m2;
@@ -864,8 +862,8 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           diagnose_and_validate(candidate);
         }
         // Final evaluation at the accepted candidate: it supplies the explicit CFL
-        // check, the step energy attribution, the reported residual, and the first-same-
-        // as-last tendency reused as the next step's `initial_rhs`.
+        // check, the step energy attribution, the reported residual, and the
+        // first-same- as-last tendency reused as the next step's `initial_rhs`.
         timed_rhs(candidate, candidate_rhs);
         if (attempted_dt > semi_implicit_explicit_limit(config_, candidate_rhs))
           throw std::runtime_error("candidate violates an explicit CFL constraint");

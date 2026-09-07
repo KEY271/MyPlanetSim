@@ -1,6 +1,6 @@
 # Phase 10 実装計画 — 重力波 semi-implicit 時間積分
 
-**状態:** 計画中（2026-09-07）。Phase 9 までの explicit dry-hydrostatic core を比較基準として残し、
+**状態:** P10.15 進行中（2026-09-07）。P10.01--P10.14 は完了し、残る完了条件は 1200 日 run のみ。
 水平 Lamb 波と高速な内部重力波だけを semi-implicit に扱う。`N=12`, `K=20` の標準的な乾燥大気で、
 現在の 200 s から通常 1200--1800 s、目標 1800 s の大刻みへ移ることを狙う。
 
@@ -199,8 +199,15 @@ R(U^(l)) = U^(l) - U^n
 U^(l+1) = U^(l) + deltaU
 ```
 
-を行う。初期値は `U^(0)=U^n`、既定 nonlinear iteration は 2 回とし、残差が未達なら上限 4 回まで
-続ける。固定回数だけで無条件に accept せず、scaled nonlinear residual を判定する。
+を行う。初期値は `U^(0)=U^n` とする。
+
+> **P10.14 で改訂。** 当初この節は「既定 2 回、残差未達なら上限 4 回、scaled nonlinear residual を
+> 判定する」と定めていた。実装後の測定でこの残差判定が 1800 s を一度も受理せず、explicit より
+> 2.4 倍遅い原因であることが判明した。Bénard (2003) の ICI 分類、Thuburn et al. (2014)、ENDGame の
+> いずれも固定反復数を使い残差を判定しない。改訂後の契約は
+> `semi_implicit.nonlinear_iterations` による固定反復で、残差は診断と発散検出にのみ使う。反復数は
+> 反復誤差が時間打ち切り誤差を下回る最小値として実測で 3 に決めた。詳細は ADR 0016 と
+> [Phase 10 検証報告](validation/phase-10.md) の P10.14 節を参照。
 
 `alpha=0.5` で temporal convergence gate を通す。高周波 gravity-wave damping が必要な production
 preset では `0.5 < alpha <= 0.55` を許すが、off-centering が時間精度と波の振幅を変えることを metadata
@@ -270,12 +277,12 @@ dry_hydrostatic.advective_cfl = 0.45
 
 semi_implicit.reference_surface_pressure_pa = 100000
 semi_implicit.reference_temperature_k = 300
+semi_implicit.reference_update = fixed
 semi_implicit.implicit_weight = 0.5
 semi_implicit.wave_cfl_threshold = 0.45
 semi_implicit.maximum_implicit_modes = 5
-semi_implicit.nonlinear_relative_tolerance = 1e-8
-semi_implicit.nonlinear_maximum_iterations = 4
-semi_implicit.linear_relative_tolerance = 1e-8
+semi_implicit.nonlinear_iterations = 3
+semi_implicit.linear_relative_tolerance = 1e-4
 semi_implicit.linear_maximum_iterations = 40
 semi_implicit.minimum_time_step_s = 60
 
@@ -530,38 +537,43 @@ baseline更新を混ぜず、旧 explicit結果と新 semi-implicit結果を別�
 
 ## 9. 完了チェックリスト
 
+P10.15 時点の状態。未達は1項目のみ。
+
 ### Method and compatibility
 
-- [ ] ADR 0016 が fast/slow split、reference state、implicit weight、mode選択、solver failureを固定している。
-- [ ] 既存 config、SSP-RK3 state、checkpoint、Frame、canonical text、fingerprintが byte-exactである。
-- [ ] `F=L_ref+(F-L_ref)` identityと `L_ref(U_ref)=0` が登録 testを持つ。
-- [ ] restartが追加履歴なしで uninterrupted runと一致する。
+- [x] ADR 0016 が fast/slow split、reference state、implicit weight、mode選択、solver failureを固定している。
+- [x] 既存 config、SSP-RK3 state、checkpoint、Frame、canonical text、fingerprintが byte-exactである。
+- [x] `F=L_ref+(F-L_ref)` identityと `L_ref(U_ref)=0` が登録 testを持つ。
+- [x] restartが追加履歴なしで uninterrupted runと一致する。
 
 ### Solver and conservation
 
-- [ ] GMRESが既知問題を tolerance内で解き、未収束・NaNを拒否する。
-- [ ] shallow-water fixtureが wave Courant 8まで安定し、centered設定で時間収束する。
-- [ ] vertical mode transformが往復し、必要 modeが再現可能に選ばれる。
-- [ ] implicit correctionが dry mass、`M*theta`、tracer massを後処理なしで保存する。
-- [ ] warm-up後の solver/RHS allocationが0である。
+- [x] GMRESが既知問題を tolerance内で解き、未収束・NaNを拒否する。
+- [x] shallow-water fixtureが wave Courant 8まで安定し、centered設定で時間収束する。
+- [x] vertical mode transformが往復し、必要 modeが再現可能に選ばれる。
+- [x] implicit correctionが dry mass、`M*theta`、tracer massを後処理なしで保存する。
+- [x] warm-up後の solver/RHS allocationが0である。
 
 ### Dynamics
 
-- [ ] flat linear waveが1800 sを受理し、wave Courant 3以上で振幅・位相 gateを満たす。
-- [ ] 2400/3600/5400/7200 s探索でcase別の最大合格stepと最初の不合格理由が記録される。
-- [ ] isothermal restとDCMIP terrain restが既存の静止性を失わない。
-- [ ] linear mountain waveとUMJS14/JW06 baroclinic caseがstep細分化で収束する。
-- [ ] pressure、temperature、layer thickness、tracer、tangency違反をclipせず拒否する。
-- [ ] explicit CFL、implicit wave Courant、solver residual、retry理由が区別して記録される。
+- [x] flat linear waveが1800 sを受理し、wave Courant 3以上で振幅・位相 gateを満たす。
+- [x] 2400/3600/5400/7200 s探索でcase別の最大合格stepと最初の不合格理由が記録される。
+      登録 mode cap では 2400 s、cap を外すと 7200 s まで安定し、10800 s で explicit CFL に当たる。
+- [x] isothermal restとDCMIP terrain restが既存の静止性を失わない。
+- [x] linear mountain waveとUMJS14/JW06 baroclinic caseがstep細分化で収束する。
+- [x] pressure、temperature、layer thickness、tracer、tangency違反をclipせず拒否する。
+- [x] explicit CFL、implicit wave Courant、solver residual、retry理由が区別して記録される。
 
 ### Long step and performance
 
-- [ ] Held--Suarez 30日 runのmedian accepted stepが1200 s以上である。
-- [ ] 同じモデル期間でexplicit 200 sより3倍以上速い。
-- [ ] GMRES p95 iterationが20以下、peak RSSがexplicitの2倍以下である。
-- [ ] 1本の1200日 semi-implicit runが完走し、iteration/retryの経時悪化がない。
-- [ ] GCC/Clang、ASan/UBSan、format-check、全 Phase 0--9 regressionが通る。
-- [ ] `docs/validation/phase-10.md` に再現コマンド、比較値、失敗例、known gapsがある。
+- [x] Held--Suarez 30日 runのmedian accepted stepが1200 s以上である。実測 1800 s、retry 0。
+- [x] 同じモデル期間でexplicit 200 sより3倍以上速い。実測 5.78 倍。
+- [x] GMRES p95 iterationが20以下、peak RSSがexplicitの2倍以下である。実測 1 反復、1.03 倍。
+- [ ] 1本の1200日 semi-implicit runが完走し、iteration/retryの経時悪化がない。**未実施**。
+      手順と合否条件は検証報告の P10.15 節にある。
+- [x] GCC/Clang、ASan/UBSan、format-check、全 Phase 0--9 regressionが通る。
+      Clang 開発スイート 85/85、GCC 15 と ASan/UBSan で phase10 ゲート 7/7。
+- [x] `docs/validation/phase-10.md` に再現コマンド、比較値、失敗例、known gapsがある。
 
 ## 10. Phase 10 が既存の判断に与える影響
 

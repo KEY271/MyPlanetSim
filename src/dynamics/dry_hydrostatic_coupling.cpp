@@ -95,8 +95,7 @@ void couple_dry_hydrostatic_columns(
         std::ranges::all_of(horizontal_tracer,
                             [](const Real value) { return value == 0.0; });
     if (tracer_is_inactive) {
-      std::fill_n(out.tendency.tracer_mass.begin() +
-                      static_cast<std::ptrdiff_t>(begin),
+      std::fill_n(out.tendency.tracer_mass.begin() + static_cast<std::ptrdiff_t>(begin),
                   d.levels, 0.0);
     } else {
       apply(tracer_state, horizontal_tracer, limiter);

@@ -25,10 +25,8 @@ DryHydrostaticEdgeFlux rusanov_dry_hydrostatic_flux(const DryHydrostaticPrimitiv
   const auto dissipation_speed = std::max(std::abs(unl), std::abs(unr));
   const auto maximum_wave_speed =
       compute_wave_speed
-          ? std::max(std::abs(unl) +
-                         std::sqrt(cp / (cp - rd) * rd * l.temperature_k),
-                     std::abs(unr) +
-                         std::sqrt(cp / (cp - rd) * rd * r.temperature_k))
+          ? std::max(std::abs(unl) + std::sqrt(cp / (cp - rd) * rd * l.temperature_k),
+                     std::abs(unr) + std::sqrt(cp / (cp - rd) * rd * r.temperature_k))
           : 0.0;
   const auto fm = 0.5 * (l.air_mass_kg_m2 * unl + r.air_mass_kg_m2 * unr) -
                   0.5 * dissipation_speed * (r.air_mass_kg_m2 - l.air_mass_kg_m2);
