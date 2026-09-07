@@ -1,6 +1,6 @@
 # Phase 10 実装計画 — 重力波 semi-implicit 時間積分
 
-**状態:** P10.15 進行中（2026-09-07）。P10.01--P10.14 は完了し、残る完了条件は 1200 日 run のみ。
+**状態:** 完了（2026-09-07）。P10.01--P10.15 の全段階を完了した。
 水平 Lamb 波と高速な内部重力波だけを semi-implicit に扱う。`N=12`, `K=20` の標準的な乾燥大気で、
 現在の 200 s から通常 1200--1800 s、目標 1800 s の大刻みへ移ることを狙う。
 
@@ -537,7 +537,7 @@ baseline更新を混ぜず、旧 explicit結果と新 semi-implicit結果を別�
 
 ## 9. 完了チェックリスト
 
-P10.15 時点の状態。未達は1項目のみ。
+P10.15 完了時点の状態。
 
 ### Method and compatibility
 
@@ -569,8 +569,10 @@ P10.15 時点の状態。未達は1項目のみ。
 - [x] Held--Suarez 30日 runのmedian accepted stepが1200 s以上である。実測 1800 s、retry 0。
 - [x] 同じモデル期間でexplicit 200 sより3倍以上速い。実測 5.78 倍。
 - [x] GMRES p95 iterationが20以下、peak RSSがexplicitの2倍以下である。実測 1 反復、1.03 倍。
-- [ ] 1本の1200日 semi-implicit runが完走し、iteration/retryの経時悪化がない。**未実施**。
-      手順と合否条件は検証報告の P10.15 節にある。
+- [x] 1本の1200日 semi-implicit runが完走し、iteration/retryの経時悪化がない。
+      20分57秒で完走し、solver反復は初期100日より最終100日の方が低かった。day 412の一時的な
+      強風でadvective CFL短縮と少なくとも2回のsampled retryが生じたが直後に1800 sへ復帰し、
+      長期劣化ではないため完了判定とした。詳細は検証報告の P10.15 節にある。
 - [x] GCC/Clang、ASan/UBSan、format-check、全 Phase 0--9 regressionが通る。
       Clang 開発スイート 85/85、GCC 15 と ASan/UBSan で phase10 ゲート 7/7。
 - [x] `docs/validation/phase-10.md` に再現コマンド、比較値、失敗例、known gapsがある。

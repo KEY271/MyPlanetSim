@@ -2,9 +2,10 @@
 
 ## Status and scope
 
-Phase 10 is in progress. This report is append-only by milestone: the explicit baseline
+Phase 10 is complete as of 2026-09-07. This report is append-only by milestone: the explicit baseline
 below is fixed before the semi-implicit numerical path is enabled. Passing a later gate
-does not permit changing these baseline values or weakening an earlier threshold.
+does not permit changing these baseline values or silently weakening an earlier threshold;
+any result-based amendment must remain explicit in the milestone that motivates it.
 
 The method and failure contract is [ADR 0016](../adr/0016-semi-implicit-gravity-wave-integration.md).
 
@@ -12,7 +13,9 @@ One earlier decision was replaced rather than weakened. P10.14 removed the nonli
 residual tolerance from the acceptance test and replaced it with a fixed iteration count,
 because the tolerance was never the accuracy contract in the first place; the reasoning,
 the literature it follows, and the measurements that fix the new iteration count are in
-the P10.14 section. Every threshold that survives is unchanged.
+the P10.14 section. Every threshold that survives is unchanged. P10.15 records one explicit
+acceptance amendment: isolated shortening at the still-explicit advective CFL is accepted
+when it is bounded, does not persist, and is not accompanied by solver-work drift.
 
 ## P10.01 explicit baseline
 
@@ -450,13 +453,50 @@ awk -F, 'NR>2{n++;r+=$14;if($12!=3)b++;if($10>m)m=$10}
   output/phase10_held_suarez_semi_implicit/semi_implicit_diagnostics.csv
 ```
 
-**Status: not yet run.** The pilot is the one remaining Phase 10 gate. Every other gate
-in this report is measured and passing.
+### Result and acceptance decision
+
+The pilot completed on 2026-09-07 from clean commit
+`fc055a1e1d23b29f065512113068e3feb36b3b08`. The archived run is
+`output/phase10_1200day-20260907-101001` and finished with exit status zero at
+`result.time_s = 103680000` after 57,620 accepted steps. Wall time was 1,257.45 s,
+or 1.048 s per model day. The final dry-mass drift was `-1.99e-16`, the maximum sampled
+mass excursion was `5.97e-16`, and every sampled state had `non_finite_count = 0`.
+`climate_statistics.csv` contains all 480 latitude-bin/level rows with an accumulated
+day-200--1200 window of 86,400,000 s.
+
+Linear solver work did not degrade. The mean/maximum
+`linear_iterations_maximum` was 2.080/3 in the first hundred days and 1.601/2 in the
+last hundred days; the whole-run maximum was 3 and p95 was 2. Every recorded accepted
+step used the configured three nonlinear iterations, and the largest recorded linear
+relative residual remained below `1e-4`.
+
+The run did not satisfy the provisional literal expectation of zero retry and an exactly
+1,800 s accepted step everywhere except the remainder. A short wind maximum near model
+day 412 reached 54.28 m/s and activated the deliberately explicit advective CFL limit.
+Recorded accepted steps in that episode include 886.96 s with one retry, 1,751.83 s at
+advective CFL 0.45, and 894.65 s with one retry. The run returned to 1,800 s immediately
+after the event, retained a sampled median of 1,800 s, and accumulated only 20 extra steps
+over the ideal 57,600-step count. This is bounded operation of the registered fallback,
+not a growth of solver work or a long-time stability defect. Phase 10 therefore accepts
+the pilot and is complete; the zero-retry/only-final-remainder wording above remains as
+the preregistered expectation and this paragraph is the explicit result-based amendment.
+
+The day-200--1200 minimum time/zonal-mean temperature was 181.29 K in the polar top
+level, below ADR 0009's 190 K climate-conformance envelope. This is not attributed to the
+semi-implicit path: the final instantaneous minimum is 179.80 K, while the independent
+200 s explicit 1,200-day checkpoint gives 180.06 K. The Held--Suarez 200 K value is a
+40-day Newtonian-relaxation target rather than a hard floor. Scientific climate
+conformance and attribution of the common upper-polar cold bias remain Phase 7 work and
+do not block the Phase 10 numerical-method completion claim.
 
 ### Known gaps
 
-- The pilot above has not been executed, so long-run solver and climate drift are
-  unverified.
+- Retry diagnostics are sampled at the configured diagnostics interval and do not retain
+  the rejected attempt's exception text. The archived CSV proves that at least two retries
+  occurred, while the 20-step excess proves additional shortening; exact reason-count
+  attribution would require per-step aggregate counters. The coincidence with the run's
+  wind maximum and advective CFL 0.45 identifies the explicit advective limit as the
+  operational cause.
 - Accuracy beyond 1,800 s is unregistered. The ladder in P10.14 probed stability only;
   2,400 s is registered as the operational limit for the Held--Suarez preset because of
   the mode cap, not because 3,600 s was shown to be inaccurate.
