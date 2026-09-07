@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 #include "myplanetsim/core/validation.hpp"
@@ -194,6 +195,107 @@ void gray_radiation_column(const GrayRadiationColumnInput& input,
         result.shortwave_convergence_w_m2[level] +
         result.longwave_convergence_w_m2[level];
   }
+}
+
+GrayRadiativeColumnTendency gray_radiative_column_tendency(
+    const GrayRadiativeColumnSourceInput& input) {
+  GrayRadiativeColumnTendency result;
+  gray_radiative_column_tendency(input, result);
+  return result;
+}
+
+void gray_radiative_column_tendency(const GrayRadiativeColumnSourceInput& input,
+                                    GrayRadiativeColumnTendency& result) {
+  const std::size_t levels = input.radiation.temperature_k.size();
+  if (levels == 0 || input.exner_full.size() != levels)
+    throw std::invalid_argument("gray radiative source shape mismatch");
+  require_positive(input.heat_capacity_cp_j_kg_k, "heat capacity cp");
+  require_positive(input.surface_heat_capacity_j_m2_k, "surface heat capacity");
+  require_non_negative(input.air_exchange_coefficient_w_m2_k,
+                       "air exchange coefficient");
+  require_finite(input.internal_heat_flux_w_m2, "internal heat flux");
+  for (const Real exner : input.exner_full) require_positive(exner, "full-level Exner");
+
+  gray_radiation_column(input.radiation, result.fluxes);
+  result.potential_temperature_mass_k_kg_m2_s.resize(levels);
+  for (std::size_t level = 0; level < levels; ++level) {
+    result.potential_temperature_mass_k_kg_m2_s[level] =
+        result.fluxes.radiative_convergence_w_m2[level] /
+        (input.heat_capacity_cp_j_kg_k * input.exner_full[level]);
+  }
+
+  const Real sensible =
+      input.air_exchange_coefficient_w_m2_k *
+      (input.radiation.surface_temperature_k - input.radiation.temperature_k.back());
+  result.sensible_to_atmosphere_w_m2 = sensible;
+  result.potential_temperature_mass_k_kg_m2_s.back() +=
+      sensible / (input.heat_capacity_cp_j_kg_k * input.exner_full.back());
+  result.surface_storage_rate_w_m2 =
+      -result.fluxes.net_flux_w_m2.back() + input.internal_heat_flux_w_m2 - sensible;
+  result.surface_temperature_k_s =
+      result.surface_storage_rate_w_m2 / input.surface_heat_capacity_j_m2_k;
+
+  // Propagate L1 norms of temperature sensitivities through the positive-coefficient
+  // longwave sweeps. Triangle inequalities at net-flux differences make this a
+  // conservative O(K) bound on every temperature-tendency Jacobian row.
+  std::vector<Real> downward_sensitivity(levels + 1, 0.0);
+  std::vector<Real> upward_sensitivity(levels + 1, 0.0);
+  for (std::size_t level = 0; level < levels; ++level) {
+    const Real path = input.radiation.parameters.longwave_diffusivity_factor *
+                      result.fluxes.optical_depth.longwave[level];
+    const Real transmission = std::exp(-path);
+    const Real absorptivity = -std::expm1(-path);
+    const Real temperature = input.radiation.temperature_k[level];
+    const Real source_derivative =
+        4.0 * kStefanBoltzmannWm2K4 * temperature * temperature * temperature;
+    downward_sensitivity[level + 1] =
+        transmission * downward_sensitivity[level] + absorptivity * source_derivative;
+  }
+  const Real surface_temperature = input.radiation.surface_temperature_k;
+  const Real surface_source_derivative = 4.0 * kStefanBoltzmannWm2K4 *
+                                         surface_temperature * surface_temperature *
+                                         surface_temperature;
+  upward_sensitivity[levels] =
+      input.radiation.surface_emissivity * surface_source_derivative +
+      (1.0 - input.radiation.surface_emissivity) * downward_sensitivity[levels];
+  for (std::size_t reverse = levels; reverse > 0; --reverse) {
+    const std::size_t level = reverse - 1;
+    const Real path = input.radiation.parameters.longwave_diffusivity_factor *
+                      result.fluxes.optical_depth.longwave[level];
+    const Real transmission = std::exp(-path);
+    const Real absorptivity = -std::expm1(-path);
+    const Real temperature = input.radiation.temperature_k[level];
+    const Real source_derivative =
+        4.0 * kStefanBoltzmannWm2K4 * temperature * temperature * temperature;
+    upward_sensitivity[level] =
+        transmission * upward_sensitivity[level + 1] + absorptivity * source_derivative;
+  }
+
+  Real rate_bound = 0.0;
+  for (std::size_t level = 0; level < levels; ++level) {
+    const Real mass = (input.radiation.pressure_half_pa[level + 1] -
+                       input.radiation.pressure_half_pa[level]) /
+                      input.radiation.gravity_m_s2;
+    const Real flux_sensitivity =
+        upward_sensitivity[level] + downward_sensitivity[level] +
+        upward_sensitivity[level + 1] + downward_sensitivity[level + 1];
+    Real row_bound = flux_sensitivity / (input.heat_capacity_cp_j_kg_k * mass);
+    if (level + 1 == levels)
+      row_bound += 2.0 * input.air_exchange_coefficient_w_m2_k /
+                   (input.heat_capacity_cp_j_kg_k * mass);
+    rate_bound = std::max(rate_bound, row_bound);
+  }
+  const Real surface_row_bound =
+      (upward_sensitivity[levels] + downward_sensitivity[levels] +
+       2.0 * input.air_exchange_coefficient_w_m2_k) /
+      input.surface_heat_capacity_j_m2_k;
+  rate_bound = std::max(rate_bound, surface_row_bound);
+  if (!std::isfinite(rate_bound))
+    throw std::invalid_argument("gray radiation temperature rate bound is not finite");
+  result.temperature_rate_bound_s_1 = rate_bound;
+  result.stable_time_step_s = rate_bound == 0.0
+                                  ? std::numeric_limits<Real>::infinity()
+                                  : input.radiation.parameters.cfl / rate_bound;
 }
 
 }  // namespace mps
