@@ -1,5 +1,6 @@
 #include <atomic>
 #include <cstdlib>
+#include <filesystem>
 #include <new>
 
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
@@ -125,6 +126,22 @@ MPS_TEST_CASE("warmed modal solve performs no heap allocations") {
       workspace);
   count_allocations.store(false, std::memory_order_relaxed);
   MPS_CHECK(measured.all_converged);
+  MPS_CHECK_EQ(allocation_count.load(std::memory_order_relaxed), 0U);
+}
+
+MPS_TEST_CASE("warmed gray radiation RHS performs no heap allocations") {
+  const auto root = std::filesystem::path(__FILE__).parent_path().parent_path();
+  const auto radiative_config =
+      mps::load_experiment_config(root / "configs/phase11_gray_uniform.cfg");
+  const mps::DryHydrostaticDriver driver(radiative_config);
+  const auto state = driver.initial_state();
+  mps::DryHydrostaticRhs rhs;
+  driver.rhs(state, rhs);
+  driver.rhs(state, rhs);
+  allocation_count.store(0, std::memory_order_relaxed);
+  count_allocations.store(true, std::memory_order_relaxed);
+  driver.rhs(state, rhs);
+  count_allocations.store(false, std::memory_order_relaxed);
   MPS_CHECK_EQ(allocation_count.load(std::memory_order_relaxed), 0U);
 }
 

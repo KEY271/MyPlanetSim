@@ -126,3 +126,6 @@ mps_add_test(phase0.convergence_restart test_phase0_gates.cpp)
 set_tests_properties(phase0.convergence_restart PROPERTIES LABELS phase0_gate)
 mps_add_test(phase4.vertical_column test_vertical_column.cpp)
 set_tests_properties(phase4.vertical_column PROPERTIES LABELS phase4_gate)
+
+mps_add_test(phase11.radiative_presets test_radiative_presets.cpp)
+set_tests_properties(phase11.radiative_presets PROPERTIES LABELS phase11_gate)
