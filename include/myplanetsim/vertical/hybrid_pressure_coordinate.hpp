@@ -21,6 +21,14 @@ struct HybridPressureCoefficients {
 [[nodiscard]] HybridPressureCoefficients uniform_sigma_coefficients(
     Real top_pressure_pa, Index levels);
 
+// A sigma ramp whose layers thin geometrically toward the surface, so a boundary layer
+// can be resolved without paying for uniform layers aloft. `surface_refinement` is the
+// sigma thickness of the top layer divided by that of the bottom layer; 1 reproduces
+// `uniform_sigma_coefficients` exactly. This is not the uniform family of ADR 0007, so
+// an interactive control request still refuses to re-resolve a preset built from it.
+[[nodiscard]] HybridPressureCoefficients surface_refined_sigma_coefficients(
+    Real top_pressure_pa, Index levels, Real surface_refinement);
+
 // True when the given coefficients are the uniform sigma ramp at their own level count,
 // so refining them stays inside the family the preset already chose.
 [[nodiscard]] bool is_uniform_sigma(std::span<const Real> a_half_pa,

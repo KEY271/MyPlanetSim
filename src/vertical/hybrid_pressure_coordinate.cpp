@@ -45,6 +45,48 @@ HybridPressureCoefficients uniform_sigma_coefficients(const Real top_pressure_pa
   return coefficients;
 }
 
+HybridPressureCoefficients surface_refined_sigma_coefficients(
+    const Real top_pressure_pa, const Index levels, const Real surface_refinement) {
+  require_positive(top_pressure_pa, "hybrid model top pressure");
+  require_finite(surface_refinement, "sigma surface refinement");
+  if (levels < 1) {
+    throw std::invalid_argument("hybrid coefficient level count must be positive");
+  }
+  if (!(surface_refinement >= 1.0)) {
+    throw std::invalid_argument("sigma surface refinement must be at least one");
+  }
+  if (levels == 1 || surface_refinement == 1.0) {
+    return uniform_sigma_coefficients(top_pressure_pa, levels);
+  }
+  const auto count = static_cast<std::size_t>(levels) + 1;
+  // Layer k counts from the model top and is `ratio` times thicker in sigma than the
+  // layer below it, so the top-to-bottom thickness ratio is exactly the requested
+  // refinement no matter how many levels are asked for.
+  const Real ratio = std::pow(surface_refinement, 1.0 / static_cast<Real>(levels - 1));
+  std::vector<Real> thickness(static_cast<std::size_t>(levels));
+  Real total = 0.0;
+  Real weight = 1.0;
+  for (std::size_t k = 0; k < thickness.size(); ++k) {
+    thickness[k] = weight;
+    total += weight;
+    weight /= ratio;
+  }
+  HybridPressureCoefficients coefficients;
+  coefficients.a_half_pa.reserve(count);
+  coefficients.b_half.reserve(count);
+  Real sigma = 0.0;
+  for (std::size_t k = 0; k < count; ++k) {
+    coefficients.a_half_pa.push_back(top_pressure_pa * (1.0 - sigma));
+    coefficients.b_half.push_back(sigma);
+    if (k < thickness.size()) sigma += thickness[k] / total;
+  }
+  coefficients.a_half_pa.front() = top_pressure_pa;
+  coefficients.a_half_pa.back() = 0.0;
+  coefficients.b_half.front() = 0.0;
+  coefficients.b_half.back() = 1.0;
+  return coefficients;
+}
+
 bool is_uniform_sigma(const std::span<const Real> a_half_pa,
                       const std::span<const Real> b_half) {
   if (a_half_pa.size() < 2 || a_half_pa.size() != b_half.size()) {
