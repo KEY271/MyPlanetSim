@@ -61,6 +61,7 @@ add_library(
   src/diagnostics/shallow_water_diagnostics.cpp
   src/diagnostics/vertical_column_diagnostics.cpp
   src/diagnostics/dry_hydrostatic_diagnostics.cpp
+  src/diagnostics/moist_diagnostics.cpp
   src/diagnostics/planetary_scales.cpp
   src/dynamics/shallow_water_state.cpp
   src/dynamics/dry_hydrostatic_state.cpp
@@ -259,6 +260,15 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase12_cli.cmake
   )
   set_tests_properties(phase12.dry_mixing_cli PROPERTIES LABELS phase12_gate)
+  add_test(
+    NAME phase13.moist_cli
+    COMMAND
+      ${CMAKE_COMMAND} -DMPS_EXECUTABLE=$<TARGET_FILE:my_planet_sim>
+      -DMPS_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/configs/phase13_moist_ci.cfg
+      -DMPS_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR} -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase13_cli.cmake
+  )
+  set_tests_properties(phase13.moist_cli PROPERTIES LABELS phase13_gate)
   set_tests_properties(phase11.radiation_cli PROPERTIES LABELS phase11_gate)
   set_tests_properties(
     phase10.semi_implicit_diagnostics PROPERTIES LABELS phase10_gate

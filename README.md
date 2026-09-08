@@ -243,3 +243,12 @@ N=6/K=10・1200日候補です。pilot は1800秒の median accepted step で完
 K=20 の1日基準、`configs/phase12_gray_pilot.cfg` は1200日候補です。過程別収支は
 `convection_diagnostics.csv` / `boundary_layer_diagnostics.csv` / `mixing_column.csv` に出力します。
 測定値・感度・適用範囲は [Phase 12 検証報告](docs/validation/phase-12.md) にあります。
+
+Phase 13 の bounded 湿潤結合は `configs/phase13_moist_ci.cfg` で実行できます。
+`tracer_diagnostics.csv`、`moisture_diagnostics.csv`、
+`moist_convection_diagnostics.csv`、`moist_column.csv`、`moist_surface_state.csv` を出力します。
+柱・水循環・bucket の dependency-free SVG は次のコマンドで生成できます。
+
+```sh
+python3 tools/plot_moist_column.py output/phase13_moist_ci/moist_column.csv
+```

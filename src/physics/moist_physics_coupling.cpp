@@ -63,15 +63,45 @@ void apply_moist_column_physics(
            .thermodynamics = thermodynamics},
           workspace.convection);
       convective_rain = workspace.convection.diagnostics.convective_rain_kg_m2;
-      if (workspace.convection.diagnostics.branch == MoistConvectionBranch::kDeep)
+      const auto& convective = workspace.convection.diagnostics;
+      diagnostics.cape_area_time_integral_j_m2_s_kg +=
+          area * time_step_s * convective.cape_j_kg;
+      diagnostics.cin_area_time_integral_j_m2_s_kg +=
+          area * time_step_s * convective.cin_j_kg;
+      diagnostics.maximum_temperature_increment_k =
+          std::max(diagnostics.maximum_temperature_increment_k,
+                   convective.maximum_temperature_increment_k);
+      Real maximum_vapor_increment = 0.0;
+      for (std::size_t level = 0; level < levels; ++level) {
+        const Real initial_vapor =
+            state.tracer_mass_kg_m2[vapor_begin + level] / mass[level];
+        maximum_vapor_increment = std::max(
+            maximum_vapor_increment,
+            std::abs(workspace.convection.vapor_mixing_ratio[level] - initial_vapor));
+      }
+      diagnostics.maximum_vapor_increment =
+          std::max(diagnostics.maximum_vapor_increment, maximum_vapor_increment);
+      if (convective.branch != MoistConvectionBranch::kNone) {
+        diagnostics.active_area_time_m2_s += area * time_step_s;
+        diagnostics.lcl_pressure_area_time_integral_pa_m2_s +=
+            area * time_step_s * convective.lcl_pressure_pa;
+        diagnostics.convection_top_pressure_area_time_integral_pa_m2_s +=
+            area * time_step_s * convective.convection_top_pressure_pa;
+      }
+      if (convective.reaches_model_top)
+        diagnostics.model_top_area_time_m2_s += area * time_step_s;
+      if (convective.branch == MoistConvectionBranch::kDeep) {
         ++diagnostics.deep_column_count;
-      else if (workspace.convection.diagnostics.branch ==
-               MoistConvectionBranch::kShallow)
+        diagnostics.deep_area_time_m2_s += area * time_step_s;
+      } else if (convective.branch == MoistConvectionBranch::kShallow) {
         ++diagnostics.shallow_column_count;
-      else
+        diagnostics.shallow_area_time_m2_s += area * time_step_s;
+      } else {
         ++diagnostics.inactive_column_count;
+        diagnostics.inactive_area_time_m2_s += area * time_step_s;
+      }
       diagnostics.moist_enthalpy_budget_residual_j +=
-          area * workspace.convection.diagnostics.moist_enthalpy_change_j_m2;
+          area * convective.moist_enthalpy_change_j_m2;
       for (std::size_t level = 0; level < levels; ++level) {
         state.potential_temperature_mass_k_kg_m2[begin + level] =
             mass[level] * workspace.convection.temperature_k[level] / exner[level];

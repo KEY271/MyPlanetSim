@@ -18,6 +18,17 @@ struct MoistPhysicsStepDiagnostics {
   Real water_budget_residual_kg = 0.0;
   Real moist_enthalpy_budget_residual_j = 0.0;
   Real maximum_relative_humidity = 0.0;
+  Real maximum_temperature_increment_k = 0.0;
+  Real maximum_vapor_increment = 0.0;
+  Real cape_area_time_integral_j_m2_s_kg = 0.0;
+  Real cin_area_time_integral_j_m2_s_kg = 0.0;
+  Real lcl_pressure_area_time_integral_pa_m2_s = 0.0;
+  Real convection_top_pressure_area_time_integral_pa_m2_s = 0.0;
+  Real active_area_time_m2_s = 0.0;
+  Real deep_area_time_m2_s = 0.0;
+  Real shallow_area_time_m2_s = 0.0;
+  Real inactive_area_time_m2_s = 0.0;
+  Real model_top_area_time_m2_s = 0.0;
   std::size_t deep_column_count = 0;
   std::size_t shallow_column_count = 0;
   std::size_t inactive_column_count = 0;

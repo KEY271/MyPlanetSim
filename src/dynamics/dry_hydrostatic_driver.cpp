@@ -271,6 +271,21 @@ void accumulate_moist_physics_diagnostics(MoistPhysicsStepDiagnostics& total,
   total.moist_enthalpy_budget_residual_j += local.moist_enthalpy_budget_residual_j;
   total.maximum_relative_humidity =
       std::max(total.maximum_relative_humidity, local.maximum_relative_humidity);
+  total.maximum_temperature_increment_k = std::max(
+      total.maximum_temperature_increment_k, local.maximum_temperature_increment_k);
+  total.maximum_vapor_increment =
+      std::max(total.maximum_vapor_increment, local.maximum_vapor_increment);
+  total.cape_area_time_integral_j_m2_s_kg += local.cape_area_time_integral_j_m2_s_kg;
+  total.cin_area_time_integral_j_m2_s_kg += local.cin_area_time_integral_j_m2_s_kg;
+  total.lcl_pressure_area_time_integral_pa_m2_s +=
+      local.lcl_pressure_area_time_integral_pa_m2_s;
+  total.convection_top_pressure_area_time_integral_pa_m2_s +=
+      local.convection_top_pressure_area_time_integral_pa_m2_s;
+  total.active_area_time_m2_s += local.active_area_time_m2_s;
+  total.deep_area_time_m2_s += local.deep_area_time_m2_s;
+  total.shallow_area_time_m2_s += local.shallow_area_time_m2_s;
+  total.inactive_area_time_m2_s += local.inactive_area_time_m2_s;
+  total.model_top_area_time_m2_s += local.model_top_area_time_m2_s;
   total.deep_column_count += local.deep_column_count;
   total.shallow_column_count += local.shallow_column_count;
   total.inactive_column_count += local.inactive_column_count;

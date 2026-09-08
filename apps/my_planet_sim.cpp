@@ -25,6 +25,7 @@
 #include "myplanetsim/control/control_request.hpp"
 #include "myplanetsim/diagnostics/climate_statistics.hpp"
 #include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
+#include "myplanetsim/diagnostics/moist_diagnostics.hpp"
 #include "myplanetsim/diagnostics/reductions.hpp"
 #include "myplanetsim/diagnostics/vertical_column_diagnostics.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
@@ -662,6 +663,36 @@ struct DryMixingDiagnosticsRow {
   mps::DryHydrostaticStepDiagnostics diagnostics;
 };
 
+struct TracerDiagnosticsRow {
+  mps::Real time_s = 0.0;
+  std::uint64_t step = 0;
+  std::size_t tracer = 0;
+  mps::TracerGlobalDiagnostics instantaneous;
+  mps::Real interval_mass_change_kg = 0.0;
+  mps::Real interval_physics_change_kg = 0.0;
+  mps::Real interval_transport_diffusion_residual_kg = 0.0;
+};
+
+struct MoistureDiagnosticsRow {
+  mps::Real time_s = 0.0;
+  std::uint64_t step = 0;
+  mps::Real interval_seconds = 0.0;
+  mps::MoistureGlobalDiagnostics instantaneous;
+  mps::Real dry_energy_j = 0.0;
+  mps::Real atmospheric_latent_energy_j = 0.0;
+  mps::Real surface_energy_j = 0.0;
+  mps::Real dry_latent_surface_energy_j = 0.0;
+  mps::MoistPhysicsStepDiagnostics interval;
+  mps::Real cumulative_convective_precipitation_kg = 0.0;
+  mps::Real cumulative_grid_scale_precipitation_kg = 0.0;
+  mps::Real cumulative_evaporation_kg = 0.0;
+  mps::Real cumulative_runoff_kg = 0.0;
+  mps::Real cumulative_ocean_water_change_kg = 0.0;
+  mps::Real cumulative_external_outflow_kg = 0.0;
+  std::size_t physics_substep_count = 0;
+  std::size_t physics_retry_count = 0;
+};
+
 void write_dry_mixing_diagnostics(const mps::ExperimentConfig& config,
                                   const mps::CubedSphereGrid& grid,
                                   const std::span<const DryMixingDiagnosticsRow> rows) {
@@ -1038,6 +1069,84 @@ void write_mixing_column(const mps::ExperimentConfig& config,
   if (!output) throw std::runtime_error("failed while writing mixing column CSV");
 }
 
+void write_moist_column(const mps::ExperimentConfig& config,
+                        const mps::DryHydrostaticDriver& driver,
+                        const mps::DryHydrostaticState& state,
+                        const mps::DryHydrostaticDerived& derived) {
+  const std::size_t levels = static_cast<std::size_t>(config.vertical.levels);
+  const std::size_t cells = driver.grid().cell_count();
+  const mps::TracerRegistry registry(config.tracers);
+  const std::size_t water = *registry.water_vapor_index();
+  const mps::AtmosphericHybridCoordinate coordinate(
+      {config.vertical.a_half_pa, config.vertical.b_half},
+      config.vertical.minimum_surface_pressure_pa,
+      config.vertical.maximum_surface_pressure_pa,
+      config.vertical.minimum_pressure_thickness_pa);
+  const auto geometry = coordinate.geometry(
+      state.surface_pressure_pa.front(), config.planet.gravity_m_s2,
+      config.planet.gas_constant_j_kg_k, config.planet.heat_capacity_cp_j_kg_k,
+      config.planet.reference_pressure_pa);
+  const auto theta =
+      std::span<const mps::Real>(derived.potential_temperature_k.data(), levels);
+  const auto hydrostatic = mps::integrate_hydrostatic_column(
+      geometry, std::vector<mps::Real>(theta.begin(), theta.end()),
+      config.planet.heat_capacity_cp_j_kg_k, config.planet.gravity_m_s2,
+      driver.orography().surface_geopotential_m2_s2().front());
+  const mps::DiluteMoistThermodynamics thermodynamics{
+      .gas_constant_dry_air_j_kg_k = config.planet.gas_constant_j_kg_k,
+      .heat_capacity_cp_j_kg_k = config.planet.heat_capacity_cp_j_kg_k};
+  const std::filesystem::path directory(config.output_directory);
+  std::filesystem::create_directories(directory);
+  std::ofstream output(directory / "moist_column.csv", std::ios::trunc);
+  if (!output) throw std::runtime_error("unable to open moist column CSV");
+  output << "time_s,cell_id,level,pressure_pa,height_m,temperature_k,"
+            "potential_temperature_k,vapor_mixing_ratio,saturation_mixing_ratio,"
+            "relative_humidity,air_mass_kg_m2,surface_temperature_k,"
+            "land_water_kg_m2,cumulative_convective_precipitation_kg,"
+            "cumulative_grid_scale_precipitation_kg,cumulative_evaporation_kg,"
+            "cumulative_runoff_kg\n"
+         << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+  const mps::Real surface_height =
+      driver.orography().surface_geopotential_m2_s2().front() /
+      config.planet.gravity_m_s2;
+  for (std::size_t level = 0; level < levels; ++level) {
+    const std::size_t scalar = mps::dry_hydrostatic_offset(0, level, levels);
+    const std::size_t vapor =
+        mps::dry_hydrostatic_tracer_offset(water, 0, level, cells, levels);
+    const mps::Real temperature = derived.temperature_k[scalar];
+    const mps::Real q = derived.tracer_mixing_ratio[vapor];
+    const mps::Real saturation = mps::saturation_mixing_ratio(
+        temperature, derived.pressure_pa[scalar], thermodynamics);
+    output << state.time_s << ",0," << level << ',' << derived.pressure_pa[scalar]
+           << ',' << hydrostatic.height_full_m[level] - surface_height << ','
+           << temperature << ',' << derived.potential_temperature_k[scalar] << ',' << q
+           << ',' << saturation << ',' << q / saturation << ','
+           << derived.air_mass_kg_m2[scalar] << ','
+           << state.surface_temperature_k.front() << ','
+           << state.land_water_kg_m2.front() << ','
+           << state.cumulative_convective_precipitation_kg << ','
+           << state.cumulative_grid_scale_precipitation_kg << ','
+           << state.cumulative_evaporation_kg << ',' << state.cumulative_runoff_kg
+           << '\n';
+  }
+  if (!output) throw std::runtime_error("failed while writing moist column CSV");
+
+  std::ofstream surface_output(directory / "moist_surface_state.csv", std::ios::trunc);
+  if (!surface_output)
+    throw std::runtime_error("unable to open moist surface state CSV");
+  surface_output << "time_s,cell_id,area_m2,land_fraction,surface_temperature_k,"
+                    "land_water_kg_m2\n"
+                 << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+  const auto& land_fraction = driver.surface_boundary()->land_fraction();
+  for (std::size_t cell = 0; cell < cells; ++cell)
+    surface_output << state.time_s << ',' << cell << ','
+                   << driver.grid().cells()[cell].area_m2 << ',' << land_fraction[cell]
+                   << ',' << state.surface_temperature_k[cell] << ','
+                   << state.land_water_kg_m2[cell] << '\n';
+  if (!surface_output)
+    throw std::runtime_error("failed while writing moist surface state CSV");
+}
+
 class PhysicsDiagnosticsAccumulator {
  public:
   PhysicsDiagnosticsAccumulator(const mps::ExperimentConfig& config,
@@ -1146,6 +1255,272 @@ class PhysicsDiagnosticsAccumulator {
   mps::Real cumulative_diffusion_energy_j_ = 0.0;
   std::optional<PhysicsDiagnosticsRow> last_;
   std::vector<PhysicsDiagnosticsRow> rows_;
+};
+
+class MoistDiagnosticsAccumulator {
+ public:
+  MoistDiagnosticsAccumulator(const mps::ExperimentConfig& config,
+                              const mps::CubedSphereGrid& grid,
+                              const std::span<const mps::Real> land_fraction)
+      : config_(config),
+        grid_(grid),
+        registry_(config.tracers),
+        water_vapor_tracer_(*registry_.water_vapor_index()),
+        thermodynamics_{
+            .gas_constant_dry_air_j_kg_k = config.planet.gas_constant_j_kg_k,
+            .heat_capacity_cp_j_kg_k = config.planet.heat_capacity_cp_j_kg_k},
+        land_fraction_(land_fraction.begin(), land_fraction.end()) {
+    if (land_fraction_.size() != grid_.cell_count())
+      throw std::invalid_argument("moist diagnostics land-fraction shape mismatch");
+  }
+
+  void observe_step(const mps::DryHydrostaticStepDiagnostics& step) {
+    if (!(step.accepted_time_step_s > 0.0)) return;
+    pending_seconds_ += step.accepted_time_step_s;
+    pending_substeps_ += step.physics_substep_count;
+    pending_retries_ += step.physics_retry_count;
+    const auto& local = step.moisture;
+    pending_.evaporation_kg += local.evaporation_kg;
+    pending_.convective_precipitation_kg += local.convective_precipitation_kg;
+    pending_.grid_scale_precipitation_kg += local.grid_scale_precipitation_kg;
+    pending_.runoff_kg += local.runoff_kg;
+    pending_.ocean_water_change_kg += local.ocean_water_change_kg;
+    pending_.external_outflow_kg += local.external_outflow_kg;
+    pending_.water_budget_residual_kg += local.water_budget_residual_kg;
+    pending_.moist_enthalpy_budget_residual_j += local.moist_enthalpy_budget_residual_j;
+    pending_.maximum_relative_humidity =
+        std::max(pending_.maximum_relative_humidity, local.maximum_relative_humidity);
+    pending_.maximum_temperature_increment_k =
+        std::max(pending_.maximum_temperature_increment_k,
+                 local.maximum_temperature_increment_k);
+    pending_.maximum_vapor_increment =
+        std::max(pending_.maximum_vapor_increment, local.maximum_vapor_increment);
+    pending_.cape_area_time_integral_j_m2_s_kg +=
+        local.cape_area_time_integral_j_m2_s_kg;
+    pending_.cin_area_time_integral_j_m2_s_kg += local.cin_area_time_integral_j_m2_s_kg;
+    pending_.lcl_pressure_area_time_integral_pa_m2_s +=
+        local.lcl_pressure_area_time_integral_pa_m2_s;
+    pending_.convection_top_pressure_area_time_integral_pa_m2_s +=
+        local.convection_top_pressure_area_time_integral_pa_m2_s;
+    pending_.active_area_time_m2_s += local.active_area_time_m2_s;
+    pending_.deep_area_time_m2_s += local.deep_area_time_m2_s;
+    pending_.shallow_area_time_m2_s += local.shallow_area_time_m2_s;
+    pending_.inactive_area_time_m2_s += local.inactive_area_time_m2_s;
+    pending_.model_top_area_time_m2_s += local.model_top_area_time_m2_s;
+    pending_.deep_column_count += local.deep_column_count;
+    pending_.shallow_column_count += local.shallow_column_count;
+    pending_.inactive_column_count += local.inactive_column_count;
+  }
+
+  void observe_sample(const mps::DryHydrostaticState& state,
+                      const mps::DryHydrostaticDerived& derived) {
+    const auto tracers = mps::diagnose_tracers(grid_, state, derived, registry_);
+    const auto instantaneous = mps::diagnose_moisture(
+        grid_, state, derived, land_fraction_, water_vapor_tracer_, thermodynamics_);
+    const auto dry =
+        mps::diagnose_dry_hydrostatic_budgets(grid_, state, derived, config_.planet);
+    mps::Real surface_energy_j = 0.0;
+    for (std::size_t cell = 0; cell < grid_.cell_count(); ++cell) {
+      const mps::Real heat_capacity = mps::mixed_surface_heat_capacity(
+          land_fraction_[cell], config_.surface->land_heat_capacity_j_m2_k,
+          config_.surface->ocean_heat_capacity_j_m2_k);
+      surface_energy_j += grid_.cells()[cell].area_m2 * heat_capacity *
+                          state.surface_temperature_k[cell];
+    }
+    const mps::Real latent_energy_j = thermodynamics_.latent_heat_vaporization_j_kg *
+                                      instantaneous.atmospheric_water_kg;
+    if (previous_tracer_mass_kg_.empty()) {
+      previous_tracer_mass_kg_.reserve(tracers.size());
+      for (const auto& tracer : tracers)
+        previous_tracer_mass_kg_.push_back(tracer.mass_kg);
+    }
+    const mps::Real water_physics_change = pending_.evaporation_kg -
+                                           pending_.convective_precipitation_kg -
+                                           pending_.grid_scale_precipitation_kg;
+    for (std::size_t tracer = 0; tracer < tracers.size(); ++tracer) {
+      const mps::Real mass_change =
+          tracers[tracer].mass_kg - previous_tracer_mass_kg_[tracer];
+      const mps::Real physics_change =
+          tracer == water_vapor_tracer_ ? water_physics_change : 0.0;
+      tracer_rows_.push_back(
+          {.time_s = state.time_s,
+           .step = state.step,
+           .tracer = tracer,
+           .instantaneous = tracers[tracer],
+           .interval_mass_change_kg = mass_change,
+           .interval_physics_change_kg = physics_change,
+           .interval_transport_diffusion_residual_kg = mass_change - physics_change});
+      previous_tracer_mass_kg_[tracer] = tracers[tracer].mass_kg;
+    }
+    moisture_rows_.push_back(
+        {.time_s = state.time_s,
+         .step = state.step,
+         .interval_seconds = pending_seconds_,
+         .instantaneous = instantaneous,
+         .dry_energy_j = dry.total_energy_j,
+         .atmospheric_latent_energy_j = latent_energy_j,
+         .surface_energy_j = surface_energy_j,
+         .dry_latent_surface_energy_j =
+             dry.total_energy_j + latent_energy_j + surface_energy_j,
+         .interval = pending_,
+         .cumulative_convective_precipitation_kg =
+             state.cumulative_convective_precipitation_kg,
+         .cumulative_grid_scale_precipitation_kg =
+             state.cumulative_grid_scale_precipitation_kg,
+         .cumulative_evaporation_kg = state.cumulative_evaporation_kg,
+         .cumulative_runoff_kg = state.cumulative_runoff_kg,
+         .cumulative_ocean_water_change_kg = state.cumulative_ocean_water_change_kg,
+         .cumulative_external_outflow_kg = state.cumulative_external_outflow_kg,
+         .physics_substep_count = pending_substeps_,
+         .physics_retry_count = pending_retries_});
+    pending_ = {};
+    pending_seconds_ = 0.0;
+    pending_substeps_ = 0;
+    pending_retries_ = 0;
+  }
+
+  void write() const {
+    const std::filesystem::path directory(config_.output_directory);
+    std::filesystem::create_directories(directory);
+    std::ofstream tracer_output(directory / "tracer_diagnostics.csv", std::ios::trunc);
+    if (!tracer_output)
+      throw std::runtime_error("unable to open tracer diagnostics CSV");
+    tracer_output
+        << "time_s,step,tracer_index,tracer_name,tracer_role,mass_kg,"
+           "minimum_mixing_ratio,maximum_mixing_ratio,interval_mass_change_kg,"
+           "interval_physics_change_kg,"
+           "interval_transport_diffusion_residual_kg\n"
+        << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+    for (const auto& row : tracer_rows_) {
+      const auto& descriptor = registry_[row.tracer];
+      tracer_output << row.time_s << ',' << row.step << ',' << row.tracer << ','
+                    << descriptor.name << ',' << mps::tracer_role_name(descriptor.role)
+                    << ',' << row.instantaneous.mass_kg << ','
+                    << row.instantaneous.minimum_mixing_ratio << ','
+                    << row.instantaneous.maximum_mixing_ratio << ','
+                    << row.interval_mass_change_kg << ','
+                    << row.interval_physics_change_kg << ','
+                    << row.interval_transport_diffusion_residual_kg << '\n';
+    }
+
+    std::ofstream moisture_output(directory / "moisture_diagnostics.csv",
+                                  std::ios::trunc);
+    if (!moisture_output)
+      throw std::runtime_error("unable to open moisture diagnostics CSV");
+    moisture_output
+        << "time_s,step,interval_seconds,atmospheric_water_kg,"
+           "precipitable_water_kg_m2,area_mean_relative_humidity,"
+           "minimum_relative_humidity,maximum_relative_humidity,land_water_kg,"
+           "area_mean_land_water_kg_m2,maximum_vapor_mixing_ratio,"
+           "dilute_limit_exceedance_area_fraction,dry_energy_j,"
+           "atmospheric_latent_energy_j,surface_energy_j,"
+           "dry_latent_surface_energy_j,net_evaporation_kg,"
+           "convective_precipitation_kg,grid_scale_precipitation_kg,runoff_kg,"
+           "ocean_water_change_kg,external_outflow_kg,water_budget_residual_kg,"
+           "moist_enthalpy_budget_residual_j,net_evaporation_kg_m2_s,"
+           "precipitation_kg_m2_s,precipitation_mm_day_display,"
+           "latent_heat_flux_w_m2,cumulative_evaporation_kg,"
+           "cumulative_convective_precipitation_kg,"
+           "cumulative_grid_scale_precipitation_kg,cumulative_runoff_kg,"
+           "cumulative_ocean_water_change_kg,cumulative_external_outflow_kg,"
+           "physics_substep_count,physics_retry_count\n"
+        << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+    const mps::Real area = grid_.total_area_m2();
+    for (const auto& row : moisture_rows_) {
+      const mps::Real inverse_area_time =
+          row.interval_seconds > 0.0 ? 1.0 / (area * row.interval_seconds) : 0.0;
+      const mps::Real evaporation_rate =
+          row.interval.evaporation_kg * inverse_area_time;
+      const mps::Real precipitation_rate = (row.interval.convective_precipitation_kg +
+                                            row.interval.grid_scale_precipitation_kg) *
+                                           inverse_area_time;
+      moisture_output
+          << row.time_s << ',' << row.step << ',' << row.interval_seconds << ','
+          << row.instantaneous.atmospheric_water_kg << ','
+          << row.instantaneous.precipitable_water_kg_m2 << ','
+          << row.instantaneous.area_mean_relative_humidity << ','
+          << row.instantaneous.minimum_relative_humidity << ','
+          << row.instantaneous.maximum_relative_humidity << ','
+          << row.instantaneous.land_water_kg << ','
+          << row.instantaneous.area_mean_land_water_kg_m2 << ','
+          << row.instantaneous.maximum_vapor_mixing_ratio << ','
+          << row.instantaneous.dilute_limit_exceedance_area_fraction << ','
+          << row.dry_energy_j << ',' << row.atmospheric_latent_energy_j << ','
+          << row.surface_energy_j << ',' << row.dry_latent_surface_energy_j << ','
+          << row.interval.evaporation_kg << ','
+          << row.interval.convective_precipitation_kg << ','
+          << row.interval.grid_scale_precipitation_kg << ',' << row.interval.runoff_kg
+          << ',' << row.interval.ocean_water_change_kg << ','
+          << row.interval.external_outflow_kg << ','
+          << row.interval.water_budget_residual_kg << ','
+          << row.interval.moist_enthalpy_budget_residual_j << ',' << evaporation_rate
+          << ',' << precipitation_rate << ',' << precipitation_rate * 86400.0 << ','
+          << evaporation_rate * thermodynamics_.latent_heat_vaporization_j_kg << ','
+          << row.cumulative_evaporation_kg << ','
+          << row.cumulative_convective_precipitation_kg << ','
+          << row.cumulative_grid_scale_precipitation_kg << ','
+          << row.cumulative_runoff_kg << ',' << row.cumulative_ocean_water_change_kg
+          << ',' << row.cumulative_external_outflow_kg << ','
+          << row.physics_substep_count << ',' << row.physics_retry_count << '\n';
+    }
+
+    std::ofstream convection_output(directory / "moist_convection_diagnostics.csv",
+                                    std::ios::trunc);
+    if (!convection_output)
+      throw std::runtime_error("unable to open moist convection diagnostics CSV");
+    convection_output
+        << "time_s,step,interval_seconds,area_mean_cape_j_kg,"
+           "area_mean_cin_j_kg,active_mean_lcl_pressure_pa,"
+           "active_mean_convection_top_pressure_pa,deep_area_fraction,"
+           "shallow_area_fraction,inactive_area_fraction,model_top_area_fraction,"
+           "maximum_temperature_increment_k,maximum_vapor_increment,"
+           "moist_enthalpy_budget_residual_j,deep_column_calls,"
+           "shallow_column_calls,inactive_column_calls,physics_substep_count,"
+           "physics_retry_count\n"
+        << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
+    for (const auto& row : moisture_rows_) {
+      const auto& value = row.interval;
+      const mps::Real area_time = area * row.interval_seconds;
+      const mps::Real inverse_area_time = area_time > 0.0 ? 1.0 / area_time : 0.0;
+      const mps::Real inverse_active =
+          value.active_area_time_m2_s > 0.0 ? 1.0 / value.active_area_time_m2_s : 0.0;
+      const auto area_fraction = [inverse_area_time](const mps::Real value) {
+        return std::clamp(value * inverse_area_time, 0.0, 1.0);
+      };
+      convection_output
+          << row.time_s << ',' << row.step << ',' << row.interval_seconds << ','
+          << value.cape_area_time_integral_j_m2_s_kg * inverse_area_time << ','
+          << value.cin_area_time_integral_j_m2_s_kg * inverse_area_time << ','
+          << value.lcl_pressure_area_time_integral_pa_m2_s * inverse_active << ','
+          << value.convection_top_pressure_area_time_integral_pa_m2_s * inverse_active
+          << ',' << area_fraction(value.deep_area_time_m2_s) << ','
+          << area_fraction(value.shallow_area_time_m2_s) << ','
+          << area_fraction(value.inactive_area_time_m2_s) << ','
+          << area_fraction(value.model_top_area_time_m2_s) << ','
+          << value.maximum_temperature_increment_k << ','
+          << value.maximum_vapor_increment << ','
+          << value.moist_enthalpy_budget_residual_j << ',' << value.deep_column_count
+          << ',' << value.shallow_column_count << ',' << value.inactive_column_count
+          << ',' << row.physics_substep_count << ',' << row.physics_retry_count << '\n';
+    }
+    if (!tracer_output || !moisture_output || !convection_output)
+      throw std::runtime_error("failed while writing moist diagnostics CSV");
+  }
+
+ private:
+  const mps::ExperimentConfig& config_;
+  const mps::CubedSphereGrid& grid_;
+  mps::TracerRegistry registry_;
+  std::size_t water_vapor_tracer_ = 0;
+  mps::DiluteMoistThermodynamics thermodynamics_;
+  std::vector<mps::Real> land_fraction_;
+  mps::MoistPhysicsStepDiagnostics pending_;
+  mps::Real pending_seconds_ = 0.0;
+  std::size_t pending_substeps_ = 0;
+  std::size_t pending_retries_ = 0;
+  std::vector<mps::Real> previous_tracer_mass_kg_;
+  std::vector<TracerDiagnosticsRow> tracer_rows_;
+  std::vector<MoistureDiagnosticsRow> moisture_rows_;
 };
 
 }  // namespace
@@ -1382,6 +1757,7 @@ int main(const int argc, const char* const argv[]) {
       }
       std::optional<PhysicsDiagnosticsAccumulator> physics_diagnostics;
       std::optional<mps::ClimateStatisticsAccumulator> climate_statistics;
+      std::optional<MoistDiagnosticsAccumulator> moist_diagnostics;
       if (config.physics.kind == mps::PhysicsKind::kHeldSuarez ||
           config.physics.kind == mps::PhysicsKind::kPlanetaryNewtonian ||
           config.physics.kind == mps::PhysicsKind::kGrayRadiation) {
@@ -1389,6 +1765,9 @@ int main(const int argc, const char* const argv[]) {
         climate_statistics.emplace(driver.grid(),
                                    static_cast<std::size_t>(config.vertical.levels));
       }
+      if (config.moisture.kind == mps::MoistureKind::kDiluteWater)
+        moist_diagnostics.emplace(config, driver.grid(),
+                                  driver.surface_boundary()->land_fraction());
       std::vector<SurfaceDiagnosticsRow> surface_diagnostics;
       std::vector<RadiationDiagnosticsRow> radiation_diagnostics;
       std::vector<SemiImplicitDiagnosticsRow> semi_implicit_diagnostics;
@@ -1408,12 +1787,12 @@ int main(const int argc, const char* const argv[]) {
       std::signal(SIGTERM, request_cancellation);
       driver.advance(
           state, config.run.end_time_s,
-          [&physics_diagnostics, &climate_statistics, &surface_diagnostics,
-           &radiation_diagnostics, &pending_surface_budget, &pending_radiation_budget,
-           &pending_cfl_retries, &pending_invariant_retries, &pending_solver_retries,
-           &pending_radiation_column_calls, &pending_radiation_wall_seconds,
-           &semi_implicit_diagnostics, &dry_mixing_diagnostics, &progress,
-           segment_start_time_s, segment_start_step,
+          [&physics_diagnostics, &climate_statistics, &moist_diagnostics,
+           &surface_diagnostics, &radiation_diagnostics, &pending_surface_budget,
+           &pending_radiation_budget, &pending_cfl_retries, &pending_invariant_retries,
+           &pending_solver_retries, &pending_radiation_column_calls,
+           &pending_radiation_wall_seconds, &semi_implicit_diagnostics,
+           &dry_mixing_diagnostics, &progress, segment_start_time_s, segment_start_step,
            &config](const mps::DryHydrostaticState& sampled,
                     const mps::DryHydrostaticDerived* derived,
                     const mps::DryHydrostaticStepDiagnostics& step) {
@@ -1425,6 +1804,11 @@ int main(const int argc, const char* const argv[]) {
             }
             if (climate_statistics.has_value() && derived != nullptr) {
               climate_statistics->observe(sampled, *derived);
+            }
+            if (moist_diagnostics.has_value()) {
+              moist_diagnostics->observe_step(step);
+              if (derived != nullptr)
+                moist_diagnostics->observe_sample(sampled, *derived);
             }
             if (config.semi_implicit.has_value() && derived != nullptr) {
               semi_implicit_diagnostics.push_back({.time_s = sampled.time_s,
@@ -1492,6 +1876,7 @@ int main(const int argc, const char* const argv[]) {
           reached_end_time ? "complete" : (was_cancelled ? "cancelled" : "stopped");
       progress.finish(state, result_status);
       if (physics_diagnostics.has_value()) physics_diagnostics->write();
+      if (moist_diagnostics.has_value()) moist_diagnostics->write();
       if (climate_statistics.has_value()) {
         const std::filesystem::path directory(config.output_directory);
         std::filesystem::create_directories(directory);
@@ -1608,6 +1993,8 @@ int main(const int argc, const char* const argv[]) {
         write_radiation_column(config, driver, state, derived);
       if (config.boundary_layer.kind != mps::BoundaryLayerKind::kNone)
         write_mixing_column(config, driver, state, derived);
+      if (config.moisture.kind == mps::MoistureKind::kDiluteWater)
+        write_moist_column(config, driver, state, derived);
       const auto diagnostics = mps::diagnose_dry_hydrostatic_budgets(
           driver.grid(), state, derived, config.planet);
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
