@@ -154,3 +154,9 @@ set_tests_properties(phase4.vertical_column PROPERTIES LABELS phase4_gate)
 
 mps_add_test(phase11.radiative_presets test_radiative_presets.cpp)
 set_tests_properties(phase11.radiative_presets PROPERTIES LABELS phase11_gate)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME phase14.summary COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_phase14_summary.py)
+endif()

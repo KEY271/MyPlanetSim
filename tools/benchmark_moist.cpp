@@ -196,6 +196,7 @@ int main(int argc, char** argv) {
     config.validate();
 
     const mps::DryHydrostaticDriver driver(config);
+    driver.enable_rhs_profiling(std::getenv("MPS_PROFILE_RHS") != nullptr);
     auto state = driver.initial_state();
     const mps::TracerRegistry registry = config.tracers.empty()
                                              ? mps::TracerRegistry::legacy()
@@ -222,6 +223,7 @@ int main(int argc, char** argv) {
                "cumulative_evaporation_kg,cumulative_convective_precipitation_kg,"
                "cumulative_grid_scale_precipitation_kg,cumulative_runoff_kg\n"
             << std::setprecision(17);
+    mps::FullRhsEvaluationCounts full_rhs{};
     std::size_t accepted_steps = 0;
     std::size_t retries = 0;
     std::size_t linear_iterations = 0;
@@ -235,10 +237,12 @@ int main(int argc, char** argv) {
     double maximum_moist_enthalpy_residual_j = 0.0;
     double maximum_temperature_increment_k = 0.0;
     double maximum_vapor_increment = 0.0;
+    driver.reset_rhs_profile();
     const auto start = std::chrono::steady_clock::now();
     allocation_count.store(0, std::memory_order_relaxed);
     warm_allocation_count.store(0, std::memory_order_relaxed);
-    count_allocations.store(true, std::memory_order_relaxed);
+    const bool measure_allocations = std::getenv("MPS_COUNT_ALLOCATIONS") != nullptr;
+    count_allocations.store(measure_allocations, std::memory_order_relaxed);
     driver.advance(
         state, config.run.end_time_s,
         [&](const mps::DryHydrostaticState& sampled,
@@ -246,6 +250,10 @@ int main(int argc, char** argv) {
             const mps::DryHydrostaticStepDiagnostics& step) {
           if (step.accepted_time_step_s > 0.0) {
             ++accepted_steps;
+            full_rhs.initial += step.full_rhs.initial;
+            full_rhs.iteration += step.full_rhs.iteration;
+            full_rhs.final += step.full_rhs.final;
+            full_rhs.discarded += step.full_rhs.discarded;
             accepted_seconds += step.accepted_time_step_s;
             retries += step.retry_count;
             linear_iterations += step.linear_iterations_total;
@@ -284,7 +292,7 @@ int main(int argc, char** argv) {
                     << sampled.cumulative_grid_scale_precipitation_kg << ','
                     << sampled.cumulative_runoff_kg << '\n';
           }
-          if (accepted_steps == 1)
+          if (measure_allocations && accepted_steps == 1)
             count_warm_allocations.store(true, std::memory_order_relaxed);
         });
     count_allocations.store(false, std::memory_order_relaxed);
@@ -354,7 +362,14 @@ int main(int argc, char** argv) {
     std::cout
         << std::setprecision(17) << "elapsed_s=" << elapsed << '\n'
         << "seconds_per_model_day=" << elapsed * 86400.0 / accepted_seconds << '\n'
+        << "full_rhs_initial=" << full_rhs.initial << '\n'
+        << "full_rhs_iteration=" << full_rhs.iteration << '\n'
+        << "full_rhs_final=" << full_rhs.final << '\n'
+        << "full_rhs_discarded=" << full_rhs.discarded << '\n'
+        << "full_rhs_per_step=" << static_cast<double>(full_rhs.total()) / accepted_steps << '\n'
+        << "full_rhs_per_model_day=" << full_rhs.total() * 86400.0 / accepted_seconds << '\n'
         << "peak_rss_bytes=" << peak_rss_bytes() << '\n'
+        << "allocation_counting_enabled=" << measure_allocations << '\n'
         << "allocations=" << allocation_count.load(std::memory_order_relaxed) << '\n'
         << "allocations_per_step="
         << static_cast<double>(allocation_count.load(std::memory_order_relaxed)) /
@@ -414,6 +429,11 @@ int main(int argc, char** argv) {
         << '\n'
         << "maximum_temperature_increment_k=" << maximum_temperature_increment_k << '\n'
         << "maximum_vapor_increment=" << maximum_vapor_increment << '\n';
+    const char* regions[] = {"diagnose_setup", "reconstruction", "flux_cfl",
+                             "column_coupling", "source", "diffusion", "physics", "result_copy"};
+    for (std::size_t i = 0; i < 8; ++i)
+      std::cout << "rhs_region_" << regions[i] << "_s=" << driver.rhs_profile().seconds[i] << '\n';
+    std::cout << "profiled_rhs_calls=" << driver.rhs_profile().calls << '\n';
     return 0;
   } catch (const std::exception& error) {
     count_allocations.store(false, std::memory_order_relaxed);

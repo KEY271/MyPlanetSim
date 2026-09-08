@@ -404,13 +404,28 @@ explicit 200 s run より 3 倍以上速く、1 本の 1200 日 run が保存量
 30日比較と1200日 aquaplanet pilot の適用範囲を報告する。水蒸気の放射効果、雲・氷・降水再蒸発、
 既存全系エネルギー残差の解消はこの完了条件に含めない。
 
-### Phase 14 以後 — 物理拡張と並列性能
+### Phase 14 — RHS 評価削減・物理の頻度分離・CPU 性能改善
+
+Phase 14 は性能改善に集中する。現在の実装に基づく変更箇所、比較行列、採否基準、実装順は
+[Phase 14 実装計画](phase-14-plan.md) に定める（計画段階）。
+
+- semi-implicit の固定2反復と predictor-corrector / IMEX を比較し、full RHS の実評価回数を減らす
+- BL/surface、SBM、放射の診断・更新間隔を分離し、SBM 900--1800秒、BL 600--900秒を検証する
+- column workspace と保存的な edge flux/gather を整備し、column physics と RHS/fast operator 全域へ OpenMP を広げる
+- reconstruction と flux の融合、blocked/AoSoA 配置、modal transform の batch/SIMD 化、tile 処理を比較する
+- 同一精度・同一モデル期間での性能、retry、過程収支、restart、30日・1200日統計を検証する
+
+完了ゲート: 各候補の採否と実測を記録し、採用した構成が旧経路の保存・正値性・統計の gate を満たす。
+速度目標は同一環境で測る旧 serial 比で、湿潤 serial 1.5倍以上、N=24/48の最終並列構成3倍以上を
+開始目標とする。精度・性能閾値は P14.01 で固定し、達成前に実測値として扱わない。
+
+### Phase 15 以後 — 物理拡張と分散・accelerator 対応
 
 候補:
 
 - 水蒸気の放射効果・簡易雲・氷過程、その後に詳細放射
 - 非静水圧方程式（必要な惑星・解像度が明確になった場合）
-- OpenMP/MPI、並列 halo exchange、並列 I/O、accelerator 対応
+- MPI、分散 halo exchange、並列 I/O、accelerator backend
 - advective CFL が実測上の次の支配項になった場合の semi-Lagrangian または別の長時間刻み輸送
 
 各物理過程は単一 column test と process budget を先に作る。並列化は serial 結果との許容誤差内一致、
@@ -443,18 +458,15 @@ explicit 200 s run より 3 倍以上速く、1 本の 1200 日 run が保存量
 
 ## 5. 直近の実装順
 
-Phase 9 までの基盤修正と性能改善は完了した。次は、新しい物理を積む前に explicit Lamb CFL による
-200 s 制約を外し、長時間 climate integration の step 数そのものを減らす。順序と根拠は
-[Phase 10 実装計画](phase-10-plan.md) に定める。
+Phase 13 の bounded 湿潤実装と1200日 pilot を完了した。次は
+[Phase 14 実装計画](phase-14-plan.md) に従い、以下の順に性能を改善する。
 
-1. ADR 0016 と explicit baseline測定で fast/slow split、保存、solver、精度・性能閾値を固定する。
-2. total RHSを変えずに componentとCourant診断を分離する。
-3. GMRES/Helmholtz solverを線形 shallow-water fixtureで独立に検証する。
-4. hydrostatic reference column、鉛直mode、保存的 tangent-linear fast operatorを実装する。
-5. external modeから始め、必要なinternal modesへ iterative Crank--Nicolson solveを拡張する。
-6. flat、terrain、baroclinic、Held--Suarezの順に1200--1800 sを検証する。
-7. 30日比較で3倍以上のspeedupを確認してから、1本の1200日pilotを実行する。
-8. 放射・湿潤・非静水圧・本格的並列化はPhase 11以後とする。
+1. 過程別の時間・実評価回数・allocation と、精度比較用 baseline を固定する。
+2. ICI 2反復を比較し、必要なら predictor-corrector / IMEX を評価する。
+3. 物理の scheduler を分離し、SBM の低頻度化と既存陰的 BL/surface の600--900秒化を検証する。
+4. column の局所化・workspace 再利用から始め、RHS 全域へ OpenMP を広げる。
+5. reconstruction--flux 融合、配列 view/blocked 配置、modal SIMD/batch、tile 処理を順に評価する。
+6. 採用候補を統合し、30日・1200日の保存・統計・restart と同一モデル期間の速度を登録する。
 
 ## 6. 調査資料と計画への反映
 

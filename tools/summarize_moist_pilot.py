@@ -71,11 +71,36 @@ def aggregate_moisture(samples, area):
     }
 
 
+def select_intervals(samples, minimum_time, maximum_time=math.inf):
+    """Select whole intervals in (minimum_time, maximum_time].
+
+    Integrated fluxes cannot be split exactly from a CSV average. Fail instead
+    of silently attributing a straddling interval to either side of a cutoff.
+    """
+    selected = []
+    for row in samples:
+        end = number(row, "time_s")
+        duration = number(row, "interval_seconds")
+        if duration <= 0 or end <= minimum_time or end - duration >= maximum_time:
+            continue
+        if end - duration < minimum_time or end > maximum_time:
+            raise ValueError("diagnostic interval straddles an aggregation boundary")
+        selected.append(row)
+    return selected
+
+
 def block_statistics(samples, area, start_time, block_days):
     blocks = {}
     block_seconds = block_days * 86400.0
+    if not math.isfinite(block_seconds) or block_seconds <= 0:
+        raise ValueError("block duration must be positive and finite")
     for row in samples:
-        index = int((number(row, "time_s") - start_time) // block_seconds)
+        end = number(row, "time_s")
+        if number(row, "interval_seconds") <= 0:
+            continue
+        index = math.ceil((end - start_time) / block_seconds) - 1
+        boundary = start_time + index * block_seconds
+        select_intervals([row], boundary, boundary + block_seconds)
         blocks.setdefault(index, []).append(row)
     result = []
     for index, selected in sorted(blocks.items()):
@@ -98,7 +123,8 @@ def radiation_mean(output, area, minimum_time):
                     previous = number(row, "segment_start_time_s")
                 interval = time - previous
                 previous = time
-                if time >= minimum_time and interval > 0:
+                if interval > 0 and select_intervals(
+                        [dict(row, interval_seconds=str(interval))], minimum_time):
                     energy += number(row, "interval_toa_net_upward_j")
                     seconds += interval
     return energy / (area * seconds) if seconds else None
@@ -125,8 +151,12 @@ def post_spinup_climate(output, minimum_time):
             continue
         with moisture_path.open() as stream:
             moisture = list(csv.DictReader(stream))
-        if not moisture or number(moisture[-1], "time_s") < minimum_time:
+        if not moisture or number(moisture[-1], "time_s") <= minimum_time:
             continue
+        positive = [row for row in moisture if number(row, "interval_seconds") > 0]
+        if positive and min(number(row, "time_s") - number(row, "interval_seconds")
+                            for row in positive) < minimum_time:
+            raise ValueError("climate segment straddles spin-up boundary")
         with path.open() as stream:
             selected.extend(row for row in csv.DictReader(stream)
                             if number(row, "accumulated_time_s") > 0.0)
@@ -161,7 +191,7 @@ def main():
         parser.error(f"no moisture diagnostics below {args.output}")
     moisture.sort(key=lambda row: (number(row, "time_s"), number(row, "step")))
     minimum_time = start_time + args.spinup_days * 86400.0
-    selected = [row for row in moisture if number(row, "time_s") >= minimum_time]
+    selected = select_intervals(moisture, minimum_time, end_time)
     if not selected:
         parser.error("no moisture samples remain after the spin-up cutoff")
     aggregate = aggregate_moisture(selected, area)
@@ -183,7 +213,7 @@ def main():
     physics = rows(args.output, "physics_diagnostics.csv")
     convection = rows(args.output, "moist_convection_diagnostics.csv")
     radiation = [row for row in rows(args.output, "radiation_diagnostics.csv")
-                 if number(row, "time_s") >= minimum_time]
+                 if minimum_time < number(row, "time_s") <= end_time]
     result = {
         "config_fingerprint": config_fingerprint(args.output),
         "complete": number(last, "time_s") >= end_time,

@@ -705,6 +705,15 @@ void DryHydrostaticDriver::rhs_with_components(
     const DryHydrostaticState& s, DryHydrostaticRhs& result,
     DryHydrostaticRhsComponents* const components,
     const bool compute_fast_wave_cfl) const {
+  auto stamp = profile_enabled_ ? std::chrono::steady_clock::now()
+                                : std::chrono::steady_clock::time_point{};
+  const auto finish_region = [&](std::size_t region) {
+    if (!profile_enabled_) return;
+    const auto now = std::chrono::steady_clock::now();
+    rhs_profile_.seconds[region] += std::chrono::duration<Real>(now - stamp).count();
+    stamp = now;
+  };
+  if (profile_enabled_) ++rhs_profile_.calls;
   auto& workspace = workspace_;
   workspace.column_potential_temperature.resize(coordinate_.levels());
   diagnose_dry_hydrostatic_state(
@@ -727,10 +736,12 @@ void DryHydrostaticDriver::rhs_with_components(
   workspace.face_advective_speed_length.assign(C * K, 0.0);
   auto& face_fast_wave_speed_length = workspace.face_fast_wave_speed_length;
   auto& face_advective_speed_length = workspace.face_advective_speed_length;
+  finish_region(0);
   reconstruct_dry_hydrostatic_face_states(
       grid_, d, config_.dry_hydrostatic.reconstruction, config_.dry_hydrostatic.limiter,
       workspace.reconstruction, workspace.reconstruction_workspace,
       compute_fast_wave_cfl);
+  finish_region(1);
   const auto& reconstructed = workspace.reconstruction;
   for (const auto& e : grid_.edges()) {
     const auto& cached_edge = grid_.edge_cache()[e.id];
@@ -783,6 +794,7 @@ void DryHydrostaticDriver::rhs_with_components(
                                                   advective_denominator);
     }
   }
+  finish_region(2);
   couple_dry_hydrostatic_columns(
       s, d, h, coordinate_.coefficients().b_half, config_.planet.gravity_m_s2,
       config_.vertical.transport_scheme, config_.vertical.limiter,
@@ -822,6 +834,7 @@ void DryHydrostaticDriver::rhs_with_components(
     if (unit_step_cfl > 0.0)
       vertical_dt = std::min(vertical_dt, config_.vertical.cfl / unit_step_cfl);
   }
+  finish_region(3);
   if (pressure_reference_.has_value())
     dry_hydrostatic_sources(grid_, d, config_.planet, *pressure_reference_,
                             workspace.sources, workspace.sources_workspace);
@@ -837,6 +850,7 @@ void DryHydrostaticDriver::rhs_with_components(
     coupled.tendency.momentum[n] = coupled.tendency.momentum[n] +
                                    sources.pressure_gradient_kg_m_s2[n] +
                                    sources.coriolis_kg_m_s2[n];
+  finish_region(4);
   Real diffusion_rate = 0.0;
   Real diffusion_dt = std::numeric_limits<Real>::infinity();
   if (config_.dry_hydrostatic.diffusion_kind != DiffusionKind::kNone) {
@@ -863,6 +877,7 @@ void DryHydrostaticDriver::rhs_with_components(
                                    config_.dry_hydrostatic.diffusion_coefficient,
                                    std::numeric_limits<Real>::max());
   }
+  finish_region(5);
   HeldSuarezDiagnostics physics_diagnostics{};
   SurfaceEnergyDiagnostics surface_diagnostics{};
   GrayRadiationDiagnostics radiation_diagnostics{};
@@ -968,6 +983,7 @@ void DryHydrostaticDriver::rhs_with_components(
         physics.diagnostics.dry_thermal_energy_rate_w;
     physics_diagnostics.rayleigh_drag_work_w = physics.diagnostics.rayleigh_drag_work_w;
   }
+  finish_region(6);
   result.surface_pressure_pa_s = coupled.surface_pressure_pa_s;
   result.tendency = coupled.tendency;
   result.horizontal_fast_wave_stable_time_step_s = fast_wave_dt;
@@ -984,6 +1000,7 @@ void DryHydrostaticDriver::rhs_with_components(
   result.radiation_column_call_count = radiation_column_call_count;
   result.radiation_wall_seconds = radiation_wall_seconds;
   result.diffusion_kinetic_energy_rate_w = diffusion_rate;
+  finish_region(7);
 }
 void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                                    const DryHydrostaticObserver& obs,
@@ -1227,6 +1244,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         return;
       }
       const auto step_wall_start = std::chrono::steady_clock::now();
+      FullRhsEvaluationCounts full_rhs{};
       Real rhs_wall_seconds = 0.0;
       Real linear_solve_wall_seconds = 0.0;
       std::size_t linear_iterations_total = 0;
@@ -1266,7 +1284,10 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
             std::chrono::duration<Real>(std::chrono::steady_clock::now() - start)
                 .count();
       };
-      if (!initial_rhs_is_current) timed_rhs(initial, initial_rhs);
+      if (!initial_rhs_is_current) {
+        ++full_rhs.initial;
+        timed_rhs(initial, initial_rhs);
+      }
       Real dt = std::min({config_.run.time_step_s,
                           semi_implicit_explicit_limit(config_, initial_rhs),
                           end - initial.time_s});
@@ -1297,6 +1318,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           if (iteration == 0 && rhs_is_time_independent) {
             rhs_at_candidate = &initial_rhs;
           } else {
+            ++full_rhs.iteration;
             timed_rhs(candidate, candidate_rhs);
             rhs_at_candidate = &candidate_rhs;
           }
@@ -1339,6 +1361,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         // Final evaluation at the accepted candidate: it supplies the explicit CFL
         // check, the step energy attribution, the reported residual, and the
         // first-same- as-last tendency reused as the next step's `initial_rhs`.
+        ++full_rhs.final;
         timed_rhs(candidate, candidate_rhs);
         if (attempted_dt > semi_implicit_explicit_limit(config_, candidate_rhs))
           throw std::runtime_error("candidate violates an explicit CFL constraint");
@@ -1365,10 +1388,12 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
 
       DryHydrostaticState candidate;
       while (true) {
+        const auto attempt_rhs_begin = full_rhs.total();
         try {
           candidate = attempt_step(dt);
           break;
         } catch (const std::runtime_error& error) {
+          full_rhs.discarded += full_rhs.total() - attempt_rhs_begin;
           const std::string_view reason(error.what());
           if (reason.find("CFL") != std::string_view::npos)
             ++cfl_retry_count;
@@ -1393,6 +1418,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       s = std::move(candidate);
       const Real explicit_weight = 1.0 - parameters.implicit_weight;
       DryHydrostaticStepDiagnostics step{
+          .full_rhs = full_rhs,
           .thermal_energy_contribution_j =
               dt *
               (explicit_weight * initial_rhs.physics_diagnostics.thermal_energy_rate_w +
@@ -1518,6 +1544,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     DryConvectionDiagnostics accepted_convection{};
     MoistPhysicsStepDiagnostics accepted_moisture{};
     std::vector<Real> accepted_radiation_surface_temperature;
+    FullRhsEvaluationCounts full_rhs{.initial = 1};
     rhs(initial, rhs1);
     std::size_t radiation_column_call_count = rhs1.radiation_column_call_count;
     Real radiation_wall_seconds = rhs1.radiation_wall_seconds;
@@ -1529,6 +1556,8 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     }
 
     while (true) {
+      // Charge the previous failed attempt before beginning the next one.
+      full_rhs.discarded = full_rhs.iteration;
       auto stage1 = euler_update(initial, rhs1, dt);
       stage1.time_s = initial.time_s + dt;
       if (!pressure_is_in_range(config_, stage1) ||
@@ -1538,6 +1567,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         continue;
       }
       project_momentum(stage1);
+      ++full_rhs.iteration;
       rhs(stage1, rhs2);
       radiation_column_call_count += rhs2.radiation_column_call_count;
       radiation_wall_seconds += rhs2.radiation_wall_seconds;
@@ -1560,6 +1590,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         continue;
       }
       project_momentum(stage2);
+      ++full_rhs.iteration;
       rhs(stage2, rhs3);
       radiation_column_call_count += rhs3.radiation_column_call_count;
       radiation_wall_seconds += rhs3.radiation_wall_seconds;
@@ -1597,6 +1628,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       }
       s = std::move(next);
       DryHydrostaticStepDiagnostics step{
+          .full_rhs = full_rhs,
           .thermal_energy_contribution_j =
               dt * (rhs1.physics_diagnostics.thermal_energy_rate_w / 6.0 +
                     rhs2.physics_diagnostics.thermal_energy_rate_w / 6.0 +

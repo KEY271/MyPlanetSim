@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -74,6 +75,7 @@ int main(const int argc, char** argv) {
       throw std::invalid_argument(
           "benchmark requires a semi-implicit dry-hydrostatic configuration");
     const mps::DryHydrostaticDriver driver(config);
+    driver.enable_rhs_profiling(std::getenv("MPS_PROFILE_RHS") != nullptr);
     auto state = driver.initial_state();
     const auto initial_step = state.step;
     const auto initial_time_s = state.time_s;
@@ -81,6 +83,7 @@ int main(const int argc, char** argv) {
         state.time_s +
         static_cast<mps::Real>(command_line.requested_steps) * config.run.time_step_s;
 
+    mps::FullRhsEvaluationCounts full_rhs{};
     std::size_t diagnostic_steps = 0;
     std::size_t linear_iterations_total = 0;
     std::size_t linear_iterations_maximum = 0;
@@ -90,6 +93,7 @@ int main(const int argc, char** argv) {
     mps::Real accepted_dt_maximum = 0.0;
     mps::Real rhs_wall_seconds = 0.0;
     mps::Real linear_wall_seconds = 0.0;
+    driver.reset_rhs_profile();
     const auto start = std::chrono::steady_clock::now();
     driver.advance(
         state, end_time_s,
@@ -97,6 +101,10 @@ int main(const int argc, char** argv) {
             const mps::DryHydrostaticStepDiagnostics& diagnostics) {
           if (sampled.step == initial_step) return;
           ++diagnostic_steps;
+          full_rhs.initial += diagnostics.full_rhs.initial;
+          full_rhs.iteration += diagnostics.full_rhs.iteration;
+          full_rhs.final += diagnostics.full_rhs.final;
+          full_rhs.discarded += diagnostics.full_rhs.discarded;
           linear_iterations_total += diagnostics.linear_iterations_total;
           linear_iterations_maximum = std::max(linear_iterations_maximum,
                                                diagnostics.linear_iterations_maximum);
@@ -131,6 +139,11 @@ int main(const int argc, char** argv) {
               << "accepted_dt_maximum_s = " << accepted_dt_maximum << '\n'
               << "linear_iterations_total = " << linear_iterations_total << '\n'
               << "linear_iterations_maximum = " << linear_iterations_maximum << '\n'
+              << "full_rhs_initial = " << full_rhs.initial << '\n'
+              << "full_rhs_iteration = " << full_rhs.iteration << '\n'
+              << "full_rhs_final = " << full_rhs.final << '\n'
+              << "full_rhs_discarded = " << full_rhs.discarded << '\n'
+              << "full_rhs_per_step = " << static_cast<double>(full_rhs.total()) / completed_steps << '\n'
               << "retry_count = " << retries << '\n'
               << "wall_seconds_rhs = " << rhs_wall_seconds << '\n'
               << "wall_seconds_linear_solve = " << linear_wall_seconds << '\n'
@@ -138,6 +151,11 @@ int main(const int argc, char** argv) {
               << std::max(0.0, elapsed_s - rhs_wall_seconds - linear_wall_seconds)
               << '\n'
               << "peak_rss_bytes = " << peak_rss_bytes() << '\n';
+    const char* regions[] = {"diagnose_setup", "reconstruction", "flux_cfl",
+                             "column_coupling", "source", "diffusion", "physics", "result_copy"};
+    for (std::size_t i = 0; i < 8; ++i)
+      std::cout << "rhs_region_" << regions[i] << "_s=" << driver.rhs_profile().seconds[i] << '\n';
+    std::cout << "profiled_rhs_calls=" << driver.rhs_profile().calls << '\n';
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "semi-implicit benchmark error: " << error.what() << '\n';

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "registered_before_numerical_candidates": true,
+  "reference_commit": "b6d3bbb",
+  "performance_policy": "Measure natural improvements; do not tune diffusion, tolerances or physical parameters to meet speed targets.",
+  "baseline": {"iterations": 3, "dt_s": 1800, "physics_substep_s": 300},
+  "fine_reference": {"iterations": 5, "dt_s": 450, "physics_substep_s": 75},
+  "arithmetic_preserving": {"same_build_serial": "byte equality", "kernel_scaled_error": 1e-12, "short_coupled_scaled_error": 1e-10},
+  "field_absolute_scales": {"temperature_k": 1, "pressure_pa": 100000, "wind_m_s": 1, "mixing_ratio": 0.001, "flux_w_m2": 1},
+  "one_day": {"mass_weighted_temperature_rms_k": 0.1, "pw_relative": 0.01, "integrated_evaporation_precipitation_relative": 0.05, "toa_w_m2": 0.5},
+  "thirty_day": {"mean_temperature_k": 0.2, "pw_relative": 0.02, "integrated_evaporation_precipitation_relative": 0.05, "toa_w_m2": 0.5, "zonal_temperature_rms_k": 1, "zonal_wind_rms_m_s": 2},
+  "moist_distribution": {"cape_and_rain_tail_relative": 0.2, "convective_fraction_absolute": 0.05, "top_reaching_fraction_absolute": 0.05},
+  "conservation": {"passive_mass_relative": 1e-11, "water_and_enthalpy_scaled_residual": 1e-10, "zero_exchange_water_floor_kg_m2": 1e-12, "zero_exchange_energy_floor_j_m2": 1e-6, "rain_evaporation_absolute_floor_kg_m2_s": 1e-10},
+  "timers": {"rhs_regions": "exclusive; diagnose/setup, reconstruction (includes pack and limiter), flux/CFL, column coupling, source, diffusion, physics, result copy", "radiation": "child of RHS physics; never add to RHS or region total", "linear_solve": "includes modal transforms and Helmholtz; separate from RHS", "observer": "not a full RHS; diagnostic radiation is separate from integration radiation"},
+  "counters": {"full_rhs_total": "initial + iteration + final", "discarded": "subset of total, includes thrown evaluation attempts; initial shared by retries is charged once", "diagnostic_full_rhs": 0},
+  "aggregation": "whole intervals in (start,end]; reject straddling boundaries rather than invent partial integrated fluxes"
+}

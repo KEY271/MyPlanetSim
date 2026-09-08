@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -17,6 +18,11 @@
 #include "myplanetsim/physics/moist_physics_coupling.hpp"
 #include "myplanetsim/physics/surface_energy_balance.hpp"
 namespace mps {
+// Exclusive RHS regions; reconstruction includes level packing and limiting.
+struct DryHydrostaticRhsProfile {
+  std::array<Real, 8> seconds{};
+  std::size_t calls = 0;
+};
 struct DryHydrostaticRhs {
   std::vector<Real> surface_pressure_pa_s;
   DryHydrostaticTransportTendency tendency;
@@ -69,7 +75,20 @@ struct DryConvectionDiagnostics {
   Real dry_energy_attributed_change_j = 0.0;
 };
 
+// Categories are disjoint; discarded is a subset of iteration + final, not
+// another category to add to total. Counts include failed attempts.
+struct FullRhsEvaluationCounts {
+  std::size_t initial = 0;
+  std::size_t iteration = 0;
+  std::size_t final = 0;
+  std::size_t discarded = 0;
+  [[nodiscard]] std::size_t total() const noexcept {
+    return initial + iteration + final;
+  }
+};
+
 struct DryHydrostaticStepDiagnostics {
+  FullRhsEvaluationCounts full_rhs{};
   HeldSuarezDiagnostics physics_rates{};
   Real thermal_energy_contribution_j = 0.0;
   Real rayleigh_drag_energy_contribution_j = 0.0;
@@ -116,6 +135,10 @@ using DryHydrostaticCancel = std::function<bool()>;
 class DryHydrostaticDriver {
  public:
   explicit DryHydrostaticDriver(ExperimentConfig config);
+  // Benchmark-only instrumentation, disabled by default; never serialized.
+  void enable_rhs_profiling(bool enabled) const { profile_enabled_ = enabled; }
+  void reset_rhs_profile() const { rhs_profile_ = {}; }
+  [[nodiscard]] const DryHydrostaticRhsProfile& rhs_profile() const { return rhs_profile_; }
   [[nodiscard]] DryHydrostaticState initial_state() const;
   [[nodiscard]] DryHydrostaticDerived diagnose(const DryHydrostaticState&) const;
   [[nodiscard]] DryHydrostaticSources diagnose_sources(
@@ -149,6 +172,8 @@ class DryHydrostaticDriver {
   }
 
  private:
+  mutable bool profile_enabled_ = false;
+  mutable DryHydrostaticRhsProfile rhs_profile_{};
   ExperimentConfig config_;
   CubedSphereGrid grid_;
   AtmosphericHybridCoordinate coordinate_;

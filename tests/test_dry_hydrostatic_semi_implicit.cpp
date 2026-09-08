@@ -296,6 +296,11 @@ MPS_TEST_CASE("dry linear wave accepts one 1800-second Crank-Nicolson step") {
                static_cast<std::size_t>(config.semi_implicit->nonlinear_iterations));
   MPS_CHECK(std::isfinite(step_diagnostics.nonlinear_relative_residual));
   MPS_CHECK_EQ(step_diagnostics.retry_count, 0U);
+  MPS_CHECK_EQ(step_diagnostics.full_rhs.initial, 1U);
+  MPS_CHECK_EQ(step_diagnostics.full_rhs.final, 1U);
+  MPS_CHECK_EQ(step_diagnostics.full_rhs.iteration + 1,
+               step_diagnostics.nonlinear_iterations);
+  MPS_CHECK_EQ(step_diagnostics.full_rhs.discarded, 0U);
   MPS_CHECK(step_diagnostics.wall_seconds_rhs >= 0.0);
   MPS_CHECK(step_diagnostics.wall_seconds_linear_solve >= 0.0);
   MPS_CHECK(step_diagnostics.wall_seconds_total >=
@@ -324,6 +329,10 @@ MPS_TEST_CASE("failed long step retries from the unchanged initial state") {
   MPS_CHECK_NEAR(retry_diagnostics.requested_time_step_s, 1800.0, 0.0);
   MPS_CHECK_NEAR(retry_diagnostics.accepted_time_step_s, retried.time_s, 0.0);
   MPS_CHECK(retry_diagnostics.retry_count > 0);
+  // This fixture may fail its first linear solve before evaluating another RHS.
+  MPS_CHECK_EQ(retry_diagnostics.full_rhs.total(),
+               retry_diagnostics.nonlinear_iterations + 1 +
+                   retry_diagnostics.full_rhs.discarded);
 
   mps::DryHydrostaticDriver direct_driver(config);
   auto direct = direct_driver.initial_state();
@@ -359,9 +368,11 @@ MPS_TEST_CASE("semi-implicit continuation is deterministic without time history"
   uninterrupted_driver.advance(uninterrupted, 3600.0);
 
   mps::DryHydrostaticDriver continued_driver(config);
+  continued_driver.enable_rhs_profiling(true);
   auto continued = continued_driver.initial_state();
   continued_driver.advance(continued, 1800.0);
   continued_driver.advance(continued, 3600.0);
+  MPS_CHECK(continued_driver.rhs_profile().calls > 0);
   MPS_CHECK_EQ(continued.step, uninterrupted.step);
   MPS_CHECK_NEAR(continued.time_s, uninterrupted.time_s, 0.0);
   for (std::size_t cell = 0; cell < continued.surface_pressure_pa.size(); ++cell)

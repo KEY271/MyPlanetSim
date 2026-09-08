@@ -74,6 +74,7 @@ int main(int argc, char** argv) {
     const std::size_t requested_steps = parse_steps(argc, argv);
     auto config = mps::load_experiment_config(MPS_DRY_CORE_BENCHMARK_CONFIG);
     const mps::DryHydrostaticDriver driver(config);
+    driver.enable_rhs_profiling(std::getenv("MPS_PROFILE_RHS") != nullptr);
     auto state = driver.initial_state();
 
     mps::DryHydrostaticRhs rhs;
@@ -89,6 +90,7 @@ int main(int argc, char** argv) {
     const std::uint64_t initial_step = state.step;
     const double end_time =
         state.time_s + static_cast<double>(requested_steps) * config.run.time_step_s;
+    driver.reset_rhs_profile();
     const auto start = std::chrono::steady_clock::now();
     driver.advance(state, end_time);
     const auto stop = std::chrono::steady_clock::now();
@@ -182,6 +184,11 @@ int main(int argc, char** argv) {
         << kMinimumCellLevelUpdatesPerSecond << '\n'
         << "registered_max_seconds_per_step = " << kMaximumSecondsPerStep << '\n'
         << "registered_target_met = " << std::boolalpha << target_met << '\n';
+    const char* regions[] = {"diagnose_setup", "reconstruction", "flux_cfl",
+                             "column_coupling", "source", "diffusion", "physics", "result_copy"};
+    for (std::size_t i = 0; i < 8; ++i)
+      std::cout << "rhs_region_" << regions[i] << "_s=" << driver.rhs_profile().seconds[i] << '\n';
+    std::cout << "profiled_rhs_calls=" << driver.rhs_profile().calls << '\n';
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "benchmark error: " << error.what() << '\n';
