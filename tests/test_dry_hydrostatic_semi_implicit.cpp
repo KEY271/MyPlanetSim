@@ -307,6 +307,46 @@ MPS_TEST_CASE("dry linear wave accepts one 1800-second Crank-Nicolson step") {
             step_diagnostics.wall_seconds_linear_solve);
 }
 
+MPS_TEST_CASE("ARK2 comparison advances a dry wave with explicit accounting") {
+  auto config = long_step_config();
+  config.dry_hydrostatic.time_integrator =
+      mps::DryHydrostaticTimeIntegrator::kArk2ImexComparison;
+  config.validate();
+  mps::DryHydrostaticDriver driver(config);
+  auto state = driver.initial_state();
+  const auto initial = state;
+  mps::DryHydrostaticStepDiagnostics step_diagnostics;
+  driver.advance(
+      state, config.run.end_time_s,
+      [&](const mps::DryHydrostaticState& sampled, const mps::DryHydrostaticDerived*,
+          const mps::DryHydrostaticStepDiagnostics& step) {
+        if (sampled.step > 0) step_diagnostics = step;
+      });
+
+  MPS_CHECK_EQ(state.step, 1U);
+  MPS_CHECK_NEAR(state.time_s, 1800.0, 0.0);
+  MPS_CHECK_EQ(step_diagnostics.full_rhs.initial, 1U);
+  MPS_CHECK_EQ(step_diagnostics.full_rhs.iteration, 2U);
+  MPS_CHECK_EQ(step_diagnostics.full_rhs.final, 1U);
+  MPS_CHECK_EQ(step_diagnostics.full_rhs.discarded, 0U);
+  MPS_CHECK_EQ(step_diagnostics.split_fast_operator_evaluations, 3U);
+  MPS_CHECK_EQ(step_diagnostics.selected_implicit_modes, 20U);
+  MPS_CHECK_EQ(step_diagnostics.nonlinear_iterations, 0U);
+  MPS_CHECK_NEAR(step_diagnostics.nonlinear_relative_residual, 0.0, 0.0);
+  MPS_CHECK(step_diagnostics.linear_iterations_total > 0);
+  MPS_CHECK_EQ(step_diagnostics.retry_count, 0U);
+
+  mps::Real initial_pressure = 0.0;
+  mps::Real final_pressure = 0.0;
+  for (std::size_t cell = 0; cell < driver.grid().cell_count(); ++cell) {
+    const auto area = driver.grid().cells()[cell].area_m2;
+    initial_pressure += area * initial.surface_pressure_pa[cell];
+    final_pressure += area * state.surface_pressure_pa[cell];
+  }
+  MPS_CHECK_NEAR(final_pressure, initial_pressure,
+                 2.0e-12 * std::abs(initial_pressure));
+}
+
 MPS_TEST_CASE("failed long step retries from the unchanged initial state") {
   auto config = long_step_config();
   config.semi_implicit->maximum_implicit_modes = 1;

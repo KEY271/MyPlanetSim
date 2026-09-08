@@ -575,11 +575,15 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
   } else if (key == "dry_hydrostatic.diffusion_coefficient") {
     config.dry_hydrostatic.diffusion_coefficient = parse_real(value, line, key);
   } else if (key == "dry_hydrostatic.time_integrator") {
-    if (value != "semi_implicit")
+    if (value == "semi_implicit")
+      config.dry_hydrostatic.time_integrator =
+          DryHydrostaticTimeIntegrator::kSemiImplicit;
+    else if (value == "ark2_imex_comparison")
+      config.dry_hydrostatic.time_integrator =
+          DryHydrostaticTimeIntegrator::kArk2ImexComparison;
+    else
       throw parse_error(
           line, "unknown dry_hydrostatic.time_integrator " + std::string(value));
-    config.dry_hydrostatic.time_integrator =
-        DryHydrostaticTimeIntegrator::kSemiImplicit;
   } else if (key == "dry_hydrostatic.advective_cfl") {
     config.dry_hydrostatic.advective_cfl = parse_real(value, line, key);
   } else if (key == "tracers.names") {
@@ -877,7 +881,8 @@ void ExperimentConfig::validate() const {
     }
   }
   if (kind != ExperimentKind::kDryHydrostatic &&
-      (dry_hydrostatic.time_integrator == DryHydrostaticTimeIntegrator::kSemiImplicit ||
+      (dry_hydrostatic.time_integrator !=
+           DryHydrostaticTimeIntegrator::kExplicitSspRk3 ||
        semi_implicit.has_value()))
     throw std::invalid_argument(
         "semi-implicit integration is valid only for dry_hydrostatic");
@@ -1111,8 +1116,8 @@ void ExperimentConfig::validate() const {
     require_finite(dry_hydrostatic.cfl, "dry_hydrostatic.cfl");
     if (!(dry_hydrostatic.cfl > 0.0 && dry_hydrostatic.cfl <= 1.0))
       throw std::invalid_argument("dry_hydrostatic.cfl must be in (0, 1]");
-    const bool uses_semi_implicit =
-        dry_hydrostatic.time_integrator == DryHydrostaticTimeIntegrator::kSemiImplicit;
+    const bool uses_semi_implicit = dry_hydrostatic.time_integrator !=
+                                    DryHydrostaticTimeIntegrator::kExplicitSspRk3;
     if (uses_semi_implicit != semi_implicit.has_value())
       throw std::invalid_argument(
           "semi-implicit integrator and parameters must be configured together");
@@ -1791,8 +1796,8 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
                  << (tracer.horizontal_diffusion ? "true" : "false") << '\n';
         }
       }
-      if (config.dry_hydrostatic.time_integrator ==
-          DryHydrostaticTimeIntegrator::kSemiImplicit) {
+      if (config.dry_hydrostatic.time_integrator !=
+          DryHydrostaticTimeIntegrator::kExplicitSspRk3) {
         const auto& semi_implicit = *config.semi_implicit;
         output << "dry_hydrostatic.time_integrator = "
                << dry_hydrostatic_time_integrator_name(
@@ -2003,6 +2008,8 @@ std::string_view dry_hydrostatic_time_integrator_name(
       return "explicit_ssprk3";
     case DryHydrostaticTimeIntegrator::kSemiImplicit:
       return "semi_implicit";
+    case DryHydrostaticTimeIntegrator::kArk2ImexComparison:
+      return "ark2_imex_comparison";
   }
   return "unknown";
 }

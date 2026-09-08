@@ -19,10 +19,10 @@
 
 #include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
 #include "myplanetsim/diagnostics/moist_diagnostics.hpp"
-#include "myplanetsim/io/checkpoint.hpp"
-#include "myplanetsim/io/run_metadata.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
 #include "myplanetsim/dynamics/tracer_registry.hpp"
+#include "myplanetsim/io/checkpoint.hpp"
+#include "myplanetsim/io/run_metadata.hpp"
 #include "myplanetsim/physics/moist_thermodynamics.hpp"
 #include "myplanetsim/vertical/hybrid_pressure_coordinate.hpp"
 
@@ -146,8 +146,8 @@ int main(int argc, char** argv) {
   if (argc != 10 && argc != 12) {
     std::cerr << "usage: benchmark_moist CONFIG DAYS N K DT ITERATIONS TOP_PA "
                  "REFINEMENT SNAPSHOT [INITIAL_CHECKPOINT SOURCE_CONFIG]\n"
-                 "ITERATIONS=0 selects SSP-RK3; positive values select centered "
-                 "semi-implicit.\n";
+                 "ITERATIONS=-1 selects ARK2 IMEX comparison, 0 selects SSP-RK3, "
+                 "and positive values select centered semi-implicit.\n";
     return 2;
   }
   try {
@@ -160,7 +160,7 @@ int main(int argc, char** argv) {
     const std::size_t levels = static_cast<std::size_t>(levels_value);
     config.run.time_step_s = std::stod(argv[5]);
     const int iterations = std::stoi(argv[6]);
-    if (iterations < 0) throw std::invalid_argument("negative iteration count");
+    if (iterations < -1) throw std::invalid_argument("invalid iteration selector");
     const double top = std::stod(argv[7]);
     const double refinement = std::stod(argv[8]);
     const auto coefficients =
@@ -176,7 +176,8 @@ int main(int argc, char** argv) {
         if (requested.size() != stored.size()) return false;
         for (std::size_t i = 0; i < requested.size(); ++i)
           if (std::abs(requested[i] - stored[i]) >
-              1e-9 * std::max(1.0, std::abs(requested[i]))) return false;
+              1e-9 * std::max(1.0, std::abs(requested[i])))
+            return false;
         return true;
       };
       if (!matches(coefficients.a_half_pa, source.vertical.a_half_pa) ||
@@ -187,11 +188,12 @@ int main(int argc, char** argv) {
     }
     config.diagnostics.interval_steps = static_cast<std::uint64_t>(
         std::max(1.0, std::ceil(86400.0 / config.run.time_step_s)));
-    if (iterations > 0) {
+    if (iterations != 0) {
       const auto existing =
           config.semi_implicit.value_or(mps::SemiImplicitParameters{});
       config.dry_hydrostatic.time_integrator =
-          mps::DryHydrostaticTimeIntegrator::kSemiImplicit;
+          iterations == -1 ? mps::DryHydrostaticTimeIntegrator::kArk2ImexComparison
+                           : mps::DryHydrostaticTimeIntegrator::kSemiImplicit;
       config.dry_hydrostatic.advective_cfl = 0.45;
       config.semi_implicit = mps::SemiImplicitParameters{
           .reference_surface_pressure_pa = config.vertical.surface_pressure_pa,
@@ -200,7 +202,7 @@ int main(int argc, char** argv) {
           .implicit_weight = 0.5,
           .wave_cfl_threshold = 0.45,
           .maximum_implicit_modes = std::min(levels_value, 5),
-          .nonlinear_iterations = iterations,
+          .nonlinear_iterations = std::max(iterations, 2),
           .linear_relative_tolerance = existing.linear_relative_tolerance,
           .linear_absolute_tolerance = existing.linear_absolute_tolerance,
           .linear_maximum_iterations = existing.linear_maximum_iterations,
@@ -230,17 +232,20 @@ int main(int argc, char** argv) {
           source.vertical.levels != config.vertical.levels ||
           source.vertical.a_half_pa != config.vertical.a_half_pa ||
           source.vertical.b_half != config.vertical.b_half)
-        throw std::invalid_argument("benchmark checkpoint grid/vertical coordinates differ");
+        throw std::invalid_argument(
+            "benchmark checkpoint grid/vertical coordinates differ");
       // Permit only time integration and diagnostic/output controls to differ.
       // This is an explicit comparison fixture import, not production restart.
       auto compatible = config;
       compatible.run = source.run;
       compatible.diagnostics = source.diagnostics;
       compatible.semi_implicit = source.semi_implicit;
-      compatible.dry_hydrostatic.time_integrator = source.dry_hydrostatic.time_integrator;
+      compatible.dry_hydrostatic.time_integrator =
+          source.dry_hydrostatic.time_integrator;
       compatible.dry_hydrostatic.advective_cfl = source.dry_hydrostatic.advective_cfl;
       if (mps::config_fingerprint(compatible) != mps::config_fingerprint(source))
-        throw std::invalid_argument("benchmark checkpoint physical configuration differs");
+        throw std::invalid_argument(
+            "benchmark checkpoint physical configuration differs");
       if (!water_vapor_tracer)
         throw std::invalid_argument("checkpoint fixture requires dilute water");
       const auto cells = driver.grid().cell_count();
@@ -266,9 +271,9 @@ int main(int argc, char** argv) {
     const auto initial_summary = summarize_state(driver, state, initial_derived,
                                                  water_vapor_tracer, thermodynamics);
     const auto initial_tracer_mass = tracer_masses(driver.grid(), state, levels);
-    const double initial_system_water =
-        initial_summary.atmospheric_water_kg + initial_summary.land_water_kg +
-        initial_ocean + initial_outflow;
+    const double initial_system_water = initial_summary.atmospheric_water_kg +
+                                        initial_summary.land_water_kg + initial_ocean +
+                                        initial_outflow;
 
     std::ofstream samples(std::string(argv[9]) + ".samples.csv");
     if (!samples) throw std::runtime_error("cannot open moist sample diagnostics");
@@ -283,6 +288,7 @@ int main(int argc, char** argv) {
     std::size_t accepted_steps = 0;
     std::size_t retries = 0;
     std::size_t linear_iterations = 0;
+    std::size_t split_fast_operator_evaluations = 0;
     std::size_t physics_substeps = 0;
     std::size_t physics_retries = 0;
     std::size_t boundary_layer_calls = 0;
@@ -313,6 +319,7 @@ int main(int argc, char** argv) {
             accepted_seconds += step.accepted_time_step_s;
             retries += step.retry_count;
             linear_iterations += step.linear_iterations_total;
+            split_fast_operator_evaluations += step.split_fast_operator_evaluations;
             physics_substeps += step.physics_substep_count;
             physics_retries += step.physics_retry_count;
             boundary_layer_calls += step.boundary_layer_column_call_count;
@@ -371,7 +378,8 @@ int main(int argc, char** argv) {
     const double evaporation = state.cumulative_evaporation_kg - initial_evaporation;
     const double convective_rain =
         state.cumulative_convective_precipitation_kg - initial_convective_rain;
-    const double grid_rain = state.cumulative_grid_scale_precipitation_kg - initial_grid_rain;
+    const double grid_rain =
+        state.cumulative_grid_scale_precipitation_kg - initial_grid_rain;
     const double runoff = state.cumulative_runoff_kg - initial_runoff;
     const double exchange_scale =
         std::max({1.0, initial_system_water,
@@ -424,8 +432,10 @@ int main(int argc, char** argv) {
         << "full_rhs_iteration=" << full_rhs.iteration << '\n'
         << "full_rhs_final=" << full_rhs.final << '\n'
         << "full_rhs_discarded=" << full_rhs.discarded << '\n'
-        << "full_rhs_per_step=" << static_cast<double>(full_rhs.total()) / accepted_steps << '\n'
-        << "full_rhs_per_model_day=" << full_rhs.total() * 86400.0 / accepted_seconds << '\n'
+        << "full_rhs_per_step="
+        << static_cast<double>(full_rhs.total()) / accepted_steps << '\n'
+        << "full_rhs_per_model_day=" << full_rhs.total() * 86400.0 / accepted_seconds
+        << '\n'
         << "peak_rss_bytes=" << peak_rss_bytes() << '\n'
         << "allocation_counting_enabled=" << measure_allocations << '\n'
         << "allocations=" << allocation_count.load(std::memory_order_relaxed) << '\n'
@@ -445,6 +455,7 @@ int main(int argc, char** argv) {
         << "accepted_seconds=" << accepted_seconds << '\n'
         << "retries=" << retries << '\n'
         << "linear_iterations=" << linear_iterations << '\n'
+        << "split_fast_operator_evaluations=" << split_fast_operator_evaluations << '\n'
         << "physics_substeps=" << physics_substeps << '\n'
         << "physics_retries=" << physics_retries << '\n'
         << "boundary_layer_column_calls=" << boundary_layer_calls << '\n'
@@ -474,23 +485,22 @@ int main(int argc, char** argv) {
         << '\n'
         << "maximum_relative_humidity=" << final_summary.maximum_relative_humidity
         << '\n'
-        << "evaporation_kg_m2_s="
-        << evaporation / (area * accepted_seconds) << '\n'
+        << "evaporation_kg_m2_s=" << evaporation / (area * accepted_seconds) << '\n'
         << "precipitation_kg_m2_s=" << total_precipitation / (area * accepted_seconds)
         << '\n'
         << "convective_precipitation_fraction="
-        << (total_precipitation > 0.0
-                ? convective_rain / total_precipitation
-                : 0.0)
+        << (total_precipitation > 0.0 ? convective_rain / total_precipitation : 0.0)
         << '\n'
         << "toa_net_upward_w_m2=" << toa_net_upward_energy_j / (area * accepted_seconds)
         << '\n'
         << "maximum_temperature_increment_k=" << maximum_temperature_increment_k << '\n'
         << "maximum_vapor_increment=" << maximum_vapor_increment << '\n';
-    const char* regions[] = {"diagnose_setup", "reconstruction", "flux_cfl",
-                             "column_coupling", "source", "diffusion", "physics", "result_copy"};
+    const char* regions[] = {"diagnose_setup",  "reconstruction", "flux_cfl",
+                             "column_coupling", "source",         "diffusion",
+                             "physics",         "result_copy"};
     for (std::size_t i = 0; i < 8; ++i)
-      std::cout << "rhs_region_" << regions[i] << "_s=" << driver.rhs_profile().seconds[i] << '\n';
+      std::cout << "rhs_region_" << regions[i]
+                << "_s=" << driver.rhs_profile().seconds[i] << '\n';
     std::cout << "profiled_rhs_calls=" << driver.rhs_profile().calls << '\n';
     return 0;
   } catch (const std::exception& error) {

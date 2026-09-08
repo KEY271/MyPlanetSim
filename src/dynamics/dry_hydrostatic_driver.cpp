@@ -17,6 +17,7 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_reconstruction.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
 #include "myplanetsim/dynamics/shallow_water_diffusion.hpp"
+#include "myplanetsim/numerics/additive_steppers.hpp"
 #include "myplanetsim/physics/dry_convective_adjustment.hpp"
 #include "myplanetsim/physics/gray_radiation_coupling.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
@@ -46,6 +47,95 @@ namespace {
     result.surface_temperature_k[cell] +=
         scale * tendency.surface_temperature_k_s[cell];
   return result;
+}
+
+void add_scaled_rhs(DryHydrostaticState& state, const DryHydrostaticRhs& tendency,
+                    const Real scale) {
+  for (std::size_t cell = 0; cell < state.surface_pressure_pa.size(); ++cell)
+    state.surface_pressure_pa[cell] += scale * tendency.surface_pressure_pa_s[cell];
+  for (std::size_t n = 0; n < state.horizontal_momentum_mass_kg_m_s.size(); ++n) {
+    state.horizontal_momentum_mass_kg_m_s[n] =
+        state.horizontal_momentum_mass_kg_m_s[n] +
+        scale * tendency.tendency.momentum[n];
+    state.potential_temperature_mass_k_kg_m2[n] +=
+        scale * tendency.tendency.potential_temperature_mass[n];
+  }
+  for (std::size_t n = 0; n < state.tracer_mass_kg_m2.size(); ++n)
+    state.tracer_mass_kg_m2[n] += scale * tendency.tendency.tracer_mass[n];
+  // The surface temperature is prognostic only when a surface model is active.
+  for (std::size_t cell = 0; cell < state.surface_temperature_k.size(); ++cell)
+    state.surface_temperature_k[cell] +=
+        scale * tendency.surface_temperature_k_s[cell];
+}
+
+void add_scaled_fast_tendency(DryHydrostaticState& state,
+                              const DryHydrostaticFastTendency& tendency,
+                              const Real scale) {
+  for (std::size_t cell = 0; cell < state.surface_pressure_pa.size(); ++cell)
+    state.surface_pressure_pa[cell] += scale * tendency.surface_pressure_pa_s[cell];
+  for (std::size_t n = 0; n < state.horizontal_momentum_mass_kg_m_s.size(); ++n) {
+    state.horizontal_momentum_mass_kg_m_s[n] =
+        state.horizontal_momentum_mass_kg_m_s[n] +
+        scale * tendency.tendency.momentum[n];
+    state.potential_temperature_mass_k_kg_m2[n] +=
+        scale * tendency.tendency.potential_temperature_mass[n];
+  }
+}
+
+[[nodiscard]] DryHydrostaticState ark2_stage_right_hand_side(
+    const DryHydrostaticState& initial,
+    const std::array<const DryHydrostaticRhs*, 3>& full_tendencies,
+    const std::array<const DryHydrostaticFastTendency*, 3>& fast_tendencies,
+    const std::size_t stage, const Real time_step_s) {
+  if (stage == 0 || stage >= 3)
+    throw std::invalid_argument("ARK2 stage index must be one or two");
+  const auto table = ark2_imex_table();
+  DryHydrostaticState result = initial;
+  for (std::size_t previous = 0; previous < stage; ++previous) {
+    if (full_tendencies[previous] == nullptr || fast_tendencies[previous] == nullptr)
+      throw std::invalid_argument("ARK2 stage tendency is unavailable");
+    add_scaled_rhs(result, *full_tendencies[previous],
+                   time_step_s * table.explicit_matrix[stage][previous]);
+    add_scaled_fast_tendency(result, *fast_tendencies[previous],
+                             time_step_s * (table.implicit_matrix[stage][previous] -
+                                            table.explicit_matrix[stage][previous]));
+  }
+  return result;
+}
+
+[[nodiscard]] DryHydrostaticState ark2_final_update(
+    const DryHydrostaticState& initial,
+    const std::array<const DryHydrostaticRhs*, 3>& full_tendencies,
+    const Real time_step_s) {
+  const auto table = ark2_imex_table();
+  DryHydrostaticState result = initial;
+  for (std::size_t stage = 0; stage < 3; ++stage) {
+    if (full_tendencies[stage] == nullptr)
+      throw std::invalid_argument("ARK2 final tendency is unavailable");
+    // The ARK2 explicit and implicit weights are identical, so N + L
+    // recombines to the full nonlinear tendency at the final update.
+    add_scaled_rhs(result, *full_tendencies[stage],
+                   time_step_s * table.explicit_weights[stage]);
+  }
+  return result;
+}
+
+void assign_fast_solution(DryHydrostaticState& state,
+                          const DryHydrostaticReferenceColumn& reference,
+                          const DryHydrostaticFastPerturbation& solution) {
+  const auto levels = reference.geometry.air_mass_kg_m2.size();
+  for (std::size_t cell = 0; cell < state.surface_pressure_pa.size(); ++cell) {
+    state.surface_pressure_pa[cell] =
+        reference.surface_pressure_pa + solution.surface_pressure_pa[cell];
+    for (std::size_t level = 0; level < levels; ++level) {
+      const auto n = dry_hydrostatic_offset(cell, level, levels);
+      state.horizontal_momentum_mass_kg_m_s[n] =
+          solution.horizontal_momentum_mass_kg_m_s[n];
+      state.potential_temperature_mass_k_kg_m2[n] =
+          reference.potential_temperature_mass_k_kg_m2[level] +
+          solution.potential_temperature_mass_k_kg_m2[n];
+    }
+  }
 }
 
 [[nodiscard]] DryHydrostaticState convex_update(const DryHydrostaticState& initial,
@@ -562,8 +652,8 @@ DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
     pressure_reference_ = make_dry_hydrostatic_pressure_reference(
         grid_, diagnose(reference_state), config_.planet);
   }
-  if (config_.dry_hydrostatic.time_integrator ==
-      DryHydrostaticTimeIntegrator::kSemiImplicit) {
+  if (config_.dry_hydrostatic.time_integrator !=
+      DryHydrostaticTimeIntegrator::kExplicitSspRk3) {
     if (!config_.semi_implicit.has_value())
       throw std::invalid_argument(
           "semi-implicit dry driver requires semi-implicit parameters");
@@ -1218,9 +1308,11 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           }
         }
       };
-  if (config_.dry_hydrostatic.time_integrator ==
-      DryHydrostaticTimeIntegrator::kSemiImplicit) {
+  if (config_.dry_hydrostatic.time_integrator !=
+      DryHydrostaticTimeIntegrator::kExplicitSspRk3) {
     const auto& parameters = *config_.semi_implicit;
+    const bool use_ark2_comparison = config_.dry_hydrostatic.time_integrator ==
+                                     DryHydrostaticTimeIntegrator::kArk2ImexComparison;
     const bool reference_is_per_step =
         parameters.reference_update == SemiImplicitReferenceUpdate::kPerStep;
     const GmresOptions linear_options{
@@ -1231,6 +1323,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         .absolute_tolerance = parameters.linear_absolute_tolerance};
     DryHydrostaticRhs initial_rhs;
     DryHydrostaticRhs candidate_rhs;
+    std::array<DryHydrostaticRhs, 2> ark2_stage_rhs;
     bool initial_rhs_is_current = false;
     const bool rhs_is_time_independent =
         config_.physics.kind != PhysicsKind::kPlanetaryNewtonian &&
@@ -1251,6 +1344,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       std::size_t linear_iterations_maximum = 0;
       Real linear_relative_residual_maximum = 0.0;
       std::size_t accepted_selected_modes = 0;
+      std::size_t split_fast_operator_evaluations = 0;
       std::size_t accepted_nonlinear_iterations = 0;
       Real accepted_nonlinear_residual = 0.0;
       std::size_t retry_count = 0;
@@ -1300,9 +1394,19 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       const Real minimum_retry_time_step_s =
           std::min(parameters.minimum_time_step_s, end - initial.time_s);
       const auto attempt_step = [&](const Real attempted_dt) {
-        const auto selected_modes = select_implicit_vertical_modes(
-            grid_, vertical_modes, attempted_dt, parameters.wave_cfl_threshold,
-            static_cast<std::size_t>(parameters.maximum_implicit_modes));
+        std::vector<std::size_t> selected_modes;
+        if (use_ark2_comparison) {
+          // The comparator defines L as the complete reference-linear fast operator.
+          // Unlike ICI, it has no outer iteration to converge modes omitted by the
+          // approximate inverse, so every mode must be solved.
+          selected_modes.resize(vertical_modes.mode_count());
+          for (std::size_t mode = 0; mode < selected_modes.size(); ++mode)
+            selected_modes[mode] = mode;
+        } else {
+          selected_modes = select_implicit_vertical_modes(
+              grid_, vertical_modes, attempted_dt, parameters.wave_cfl_threshold,
+              static_cast<std::size_t>(parameters.maximum_implicit_modes));
+        }
         accepted_selected_modes = selected_modes.size();
         DryHydrostaticState candidate = initial;
         candidate.time_s = initial.time_s + attempted_dt;
@@ -1310,37 +1414,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         // quasi-Newton iterations. The residual is a diagnostic, never an acceptance
         // test; only a non-finite or growing residual rejects the attempt.
         Real initial_nonlinear_residual = 0.0;
-        accepted_nonlinear_iterations =
-            static_cast<std::size_t>(parameters.nonlinear_iterations);
-        for (Index iteration = 0; iteration < parameters.nonlinear_iterations;
-             ++iteration) {
-          const DryHydrostaticRhs* rhs_at_candidate = nullptr;
-          if (iteration == 0 && rhs_is_time_independent) {
-            rhs_at_candidate = &initial_rhs;
-          } else {
-            ++full_rhs.iteration;
-            timed_rhs(candidate, candidate_rhs);
-            rhs_at_candidate = &candidate_rhs;
-          }
-          const auto residual = crank_nicolson_residual(
-              initial, candidate, initial_rhs, *rhs_at_candidate, attempted_dt,
-              parameters.implicit_weight, centres, coordinate_.levels());
-          const auto scaled_residual = scaled_crank_nicolson_residual(
-              residual, initial, reference, external_operator);
-          if (!std::isfinite(scaled_residual.norm))
-            throw std::runtime_error("Crank-Nicolson residual is not finite");
-          if (iteration == 0) initial_nonlinear_residual = scaled_residual.norm;
-          accepted_nonlinear_residual = scaled_residual.norm;
-          const auto correction_rhs = negative_fast_residual(residual);
-          const auto solve_start = std::chrono::steady_clock::now();
-          const auto solve = solve_dry_hydrostatic_modal_correction(
-              grid_, config_.planet, fast_operator, vertical_modes, selected_modes,
-              parameters.implicit_weight * attempted_dt, correction_rhs, linear_options,
-              semi_implicit_workspace_.correction, semi_implicit_workspace_);
-          linear_solve_wall_seconds +=
-              std::chrono::duration<Real>(std::chrono::steady_clock::now() -
-                                          solve_start)
-                  .count();
+        const auto record_solve = [&](const DryHydrostaticModalSolveResult& solve) {
           linear_iterations_total += solve.linear_iterations_total;
           linear_iterations_maximum =
               std::max(linear_iterations_maximum, solve.linear_iterations_maximum);
@@ -1350,13 +1424,109 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                                           10.0 * parameters.linear_relative_tolerance)
             throw std::runtime_error(
                 modal_failure_message(solve.equation_residual_norm));
-          add_semi_implicit_correction(candidate, semi_implicit_workspace_.correction,
-                                       residual);
+        };
+        if (use_ark2_comparison) {
+          accepted_nonlinear_iterations = 0;
+          accepted_nonlinear_residual = 0.0;
+          const auto table = ark2_imex_table();
+          std::array<DryHydrostaticFastTendency, 3> fast_tendencies;
+          std::array<const DryHydrostaticRhs*, 3> full_tendencies{&initial_rhs, nullptr,
+                                                                  nullptr};
+          std::array<const DryHydrostaticFastTendency*, 3> fast_tendency_pointers{
+              nullptr, nullptr, nullptr};
+          const auto evaluate_fast = [&](const DryHydrostaticState& state,
+                                         const std::size_t stage) {
+            const auto perturbation =
+                make_dry_hydrostatic_fast_perturbation(state, reference);
+            apply_dry_hydrostatic_fast_operator(grid_, config_.planet, fast_operator,
+                                                perturbation, fast_tendencies[stage],
+                                                semi_implicit_workspace_.fast_operator);
+            fast_tendency_pointers[stage] = &fast_tendencies[stage];
+            ++split_fast_operator_evaluations;
+          };
+          evaluate_fast(initial, 0);
+          for (std::size_t stage = 1; stage < 3; ++stage) {
+            candidate = ark2_stage_right_hand_side(
+                initial, full_tendencies, fast_tendency_pointers, stage, attempted_dt);
+            const auto correction_rhs =
+                make_dry_hydrostatic_fast_perturbation(candidate, reference);
+            const auto solve_start = std::chrono::steady_clock::now();
+            const auto solve = solve_dry_hydrostatic_modal_correction(
+                grid_, config_.planet, fast_operator, vertical_modes, selected_modes,
+                table.implicit_matrix[stage][stage] * attempted_dt, correction_rhs,
+                linear_options, semi_implicit_workspace_.correction,
+                semi_implicit_workspace_);
+            linear_solve_wall_seconds +=
+                std::chrono::duration<Real>(std::chrono::steady_clock::now() -
+                                            solve_start)
+                    .count();
+            record_solve(solve);
+            assign_fast_solution(candidate, reference,
+                                 semi_implicit_workspace_.correction);
+            candidate.time_s = initial.time_s + table.nodes[stage] * attempted_dt;
+            project_momentum(candidate);
+            if (!pressure_is_in_range(config_, candidate) ||
+                !surface_temperature_is_positive(candidate))
+              throw std::runtime_error("ARK2 stage violates a prognostic invariant");
+            diagnose_and_validate(candidate);
+            ++full_rhs.iteration;
+            timed_rhs(candidate, ark2_stage_rhs[stage - 1]);
+            if (attempted_dt >
+                semi_implicit_explicit_limit(config_, ark2_stage_rhs[stage - 1]))
+              throw std::runtime_error(
+                  "ARK2 stage violates an explicit CFL constraint");
+            full_tendencies[stage] = &ark2_stage_rhs[stage - 1];
+            evaluate_fast(candidate, stage);
+          }
+          candidate = ark2_final_update(initial, full_tendencies, attempted_dt);
+          candidate.time_s = initial.time_s + attempted_dt;
           project_momentum(candidate);
           if (!pressure_is_in_range(config_, candidate) ||
               !surface_temperature_is_positive(candidate))
-            throw std::runtime_error("correction violates a prognostic invariant");
+            throw std::runtime_error("ARK2 update violates a prognostic invariant");
           diagnose_and_validate(candidate);
+        } else {
+          accepted_nonlinear_iterations =
+              static_cast<std::size_t>(parameters.nonlinear_iterations);
+          for (Index iteration = 0; iteration < parameters.nonlinear_iterations;
+               ++iteration) {
+            const DryHydrostaticRhs* rhs_at_candidate = nullptr;
+            if (iteration == 0 && rhs_is_time_independent) {
+              rhs_at_candidate = &initial_rhs;
+            } else {
+              ++full_rhs.iteration;
+              timed_rhs(candidate, candidate_rhs);
+              rhs_at_candidate = &candidate_rhs;
+            }
+            const auto residual = crank_nicolson_residual(
+                initial, candidate, initial_rhs, *rhs_at_candidate, attempted_dt,
+                parameters.implicit_weight, centres, coordinate_.levels());
+            const auto scaled_residual = scaled_crank_nicolson_residual(
+                residual, initial, reference, external_operator);
+            if (!std::isfinite(scaled_residual.norm))
+              throw std::runtime_error("Crank-Nicolson residual is not finite");
+            if (iteration == 0) initial_nonlinear_residual = scaled_residual.norm;
+            accepted_nonlinear_residual = scaled_residual.norm;
+            const auto correction_rhs = negative_fast_residual(residual);
+            const auto solve_start = std::chrono::steady_clock::now();
+            const auto solve = solve_dry_hydrostatic_modal_correction(
+                grid_, config_.planet, fast_operator, vertical_modes, selected_modes,
+                parameters.implicit_weight * attempted_dt, correction_rhs,
+                linear_options, semi_implicit_workspace_.correction,
+                semi_implicit_workspace_);
+            linear_solve_wall_seconds +=
+                std::chrono::duration<Real>(std::chrono::steady_clock::now() -
+                                            solve_start)
+                    .count();
+            record_solve(solve);
+            add_semi_implicit_correction(candidate, semi_implicit_workspace_.correction,
+                                         residual);
+            project_momentum(candidate);
+            if (!pressure_is_in_range(config_, candidate) ||
+                !surface_temperature_is_positive(candidate))
+              throw std::runtime_error("correction violates a prognostic invariant");
+            diagnose_and_validate(candidate);
+          }
         }
         // Final evaluation at the accepted candidate: it supplies the explicit CFL
         // check, the step energy attribution, the reported residual, and the
@@ -1365,17 +1535,19 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         timed_rhs(candidate, candidate_rhs);
         if (attempted_dt > semi_implicit_explicit_limit(config_, candidate_rhs))
           throw std::runtime_error("candidate violates an explicit CFL constraint");
-        const auto final_residual = crank_nicolson_residual(
-            initial, candidate, initial_rhs, candidate_rhs, attempted_dt,
-            parameters.implicit_weight, centres, coordinate_.levels());
-        const auto final_scaled = scaled_crank_nicolson_residual(
-            final_residual, initial, reference, external_operator);
-        accepted_nonlinear_residual = final_scaled.norm;
-        if (!std::isfinite(final_scaled.norm) ||
-            final_scaled.norm > initial_nonlinear_residual)
-          throw std::runtime_error(nonlinear_failure_message(
-              initial_nonlinear_residual, final_scaled.norm, final_scaled.rms_norm,
-              final_scaled.component, attempted_dt));
+        if (!use_ark2_comparison) {
+          const auto final_residual = crank_nicolson_residual(
+              initial, candidate, initial_rhs, candidate_rhs, attempted_dt,
+              parameters.implicit_weight, centres, coordinate_.levels());
+          const auto final_scaled = scaled_crank_nicolson_residual(
+              final_residual, initial, reference, external_operator);
+          accepted_nonlinear_residual = final_scaled.norm;
+          if (!std::isfinite(final_scaled.norm) ||
+              final_scaled.norm > initial_nonlinear_residual)
+            throw std::runtime_error(nonlinear_failure_message(
+                initial_nonlinear_residual, final_scaled.norm, final_scaled.rms_norm,
+                final_scaled.component, attempted_dt));
+        }
         candidate.step = initial.step + 1;
         diagnose_and_validate(candidate);
         accepted_radiation_surface_temperature = candidate.surface_temperature_k;
@@ -1417,45 +1589,86 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
 
       s = std::move(candidate);
       const Real explicit_weight = 1.0 - parameters.implicit_weight;
+      const auto ark2_weights = ark2_imex_table().explicit_weights;
+      const auto ark2_weighted = [&](const auto& value) {
+        return ark2_weights[0] * value(initial_rhs) +
+               ark2_weights[1] * value(ark2_stage_rhs[0]) +
+               ark2_weights[2] * value(ark2_stage_rhs[1]);
+      };
+      const Real thermal_energy_rate =
+          use_ark2_comparison
+              ? ark2_weighted([](const DryHydrostaticRhs& rhs) {
+                  return rhs.physics_diagnostics.thermal_energy_rate_w;
+                })
+              : explicit_weight *
+                        initial_rhs.physics_diagnostics.thermal_energy_rate_w +
+                    parameters.implicit_weight *
+                        candidate_rhs.physics_diagnostics.thermal_energy_rate_w;
+      const Real drag_energy_rate =
+          use_ark2_comparison
+              ? ark2_weighted([](const DryHydrostaticRhs& rhs) {
+                  return rhs.physics_diagnostics.rayleigh_drag_work_w;
+                })
+              : explicit_weight * initial_rhs.physics_diagnostics.rayleigh_drag_work_w +
+                    parameters.implicit_weight *
+                        candidate_rhs.physics_diagnostics.rayleigh_drag_work_w;
+      const Real diffusion_energy_rate =
+          use_ark2_comparison
+              ? ark2_weighted([](const DryHydrostaticRhs& rhs) {
+                  return rhs.diffusion_kinetic_energy_rate_w;
+                })
+              : explicit_weight * initial_rhs.diffusion_kinetic_energy_rate_w +
+                    parameters.implicit_weight *
+                        candidate_rhs.diffusion_kinetic_energy_rate_w;
+      const auto maximum_courant = [&](const auto stable_time) {
+        Real result =
+            std::max(courant_from_stable_time_step(dt, stable_time.first,
+                                                   stable_time.second(initial_rhs)),
+                     courant_from_stable_time_step(dt, stable_time.first,
+                                                   stable_time.second(candidate_rhs)));
+        if (use_ark2_comparison) {
+          result = std::max(
+              {result,
+               courant_from_stable_time_step(dt, stable_time.first,
+                                             stable_time.second(ark2_stage_rhs[0])),
+               courant_from_stable_time_step(dt, stable_time.first,
+                                             stable_time.second(ark2_stage_rhs[1]))});
+        }
+        return result;
+      };
+      Real radiation_stable_time_step_s =
+          std::min(initial_rhs.radiation_stable_time_step_s,
+                   candidate_rhs.radiation_stable_time_step_s);
+      if (use_ark2_comparison)
+        radiation_stable_time_step_s =
+            std::min({radiation_stable_time_step_s,
+                      ark2_stage_rhs[0].radiation_stable_time_step_s,
+                      ark2_stage_rhs[1].radiation_stable_time_step_s});
       DryHydrostaticStepDiagnostics step{
           .full_rhs = full_rhs,
-          .thermal_energy_contribution_j =
-              dt *
-              (explicit_weight * initial_rhs.physics_diagnostics.thermal_energy_rate_w +
-               parameters.implicit_weight *
-                   candidate_rhs.physics_diagnostics.thermal_energy_rate_w),
-          .rayleigh_drag_energy_contribution_j =
-              dt *
-              (explicit_weight * initial_rhs.physics_diagnostics.rayleigh_drag_work_w +
-               parameters.implicit_weight *
-                   candidate_rhs.physics_diagnostics.rayleigh_drag_work_w),
+          .thermal_energy_contribution_j = dt * thermal_energy_rate,
+          .rayleigh_drag_energy_contribution_j = dt * drag_energy_rate,
           .boundary_layer = accepted_boundary_layer,
           .convection = accepted_convection,
           .moisture = accepted_moisture,
-          .diffusion_energy_contribution_j =
-              dt * (explicit_weight * initial_rhs.diffusion_kinetic_energy_rate_w +
-                    parameters.implicit_weight *
-                        candidate_rhs.diffusion_kinetic_energy_rate_w),
+          .diffusion_energy_contribution_j = dt * diffusion_energy_rate,
           .requested_time_step_s = requested_dt,
           .accepted_time_step_s = dt,
-          .radiation_stable_time_step_s =
-              std::min(initial_rhs.radiation_stable_time_step_s,
-                       candidate_rhs.radiation_stable_time_step_s),
-          .advective_cfl =
-              std::max(courant_from_stable_time_step(
-                           dt, config_.dry_hydrostatic.cfl,
-                           initial_rhs.horizontal_advective_stable_time_step_s),
-                       courant_from_stable_time_step(
-                           dt, config_.dry_hydrostatic.cfl,
-                           candidate_rhs.horizontal_advective_stable_time_step_s)),
+          .radiation_stable_time_step_s = radiation_stable_time_step_s,
+          .advective_cfl = maximum_courant(
+              std::pair{config_.dry_hydrostatic.cfl,
+                        [](const DryHydrostaticRhs& rhs) {
+                          return rhs.horizontal_advective_stable_time_step_s;
+                        }}),
           .implicit_wave_courant =
               maximum_vertical_mode_courant(grid_, vertical_modes, dt),
-          .vertical_cfl = std::max(
-              courant_from_stable_time_step(dt, config_.vertical.cfl,
-                                            initial_rhs.vertical_stable_time_step_s),
-              courant_from_stable_time_step(dt, config_.vertical.cfl,
-                                            candidate_rhs.vertical_stable_time_step_s)),
+          .vertical_cfl =
+              maximum_courant(std::pair{config_.vertical.cfl,
+                                        [](const DryHydrostaticRhs& rhs) {
+                                          return rhs.vertical_stable_time_step_s;
+                                        }}),
           .selected_implicit_modes = accepted_selected_modes,
+          .split_fast_operator_evaluations = split_fast_operator_evaluations,
           .linear_iterations_total = linear_iterations_total,
           .linear_iterations_maximum = linear_iterations_maximum,
           .linear_relative_residual_maximum = linear_relative_residual_maximum,
@@ -1473,34 +1686,41 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           .radiation_wall_seconds = radiation_wall_seconds,
           .wall_seconds_rhs = rhs_wall_seconds,
           .wall_seconds_linear_solve = linear_solve_wall_seconds};
-      if (config_.physics.kind == PhysicsKind::kGrayRadiation)
-        step.radiation_rates = weighted_radiation_diagnostics(
-            initial_rhs.radiation_diagnostics, explicit_weight,
-            candidate_rhs.radiation_diagnostics, parameters.implicit_weight);
+      if (config_.physics.kind == PhysicsKind::kGrayRadiation) {
+        if (use_ark2_comparison)
+          step.radiation_rates = weighted_radiation_diagnostics(
+              initial_rhs.radiation_diagnostics, ark2_weights[0],
+              ark2_stage_rhs[0].radiation_diagnostics, ark2_weights[1],
+              ark2_stage_rhs[1].radiation_diagnostics, ark2_weights[2]);
+        else
+          step.radiation_rates = weighted_radiation_diagnostics(
+              initial_rhs.radiation_diagnostics, explicit_weight,
+              candidate_rhs.radiation_diagnostics, parameters.implicit_weight);
+      }
       if (config_.physics.kind == PhysicsKind::kGrayRadiation)
         step.radiation_budget = integrate_gray_radiation_budget(
             grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,
             accepted_radiation_surface_temperature, dt, step.radiation_rates);
       if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
-        const auto weighted = [&](const Real first, const Real second) {
-          return explicit_weight * first + parameters.implicit_weight * second;
+        const auto weighted = [&](const Real SurfaceEnergyDiagnostics::* member) {
+          if (use_ark2_comparison)
+            return ark2_weighted([&](const DryHydrostaticRhs& rhs) {
+              return rhs.surface_diagnostics.*member;
+            });
+          return explicit_weight * initial_rhs.surface_diagnostics.*member +
+                 parameters.implicit_weight * candidate_rhs.surface_diagnostics.*member;
         };
         const SurfaceEnergyDiagnostics rates{
             .absorbed_stellar_power_w =
-                weighted(initial_rhs.surface_diagnostics.absorbed_stellar_power_w,
-                         candidate_rhs.surface_diagnostics.absorbed_stellar_power_w),
+                weighted(&SurfaceEnergyDiagnostics::absorbed_stellar_power_w),
             .internal_heat_power_w =
-                weighted(initial_rhs.surface_diagnostics.internal_heat_power_w,
-                         candidate_rhs.surface_diagnostics.internal_heat_power_w),
+                weighted(&SurfaceEnergyDiagnostics::internal_heat_power_w),
             .outgoing_longwave_power_w =
-                weighted(initial_rhs.surface_diagnostics.outgoing_longwave_power_w,
-                         candidate_rhs.surface_diagnostics.outgoing_longwave_power_w),
-            .sensible_to_atmosphere_power_w = weighted(
-                initial_rhs.surface_diagnostics.sensible_to_atmosphere_power_w,
-                candidate_rhs.surface_diagnostics.sensible_to_atmosphere_power_w),
+                weighted(&SurfaceEnergyDiagnostics::outgoing_longwave_power_w),
+            .sensible_to_atmosphere_power_w =
+                weighted(&SurfaceEnergyDiagnostics::sensible_to_atmosphere_power_w),
             .surface_storage_rate_w =
-                weighted(initial_rhs.surface_diagnostics.surface_storage_rate_w,
-                         candidate_rhs.surface_diagnostics.surface_storage_rate_w)};
+                weighted(&SurfaceEnergyDiagnostics::surface_storage_rate_w)};
         step.surface_budget = integrate_surface_energy_budget(
             grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,
             s.surface_temperature_k, dt, rates, rates, rates);

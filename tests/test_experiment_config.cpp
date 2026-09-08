@@ -560,6 +560,19 @@ MPS_TEST_CASE("semi-implicit configuration is conditional and canonical") {
   MPS_CHECK_EQ(mps::config_fingerprint(round_trip),
                mps::config_fingerprint(configured));
 
+  auto ark2_text =
+      std::string(kValidDryHydrostaticConfig) + std::string(kValidSemiImplicitSuffix);
+  const auto integrator = ark2_text.find("time_integrator = semi_implicit");
+  ark2_text.replace(integrator, std::string("time_integrator = semi_implicit").size(),
+                    "time_integrator = ark2_imex_comparison");
+  const auto ark2 = parse(ark2_text);
+  MPS_CHECK(ark2.dry_hydrostatic.time_integrator ==
+            mps::DryHydrostaticTimeIntegrator::kArk2ImexComparison);
+  std::ostringstream ark2_canonical;
+  mps::write_experiment_config(ark2_canonical, ark2);
+  MPS_CHECK_EQ(mps::config_fingerprint(parse(ark2_canonical.str())),
+               mps::config_fingerprint(ark2));
+
   auto missing =
       std::string(kValidDryHydrostaticConfig) + std::string(kValidSemiImplicitSuffix);
   const std::string missing_line = "semi_implicit.linear_absolute_tolerance = 1e-12\n";

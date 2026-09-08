@@ -87,7 +87,11 @@ enum class VerticalTestCase {
 };
 enum class VerticalTransportScheme { kDonorCell, kLinear };
 enum class VerticalLimiterKind { kNone, kMinmod };
-enum class DryHydrostaticTimeIntegrator { kExplicitSspRk3, kSemiImplicit };
+enum class DryHydrostaticTimeIntegrator {
+  kExplicitSspRk3,
+  kSemiImplicit,
+  kArk2ImexComparison
+};
 enum class DryHydrostaticTestCase {
   kIsothermalRest,
   kSolidBodyTransport,

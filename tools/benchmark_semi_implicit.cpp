@@ -1,9 +1,9 @@
-#include <cstdlib>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -70,8 +70,8 @@ int main(const int argc, char** argv) {
     const auto command_line = parse_command_line(argc, argv);
     const auto config = mps::load_experiment_config(command_line.config_path);
     if (config.kind != mps::ExperimentKind::kDryHydrostatic ||
-        config.dry_hydrostatic.time_integrator !=
-            mps::DryHydrostaticTimeIntegrator::kSemiImplicit)
+        config.dry_hydrostatic.time_integrator ==
+            mps::DryHydrostaticTimeIntegrator::kExplicitSspRk3)
       throw std::invalid_argument(
           "benchmark requires a semi-implicit dry-hydrostatic configuration");
     const mps::DryHydrostaticDriver driver(config);
@@ -87,6 +87,7 @@ int main(const int argc, char** argv) {
     std::size_t diagnostic_steps = 0;
     std::size_t linear_iterations_total = 0;
     std::size_t linear_iterations_maximum = 0;
+    std::size_t split_fast_operator_evaluations = 0;
     std::size_t retries = 0;
     mps::Real accepted_dt_sum = 0.0;
     mps::Real accepted_dt_minimum = std::numeric_limits<mps::Real>::infinity();
@@ -108,6 +109,8 @@ int main(const int argc, char** argv) {
           linear_iterations_total += diagnostics.linear_iterations_total;
           linear_iterations_maximum = std::max(linear_iterations_maximum,
                                                diagnostics.linear_iterations_maximum);
+          split_fast_operator_evaluations +=
+              diagnostics.split_fast_operator_evaluations;
           retries += diagnostics.retry_count;
           accepted_dt_sum += diagnostics.accepted_time_step_s;
           accepted_dt_minimum =
@@ -139,11 +142,14 @@ int main(const int argc, char** argv) {
               << "accepted_dt_maximum_s = " << accepted_dt_maximum << '\n'
               << "linear_iterations_total = " << linear_iterations_total << '\n'
               << "linear_iterations_maximum = " << linear_iterations_maximum << '\n'
+              << "split_fast_operator_evaluations = " << split_fast_operator_evaluations
+              << '\n'
               << "full_rhs_initial = " << full_rhs.initial << '\n'
               << "full_rhs_iteration = " << full_rhs.iteration << '\n'
               << "full_rhs_final = " << full_rhs.final << '\n'
               << "full_rhs_discarded = " << full_rhs.discarded << '\n'
-              << "full_rhs_per_step = " << static_cast<double>(full_rhs.total()) / completed_steps << '\n'
+              << "full_rhs_per_step = "
+              << static_cast<double>(full_rhs.total()) / completed_steps << '\n'
               << "retry_count = " << retries << '\n'
               << "wall_seconds_rhs = " << rhs_wall_seconds << '\n'
               << "wall_seconds_linear_solve = " << linear_wall_seconds << '\n'
@@ -151,10 +157,12 @@ int main(const int argc, char** argv) {
               << std::max(0.0, elapsed_s - rhs_wall_seconds - linear_wall_seconds)
               << '\n'
               << "peak_rss_bytes = " << peak_rss_bytes() << '\n';
-    const char* regions[] = {"diagnose_setup", "reconstruction", "flux_cfl",
-                             "column_coupling", "source", "diffusion", "physics", "result_copy"};
+    const char* regions[] = {"diagnose_setup",  "reconstruction", "flux_cfl",
+                             "column_coupling", "source",         "diffusion",
+                             "physics",         "result_copy"};
     for (std::size_t i = 0; i < 8; ++i)
-      std::cout << "rhs_region_" << regions[i] << "_s=" << driver.rhs_profile().seconds[i] << '\n';
+      std::cout << "rhs_region_" << regions[i]
+                << "_s=" << driver.rhs_profile().seconds[i] << '\n';
     std::cout << "profiled_rhs_calls=" << driver.rhs_profile().calls << '\n';
     return 0;
   } catch (const std::exception& error) {

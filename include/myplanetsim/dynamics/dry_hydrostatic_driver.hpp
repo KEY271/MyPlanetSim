@@ -107,6 +107,7 @@ struct DryHydrostaticStepDiagnostics {
   Real implicit_wave_courant = 0.0;
   Real vertical_cfl = 0.0;
   std::size_t selected_implicit_modes = 0;
+  std::size_t split_fast_operator_evaluations = 0;
   std::size_t linear_iterations_total = 0;
   std::size_t linear_iterations_maximum = 0;
   Real linear_relative_residual_maximum = 0.0;
