@@ -252,3 +252,14 @@ Phase 13 の bounded 湿潤結合は `configs/phase13_moist_ci.cfg` で実行で
 ```sh
 python3 tools/plot_moist_column.py output/phase13_moist_ci/moist_column.csv
 ```
+
+P13.09 の全球行列・30日感度と P13.10 の1200日 aquaplanet pilot は完走済みです。
+pilot は foreground segment runner で実行・再開できます。
+
+```sh
+python3 tools/run_phase13_pilot.py
+# graceful stop 後の再開
+python3 tools/run_phase13_pilot.py --resume
+```
+
+適用範囲、実測値、出力構成は [Phase 13 検証報告](docs/validation/phase-13.md) にあります。
