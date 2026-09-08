@@ -1,6 +1,8 @@
 # Phase 14 — RHS 評価削減・物理の頻度分離・CPU 性能改善
 
-状態: 実装中（2026-09-09）。P14.01 の計測基盤・集計境界修正を実装。詳細は [検証記録](validation/phase-14.md)。
+状態: 実装中（2026-09-09）。P14.01 の計測基盤・集計境界修正・発達後checkpoint比較を実装。
+P14.02 のN=6湿潤・固定ICI反復行列を実装・測定済み。predictor/IMEX と P14.03 以後は未着手。
+詳細は [検証記録](validation/phase-14.md)。
 調査基準: `b6d3bbb`。以下の新しい時間刻み・性能目標・誤差閾値は提案値であり、実測値ではない。
 
 ## 1. 到達点と優先順位
@@ -43,7 +45,8 @@ Phase 13 の1200日 pilot は N=6、K=20、上端20,000 Pa、地表細分化 S=5
 
 既存の `benchmark_dry_core`、`benchmark_semi_implicit`、`benchmark_moist` を拡張し、
 共通 runner `tools/benchmark_phase14.py` と小さい JSON 集計を追加する計画とする。
-このファイルを含め、以下で新規とする API・config・runner はまだ存在しない。
+計測runnerと精度manifestは実装済み。以下の後続項目の新規API・configは、
+検証記録に実装済みと明記したものを除き、計画段階である。
 
 ### 計測項目
 

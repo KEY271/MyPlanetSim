@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "P14.01 in progress",
+  "status": "P14.01 in progress; P14.02 fixed-iteration matrix measured",
   "initial_state_baseline": {
     "schema_version": 1,
     "time_utc": "2026-09-08T18:09:17.226033+00:00",
@@ -617,5 +617,6 @@
   "corrected_pilot_interval": {
     "seconds": 86400000.0,
     "block_count": 10
-  }
+  },
+  "fixed_iteration_comparison": "phase-14-ici-results.json"
 }
