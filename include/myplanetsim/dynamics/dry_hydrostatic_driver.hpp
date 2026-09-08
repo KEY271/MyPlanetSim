@@ -138,7 +138,9 @@ class DryHydrostaticDriver {
   // Benchmark-only instrumentation, disabled by default; never serialized.
   void enable_rhs_profiling(bool enabled) const { profile_enabled_ = enabled; }
   void reset_rhs_profile() const { rhs_profile_ = {}; }
-  [[nodiscard]] const DryHydrostaticRhsProfile& rhs_profile() const { return rhs_profile_; }
+  [[nodiscard]] const DryHydrostaticRhsProfile& rhs_profile() const {
+    return rhs_profile_;
+  }
   [[nodiscard]] DryHydrostaticState initial_state() const;
   [[nodiscard]] DryHydrostaticDerived diagnose(const DryHydrostaticState&) const;
   [[nodiscard]] DryHydrostaticSources diagnose_sources(

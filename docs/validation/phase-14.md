@@ -1,7 +1,7 @@
 # Phase 14 検証記録
 
 状態: P14.01 を実装・検証中。P14.02 の固定反復比較を実装。
-predictor/IMEX 比較、P14.03 以後は未着手。
+predictor/IMEX の独立 ARK2 比較器まで実装。モデル結合比較、P14.03 以後は未着手。
 速度の数値目標を満たすための diffusion、残差許容値、物理パラメータの調整は行わない。
 
 ## P14.01: 計測基盤
@@ -98,3 +98,12 @@ Release buildと107テストが成功。比較器の回帰テストは参照質�
 P14.02 の残作業はpredictor/IMEX比較、terrain/baroclinic等の適用範囲、75秒physics基準、
 CAPE/降水tail・規格化enthalpy残差・長期統計。P14.01の詳細計測・高解像度baselineと、
 P14.03以後の実装も未完了。今回の測定だけでこれらを完了扱いにしない。
+
+### ARK2 IMEX 独立比較器
+
+[ADR 0021](../adr/0021-phase14-ark2-imex-comparator.md) に SUNDIALS ARKODE
+v7.7.0 の既定二次 additive pair の完全な表、stage 時刻、評価回数を固定した。
+汎用 `Ark2Imex` の split linear ODE で二次収束を確認し、明示 RHS 3回、線形作用3回、
+非自明な陰 stage solve 2回を回帰試験にした。これは production driver や preset の採用ではない。
+最終 full RHS を従来どおり追加すれば nonlinear RHS は4回になるため、モデル結合では
+安い state/CFL 検査と stage weight による収支を先に成立させてから比較する。
