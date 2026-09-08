@@ -8,3 +8,5 @@
 /web/coverage/
 /web/playwright-report/
 /web/test-results/
+**/__pycache__/
+*.pyc

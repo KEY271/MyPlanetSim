@@ -172,6 +172,10 @@ add_executable(benchmark_dry_mixing tools/benchmark_dry_mixing.cpp)
 target_link_libraries(benchmark_dry_mixing PRIVATE myplanetsim_core myplanetsim_warnings myplanetsim_sanitizers)
 set_target_properties(benchmark_dry_mixing PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools")
 
+add_executable(benchmark_moist tools/benchmark_moist.cpp)
+target_link_libraries(benchmark_moist PRIVATE myplanetsim_core myplanetsim_warnings myplanetsim_sanitizers)
+set_target_properties(benchmark_moist PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools")
+
 include(CTest)
 if(BUILD_TESTING)
   add_test(NAME smoke.help COMMAND my_planet_sim --help)
