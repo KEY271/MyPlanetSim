@@ -157,6 +157,8 @@ set_tests_properties(phase11.radiative_presets PROPERTIES LABELS phase11_gate)
 
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
+  add_test(NAME phase14.ici_comparison COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_phase14_ici.py)
   add_test(NAME phase14.fixture COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/test_phase14_fixture.py
     $<TARGET_FILE:my_planet_sim> $<TARGET_FILE:benchmark_moist>
