@@ -31,7 +31,7 @@ struct InitialConditionEditV1 {
 
 struct ControlRequestV1 {
   std::uint64_t format_version = kControlProtocolVersion;
-  std::string run_id;
+  std::string run_id{};
   std::uint64_t cells_per_panel = 0;
   // 0 keeps the configured hybrid coordinate; a nonzero value re-resolves a uniform
   // sigma preset per ADR 0007. The key is optional so requests written before it stay
@@ -40,8 +40,8 @@ struct ControlRequestV1 {
   Real end_time_s = 0.0;
   Real maximum_time_step_s = 0.0;
   std::uint64_t frame_interval_steps = 0;
-  std::filesystem::path frame_directory;
-  std::vector<InitialConditionEditV1> initial_edits;
+  std::filesystem::path frame_directory{};
+  std::vector<InitialConditionEditV1> initial_edits{};
 };
 
 [[nodiscard]] ControlRequestV1 parse_control_request(std::istream& input);

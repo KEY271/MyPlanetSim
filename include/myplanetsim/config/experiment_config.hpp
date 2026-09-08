@@ -138,8 +138,8 @@ struct ShallowWaterParameters {
 struct VerticalColumnParameters {
   VerticalTestCase test_case = VerticalTestCase::kIsothermal;
   Index levels = 0;
-  std::vector<Real> a_half_pa;
-  std::vector<Real> b_half;
+  std::vector<Real> a_half_pa{};
+  std::vector<Real> b_half{};
   Real surface_pressure_pa = 0.0;
   Real minimum_surface_pressure_pa = 0.0;
   Real maximum_surface_pressure_pa = 0.0;
@@ -191,8 +191,8 @@ struct SemiImplicitParameters {
 
 struct OrographyParameters {
   OrographyKind kind = OrographyKind::kFlat;
-  std::string input_file;
-  std::string input_fingerprint_fnv1a64;
+  std::string input_file{};
+  std::string input_fingerprint_fnv1a64{};
   Index smoothing_passes = 0;
 };
 
@@ -230,8 +230,8 @@ struct BoundaryLayerParameters {
 struct SurfaceParameters {
   SurfaceGeography geography = SurfaceGeography::kUniform;
   Real uniform_land_fraction = 0.0;
-  std::string input_file;
-  std::string input_fingerprint_fnv1a64;
+  std::string input_file{};
+  std::string input_fingerprint_fnv1a64{};
   Index quadrature_order = 1;
   Index smoothing_passes = 0;
   Real land_heat_capacity_j_m2_k = 0.0;
@@ -265,9 +265,9 @@ struct RadiationParameters {
 
 struct ExperimentConfig {
   ExperimentKind kind = ExperimentKind::kOde;
-  PlanetParameters planet;
-  RunParameters run;
-  OdeParameters ode;
+  PlanetParameters planet{};
+  RunParameters run{};
+  OdeParameters ode{};
   GridParameters grid{};
   TransportParameters transport{};
   ShallowWaterParameters shallow_water{};
@@ -281,7 +281,7 @@ struct ExperimentConfig {
   MoistureParameters moisture{};
   BoundaryLayerParameters boundary_layer{};
   DiagnosticsParameters diagnostics{};
-  std::string output_directory;
+  std::string output_directory{};
   // Runtime-only origin used to resolve portable config-relative inputs.
   std::filesystem::path source_directory{};
   std::optional<OrbitParameters> orbit{};

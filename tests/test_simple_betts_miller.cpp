@@ -12,12 +12,12 @@
 namespace {
 
 struct FixtureColumn {
-  std::string name;
-  std::vector<double> pressure_half;
-  std::vector<double> pressure_full;
-  std::vector<double> temperature;
-  std::vector<double> vapor;
-  std::string expected_branch;
+  std::string name{};
+  std::vector<double> pressure_half{};
+  std::vector<double> pressure_full{};
+  std::vector<double> temperature{};
+  std::vector<double> vapor{};
+  std::string expected_branch{};
 };
 
 [[nodiscard]] std::vector<std::string> fields(const std::string& line) {

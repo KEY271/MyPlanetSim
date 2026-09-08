@@ -94,7 +94,7 @@ struct BoundaryLayerColumnInput {
   Real bucket_wet_threshold_fraction = 0.75;
   Real surface_water_conductance_land_kg_m2_s = 0.0;
   Real surface_water_conductance_ocean_kg_m2_s = 0.0;
-  DiluteMoistThermodynamics moist_thermodynamics;
+  DiluteMoistThermodynamics moist_thermodynamics{};
 };
 
 struct BoundaryLayerColumnDiagnostics {

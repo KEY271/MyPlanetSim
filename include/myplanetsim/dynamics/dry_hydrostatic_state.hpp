@@ -29,12 +29,12 @@ struct DryHydrostaticState {
   Real time_s = 0.0;
   std::uint64_t step = 0;
   std::size_t tracer_count = 1;
-  std::vector<Real> surface_pressure_pa;
-  std::vector<Vec3> horizontal_momentum_mass_kg_m_s;
-  std::vector<Real> potential_temperature_mass_k_kg_m2;
-  std::vector<Real> tracer_mass_kg_m2;
-  std::vector<Real> surface_temperature_k;
-  std::vector<Real> land_water_kg_m2;
+  std::vector<Real> surface_pressure_pa{};
+  std::vector<Vec3> horizontal_momentum_mass_kg_m_s{};
+  std::vector<Real> potential_temperature_mass_k_kg_m2{};
+  std::vector<Real> tracer_mass_kg_m2{};
+  std::vector<Real> surface_temperature_k{};
+  std::vector<Real> land_water_kg_m2{};
   Real cumulative_convective_precipitation_kg = 0.0;
   Real cumulative_grid_scale_precipitation_kg = 0.0;
   Real cumulative_evaporation_kg = 0.0;
@@ -47,15 +47,15 @@ struct DryHydrostaticDerived {
   std::size_t cells = 0;
   std::size_t levels = 0;
   std::size_t tracer_count = 1;
-  std::vector<Real> pressure_pa;
-  std::vector<Real> exner_half;
-  std::vector<Real> exner_full;
-  std::vector<Real> air_mass_kg_m2;
-  std::vector<Vec3> velocity_m_s;
-  std::vector<Real> potential_temperature_k;
-  std::vector<Real> tracer_mixing_ratio;
-  std::vector<Real> temperature_k;
-  std::vector<Real> geopotential_m2_s2;
+  std::vector<Real> pressure_pa{};
+  std::vector<Real> exner_half{};
+  std::vector<Real> exner_full{};
+  std::vector<Real> air_mass_kg_m2{};
+  std::vector<Vec3> velocity_m_s{};
+  std::vector<Real> potential_temperature_k{};
+  std::vector<Real> tracer_mixing_ratio{};
+  std::vector<Real> temperature_k{};
+  std::vector<Real> geopotential_m2_s2{};
 };
 
 [[nodiscard]] constexpr std::size_t dry_hydrostatic_offset(
