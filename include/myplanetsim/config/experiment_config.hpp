@@ -56,9 +56,13 @@ enum class PhysicsKind {
   kSurfaceEnergyBalance,
   kGrayRadiation
 };
-enum class ConvectionKind { kNone, kDryAdjustment };
+enum class ConvectionKind { kNone, kDryAdjustment, kSimpleBettsMiller };
 enum class BoundaryLayerKind { kNone, kBulkKProfile };
 enum class BoundaryLayerIntegrator { kBackwardEuler };
+enum class MoistureKind { kNone, kDiluteWater };
+enum class CondensationKind { kNone, kSaturationAdjustment };
+enum class SurfaceMoistureExchange { kNone, kBulk };
+enum class SurfaceHydrologyKind { kNone, kBucket };
 enum class ForcingGeometry { kAxisymmetric, kSubstellar };
 enum class OrographyKind {
   kFlat,
@@ -204,6 +208,15 @@ struct PhysicsParameters {
 struct ConvectionParameters {
   ConvectionKind kind = ConvectionKind::kNone;
   Real stability_tolerance_k = 1e-10;
+  Real relaxation_time_s = 7200.0;
+  Real reference_relative_humidity = 0.8;
+};
+
+struct MoistureParameters {
+  MoistureKind kind = MoistureKind::kNone;
+  CondensationKind condensation = CondensationKind::kNone;
+  SurfaceMoistureExchange surface_exchange = SurfaceMoistureExchange::kNone;
+  Real maximum_physics_substep_s = 300.0;
 };
 
 struct BoundaryLayerParameters {
@@ -232,6 +245,9 @@ struct SurfaceParameters {
   Real land_roughness_heat_m = 0.0;
   Real ocean_roughness_momentum_m = 0.0;
   Real ocean_roughness_heat_m = 0.0;
+  SurfaceHydrologyKind hydrology_kind = SurfaceHydrologyKind::kNone;
+  Real hydrology_capacity_kg_m2 = 0.0;
+  Real hydrology_initial_fraction = 0.0;
   // Stability fraction for the explicit surface reservoir (ADR 0011):
   // dt <= cfl * min_c C_surface[c] / (4 eps sigma_SB T_s[c]^3).
   Real cfl = 0.5;
@@ -262,6 +278,7 @@ struct ExperimentConfig {
   OrographyParameters orography{};
   PhysicsParameters physics{};
   ConvectionParameters convection{};
+  MoistureParameters moisture{};
   BoundaryLayerParameters boundary_layer{};
   DiagnosticsParameters diagnostics{};
   std::string output_directory;
@@ -301,6 +318,7 @@ struct ExperimentConfig {
 [[nodiscard]] std::string_view orography_kind_name(OrographyKind kind) noexcept;
 [[nodiscard]] std::string_view physics_kind_name(PhysicsKind kind) noexcept;
 [[nodiscard]] std::string_view convection_kind_name(ConvectionKind kind) noexcept;
+[[nodiscard]] std::string_view moisture_kind_name(MoistureKind kind) noexcept;
 [[nodiscard]] std::string_view boundary_layer_kind_name(
     BoundaryLayerKind kind) noexcept;
 [[nodiscard]] std::string_view boundary_layer_integrator_name(

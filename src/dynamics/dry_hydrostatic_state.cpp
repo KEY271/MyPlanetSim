@@ -25,6 +25,20 @@ void require_shape(const DryHydrostaticState& state, const std::size_t levels) {
     throw std::invalid_argument("dry hydrostatic state shape is invalid");
   }
 }
+
+void require_valid_moist_ledgers(const DryHydrostaticState& state) {
+  const Real ledgers[]{
+      state.cumulative_convective_precipitation_kg,
+      state.cumulative_grid_scale_precipitation_kg,
+      state.cumulative_evaporation_kg,
+      state.cumulative_runoff_kg,
+      state.cumulative_ocean_water_change_kg,
+      state.cumulative_external_outflow_kg,
+  };
+  for (const Real value : ledgers)
+    if (!std::isfinite(value))
+      throw std::invalid_argument("moist checkpoint contains a non-finite ledger");
+}
 }  // namespace
 
 std::span<Real> dry_hydrostatic_tracer_component(DryHydrostaticState& state,
@@ -212,6 +226,62 @@ DryHydrostaticState unflatten_dry_hydrostatic_multitracer_state(
   return state;
 }
 
+std::string dry_hydrostatic_moist_checkpoint_layout(const TracerRegistry& registry) {
+  std::string result(kDryHydrostaticMoistCheckpointLayout);
+  result +=
+      dry_hydrostatic_multitracer_checkpoint_layout(registry, true)
+          .substr(
+              std::string(kDryHydrostaticMultitracerSurfaceCheckpointLayout).size());
+  return result;
+}
+
+std::vector<Real> flatten_dry_hydrostatic_moist_state(const DryHydrostaticState& state,
+                                                      const std::size_t levels) {
+  const auto cells = state.surface_pressure_pa.size();
+  if (state.land_water_kg_m2.size() != cells)
+    throw std::invalid_argument("moist checkpoint requires one land bucket per cell");
+  for (const Real water : state.land_water_kg_m2)
+    if (water < 0.0 || !std::isfinite(water))
+      throw std::invalid_argument("moist checkpoint contains invalid land water");
+  require_valid_moist_ledgers(state);
+  auto values = flatten_dry_hydrostatic_multitracer_state(state, levels, true);
+  values.insert(values.end(), state.land_water_kg_m2.begin(),
+                state.land_water_kg_m2.end());
+  values.push_back(state.cumulative_convective_precipitation_kg);
+  values.push_back(state.cumulative_grid_scale_precipitation_kg);
+  values.push_back(state.cumulative_evaporation_kg);
+  values.push_back(state.cumulative_runoff_kg);
+  values.push_back(state.cumulative_ocean_water_change_kg);
+  values.push_back(state.cumulative_external_outflow_kg);
+  return values;
+}
+
+DryHydrostaticState unflatten_dry_hydrostatic_moist_state(
+    const Real time_s, const std::uint64_t step, const std::span<const Real> values,
+    const std::size_t cells, const std::size_t levels, const std::size_t tracer_count) {
+  const auto atmospheric_size = cells + (4 + tracer_count) * cells * levels + cells;
+  if (values.size() != atmospheric_size + cells + 6)
+    throw std::invalid_argument("moist checkpoint size does not match state shape");
+  auto state = unflatten_dry_hydrostatic_multitracer_state(
+      time_s, step, values.first(atmospheric_size), cells, levels, tracer_count, true);
+  std::size_t cursor = atmospheric_size;
+  state.land_water_kg_m2.assign(
+      values.begin() + static_cast<std::ptrdiff_t>(cursor),
+      values.begin() + static_cast<std::ptrdiff_t>(cursor + cells));
+  cursor += cells;
+  state.cumulative_convective_precipitation_kg = values[cursor++];
+  state.cumulative_grid_scale_precipitation_kg = values[cursor++];
+  state.cumulative_evaporation_kg = values[cursor++];
+  state.cumulative_runoff_kg = values[cursor++];
+  state.cumulative_ocean_water_change_kg = values[cursor++];
+  state.cumulative_external_outflow_kg = values[cursor];
+  for (const Real water : state.land_water_kg_m2)
+    if (water < 0.0 || !std::isfinite(water))
+      throw std::invalid_argument("moist checkpoint contains invalid land water");
+  require_valid_moist_ledgers(state);
+  return state;
+}
+
 DryHydrostaticDerived diagnose_dry_hydrostatic_state(
     const DryHydrostaticState& state, const AtmosphericHybridCoordinate& coordinate,
     const PlanetParameters& planet) {
@@ -325,5 +395,17 @@ void validate_dry_hydrostatic_state(const DryHydrostaticState& state,
   for (const Real temperature : state.surface_temperature_k)
     if (!(temperature > 0.0) || !std::isfinite(temperature))
       throw std::runtime_error("dry hydrostatic surface temperature is invalid");
+  if (!state.land_water_kg_m2.empty() && state.land_water_kg_m2.size() != d.cells)
+    throw std::runtime_error("dry hydrostatic land-water shape is invalid");
+  for (const Real water : state.land_water_kg_m2)
+    if (water < 0.0 || !std::isfinite(water))
+      throw std::runtime_error("dry hydrostatic land water is invalid");
+  for (const Real ledger :
+       {state.cumulative_convective_precipitation_kg,
+        state.cumulative_grid_scale_precipitation_kg, state.cumulative_evaporation_kg,
+        state.cumulative_runoff_kg, state.cumulative_ocean_water_change_kg,
+        state.cumulative_external_outflow_kg})
+    if (!std::isfinite(ledger))
+      throw std::runtime_error("dry hydrostatic water ledger is invalid");
 }
 }  // namespace mps

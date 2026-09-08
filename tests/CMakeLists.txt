@@ -78,6 +78,8 @@ target_compile_definitions(
   PRIVATE MPS_PHASE13_FIXTURE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
 )
 set_tests_properties(phase13.simple_betts_miller PROPERTIES LABELS phase13_gate)
+mps_add_test(phase13.moist_driver test_moist_driver.cpp)
+set_tests_properties(phase13.moist_driver PROPERTIES LABELS phase13_gate)
 mps_add_test(unit.boundary_layer test_boundary_layer.cpp)
 mps_add_test(unit.dry_mixing_core test_dry_mixing_core.cpp)
 mps_add_test(phase12.dry_mixing_column test_dry_mixing_column.cpp)

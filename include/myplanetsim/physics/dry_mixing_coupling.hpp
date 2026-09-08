@@ -8,6 +8,13 @@
 
 namespace mps {
 
+struct MoistBoundaryLayerCoupling {
+  std::size_t water_vapor_tracer = 0;
+  std::span<Real> land_water_kg_m2;
+  Real bucket_capacity_kg_m2 = 0.0;
+  DiluteMoistThermodynamics thermodynamics;
+};
+
 struct DryMixingStepDiagnostics {
   Real sensible_to_atmosphere_energy_j = 0.0;
   Real surface_stress_impulse_magnitude_n_s = 0.0;
@@ -27,6 +34,12 @@ struct DryMixingStepDiagnostics {
   Real kinetic_energy_identity_residual_j = 0.0;
   Real momentum_budget_residual_n_s = 0.0;
   Real tracer_mass_change_kg = 0.0;
+  Real evaporation_kg = 0.0;
+  Real runoff_kg = 0.0;
+  Real ocean_water_change_kg = 0.0;
+  Real external_outflow_kg = 0.0;
+  Real moist_enthalpy_budget_residual_j = 0.0;
+  Real water_budget_residual_kg = 0.0;
 };
 
 struct DryMixingCouplingWorkspace {
@@ -45,6 +58,7 @@ void apply_dry_boundary_layer(
     const DryHydrostaticDerived& derived, const PlanetParameters& planet,
     const SurfaceParameters& surface, const BoundaryLayerParameters& boundary_layer,
     Real time_step_s, DryMixingStepDiagnostics& diagnostics,
-    DryMixingCouplingWorkspace& workspace);
+    DryMixingCouplingWorkspace& workspace,
+    const MoistBoundaryLayerCoupling* moisture = nullptr);
 
 }  // namespace mps

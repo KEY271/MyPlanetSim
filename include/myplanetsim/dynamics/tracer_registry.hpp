@@ -17,6 +17,7 @@ struct TracerDescriptor {
   std::string name;
   TracerRole role = TracerRole::kPassive;
   Real initial_mixing_ratio = 0.0;
+  std::optional<Real> initial_relative_humidity;
   bool require_nonnegative = true;
   bool horizontal_diffusion = true;
 };

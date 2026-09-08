@@ -12,7 +12,7 @@ void apply_dry_boundary_layer(
     const DryHydrostaticDerived& derived, const PlanetParameters& planet,
     const SurfaceParameters& surface, const BoundaryLayerParameters& boundary_layer,
     const Real time_step_s, DryMixingStepDiagnostics& diagnostics,
-    DryMixingCouplingWorkspace& workspace) {
+    DryMixingCouplingWorkspace& workspace, const MoistBoundaryLayerCoupling* moisture) {
   const std::size_t cells = derived.cells;
   const std::size_t levels = derived.levels;
   if (cells != grid.cell_count() || coordinate.levels() != levels || levels == 0 ||
@@ -22,6 +22,9 @@ void apply_dry_boundary_layer(
       boundary.land_fraction().size() != cells ||
       boundary.surface_geopotential_m2_s2().size() != cells)
     throw std::invalid_argument("dry boundary-layer coupling shape mismatch");
+  if (moisture != nullptr && (moisture->water_vapor_tracer >= derived.tracer_count ||
+                              moisture->land_water_kg_m2.size() != cells))
+    throw std::invalid_argument("moist boundary-layer coupling shape mismatch");
   if (!(time_step_s > 0.0) || !std::isfinite(time_step_s))
     throw std::invalid_argument("dry boundary-layer time step must be positive");
 
@@ -80,8 +83,16 @@ void apply_dry_boundary_layer(
         mixed_surface_heat_capacity(land_fraction, surface.land_heat_capacity_j_m2_k,
                                     surface.ocean_heat_capacity_j_m2_k);
     Real tracer_mass_change_kg_m2 = 0.0;
-    for (std::size_t tracer_index = 0; tracer_index < derived.tracer_count;
-         ++tracer_index) {
+    for (std::size_t order = 0; order < derived.tracer_count; ++order) {
+      std::size_t tracer_index = order;
+      if (moisture != nullptr) {
+        if (order == moisture->water_vapor_tracer)
+          tracer_index = derived.tracer_count - 1;
+        else if (order == derived.tracer_count - 1)
+          tracer_index = moisture->water_vapor_tracer;
+      }
+      const bool is_water =
+          moisture != nullptr && tracer_index == moisture->water_vapor_tracer;
       const auto tracer = std::span<const Real>(derived.tracer_mixing_ratio)
                               .subspan(tracer_index * cells * levels + begin, levels);
       implicit_boundary_layer_column(
@@ -105,7 +116,19 @@ void apply_dry_boundary_layer(
            .surface_drag_conductance_kg_m2_s =
                workspace.bulk.surface_drag_conductance_kg_m2_s,
            .heat_capacity_cp_j_kg_k = planet.heat_capacity_cp_j_kg_k,
-           .time_step_s = time_step_s},
+           .time_step_s = time_step_s,
+           .enable_surface_water_exchange = is_water,
+           .surface_pressure_pa = state.surface_pressure_pa[cell],
+           .land_fraction = land_fraction,
+           .land_water_kg_m2 = is_water ? moisture->land_water_kg_m2[cell] : 0.0,
+           .bucket_capacity_kg_m2 = is_water ? moisture->bucket_capacity_kg_m2 : 0.0,
+           .bucket_wet_threshold_fraction = 0.75,
+           .surface_water_conductance_land_kg_m2_s =
+               is_water ? workspace.bulk.surface_water_conductance_land_kg_m2_s : 0.0,
+           .surface_water_conductance_ocean_kg_m2_s =
+               is_water ? workspace.bulk.surface_water_conductance_ocean_kg_m2_s : 0.0,
+           .moist_thermodynamics =
+               is_water ? moisture->thermodynamics : DiluteMoistThermodynamics{}},
           workspace.column, workspace.column_workspace);
       tracer_mass_change_kg_m2 += workspace.column.diagnostics.tracer_mass_change_kg_m2;
       for (std::size_t level = 0; level < levels; ++level) {
@@ -114,6 +137,8 @@ void apply_dry_boundary_layer(
             dry_hydrostatic_tracer_offset(tracer_index, cell, level, cells, levels);
         state.tracer_mass_kg_m2[q] = mass * workspace.column.tracer_mixing_ratio[level];
       }
+      if (is_water)
+        moisture->land_water_kg_m2[cell] = workspace.column.land_water_kg_m2;
     }
 
     for (std::size_t level = 0; level < levels; ++level) {
@@ -159,6 +184,13 @@ void apply_dry_boundary_layer(
     diagnostics.momentum_budget_residual_n_s +=
         area * norm(column.momentum_budget_residual_kg_m_s);
     diagnostics.tracer_mass_change_kg += area * tracer_mass_change_kg_m2;
+    diagnostics.evaporation_kg += area * column.evaporation_kg_m2;
+    diagnostics.runoff_kg += area * land_fraction * column.runoff_kg_m2_land;
+    diagnostics.ocean_water_change_kg += area * column.ocean_water_change_kg_m2;
+    diagnostics.external_outflow_kg += area * column.external_outflow_kg_m2;
+    diagnostics.moist_enthalpy_budget_residual_j +=
+        area * column.moist_enthalpy_budget_residual_j_m2;
+    diagnostics.water_budget_residual_kg += area * column.water_budget_residual_kg_m2;
   }
   if (!(total_area > 0.0))
     throw std::runtime_error("dry boundary-layer grid area is invalid");

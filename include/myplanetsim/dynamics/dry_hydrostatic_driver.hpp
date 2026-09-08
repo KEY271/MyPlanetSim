@@ -14,6 +14,7 @@
 #include "myplanetsim/physics/dry_mixing_coupling.hpp"
 #include "myplanetsim/physics/gray_radiation_coupling.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
+#include "myplanetsim/physics/moist_physics_coupling.hpp"
 #include "myplanetsim/physics/surface_energy_balance.hpp"
 namespace mps {
 struct DryHydrostaticRhs {
@@ -78,6 +79,7 @@ struct DryHydrostaticStepDiagnostics {
   GrayRadiationBudget radiation_budget{};
   DryMixingStepDiagnostics boundary_layer{};
   DryConvectionDiagnostics convection{};
+  MoistPhysicsStepDiagnostics moisture{};
   Real diffusion_energy_contribution_j = 0.0;
   Real requested_time_step_s = 0.0;
   Real accepted_time_step_s = 0.0;
@@ -98,6 +100,8 @@ struct DryHydrostaticStepDiagnostics {
   std::size_t radiation_column_call_count = 0;
   std::size_t boundary_layer_column_call_count = 0;
   std::size_t convection_column_call_count = 0;
+  std::size_t physics_substep_count = 0;
+  std::size_t physics_retry_count = 0;
   Real radiation_wall_seconds = 0.0;
   Real wall_seconds_rhs = 0.0;
   Real wall_seconds_linear_solve = 0.0;

@@ -22,6 +22,8 @@ inline constexpr std::string_view kDryHydrostaticMultitracerCheckpointLayout =
     "dry_hydrostatic_multitracer_v1";
 inline constexpr std::string_view kDryHydrostaticMultitracerSurfaceCheckpointLayout =
     "dry_hydrostatic_multitracer_surface_v1";
+inline constexpr std::string_view kDryHydrostaticMoistCheckpointLayout =
+    "dry_hydrostatic_moist_v1";
 
 struct DryHydrostaticState {
   Real time_s = 0.0;
@@ -32,6 +34,13 @@ struct DryHydrostaticState {
   std::vector<Real> potential_temperature_mass_k_kg_m2;
   std::vector<Real> tracer_mass_kg_m2;
   std::vector<Real> surface_temperature_k;
+  std::vector<Real> land_water_kg_m2;
+  Real cumulative_convective_precipitation_kg = 0.0;
+  Real cumulative_grid_scale_precipitation_kg = 0.0;
+  Real cumulative_evaporation_kg = 0.0;
+  Real cumulative_runoff_kg = 0.0;
+  Real cumulative_ocean_water_change_kg = 0.0;
+  Real cumulative_external_outflow_kg = 0.0;
 };
 
 struct DryHydrostaticDerived {
@@ -82,6 +91,13 @@ struct DryHydrostaticDerived {
 [[nodiscard]] DryHydrostaticState unflatten_dry_hydrostatic_multitracer_state(
     Real time_s, std::uint64_t step, std::span<const Real> values, std::size_t cells,
     std::size_t levels, std::size_t tracer_count, bool include_surface);
+[[nodiscard]] std::string dry_hydrostatic_moist_checkpoint_layout(
+    const TracerRegistry& registry);
+[[nodiscard]] std::vector<Real> flatten_dry_hydrostatic_moist_state(
+    const DryHydrostaticState& state, std::size_t levels);
+[[nodiscard]] DryHydrostaticState unflatten_dry_hydrostatic_moist_state(
+    Real time_s, std::uint64_t step, std::span<const Real> values, std::size_t cells,
+    std::size_t levels, std::size_t tracer_count);
 [[nodiscard]] DryHydrostaticDerived diagnose_dry_hydrostatic_state(
     const DryHydrostaticState& state, const AtmosphericHybridCoordinate& coordinate,
     const PlanetParameters& planet);

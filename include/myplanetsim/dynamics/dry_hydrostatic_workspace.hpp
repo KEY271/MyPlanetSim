@@ -7,6 +7,7 @@
 #include "myplanetsim/physics/dry_mixing_coupling.hpp"
 #include "myplanetsim/physics/gray_radiation_coupling.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
+#include "myplanetsim/physics/moist_physics_coupling.hpp"
 #include "myplanetsim/physics/surface_energy_balance.hpp"
 
 namespace mps {
@@ -35,6 +36,8 @@ struct DryHydrostaticWorkspace {
   DryConvectiveAdjustmentWorkspace convective_adjustment_workspace;
   DryMixingStepDiagnostics dry_mixing_diagnostics;
   DryMixingCouplingWorkspace dry_mixing_workspace;
+  MoistPhysicsStepDiagnostics moist_diagnostics;
+  MoistPhysicsCouplingWorkspace moist_workspace;
 };
 
 }  // namespace mps

@@ -96,6 +96,7 @@ add_library(
   src/phase0/ode_experiment.cpp
   src/physics/held_suarez.cpp
   src/physics/moist_thermodynamics.cpp
+  src/physics/moist_physics_coupling.cpp
   src/physics/saturation_adjustment.cpp
   src/physics/simple_betts_miller.cpp
   src/physics/surface_hydrology.cpp

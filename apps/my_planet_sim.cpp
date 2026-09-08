@@ -1346,22 +1346,29 @@ int main(const int argc, const char* const argv[]) {
             config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance ||
             config.physics.kind == mps::PhysicsKind::kGrayRadiation;
         const bool multitracer = !config.tracers.empty();
+        const bool moist = config.moisture.kind == mps::MoistureKind::kDiluteWater;
         const mps::TracerRegistry registry = multitracer
                                                  ? mps::TracerRegistry(config.tracers)
                                                  : mps::TracerRegistry::legacy();
         const std::string layout =
-            multitracer
+            moist ? mps::dry_hydrostatic_moist_checkpoint_layout(registry)
+            : multitracer
                 ? mps::dry_hydrostatic_multitracer_checkpoint_layout(registry,
                                                                      has_surface)
                 : std::string(has_surface ? mps::kDryHydrostaticSurfaceCheckpointLayout
                                           : mps::kDryHydrostaticCheckpointLayout);
         const auto state_size =
-            multitracer ? cells + (4 + registry.size()) * cells * levels +
-                              (has_surface ? cells : 0)
-                        : cells + 5 * cells * levels + (has_surface ? cells : 0);
+            moist ? cells + (4 + registry.size()) * cells * levels + 2 * cells + 6
+            : multitracer ? cells + (4 + registry.size()) * cells * levels +
+                                (has_surface ? cells : 0)
+                          : cells + 5 * cells * levels + (has_surface ? cells : 0);
         auto checkpoint = mps::read_checkpoint_file(*command_line.restart_path,
                                                     fingerprint, layout, state_size);
-        if (multitracer)
+        if (moist)
+          state = mps::unflatten_dry_hydrostatic_moist_state(
+              checkpoint.time_s, checkpoint.step, checkpoint.state, cells, levels,
+              registry.size());
+        else if (multitracer)
           state = mps::unflatten_dry_hydrostatic_multitracer_state(
               checkpoint.time_s, checkpoint.step, checkpoint.state, cells, levels,
               registry.size(), has_surface);
@@ -1566,6 +1573,7 @@ int main(const int argc, const char* const argv[]) {
             config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance ||
             config.physics.kind == mps::PhysicsKind::kGrayRadiation;
         const bool multitracer = !config.tracers.empty();
+        const bool moist = config.moisture.kind == mps::MoistureKind::kDiluteWater;
         const mps::TracerRegistry registry = multitracer
                                                  ? mps::TracerRegistry(config.tracers)
                                                  : mps::TracerRegistry::legacy();
@@ -1574,7 +1582,9 @@ int main(const int argc, const char* const argv[]) {
             {.time_s = state.time_s,
              .step = state.step,
              .state =
-                 multitracer
+                 moist ? mps::flatten_dry_hydrostatic_moist_state(
+                             state, static_cast<std::size_t>(config.vertical.levels))
+                 : multitracer
                      ? mps::flatten_dry_hydrostatic_multitracer_state(
                            state, static_cast<std::size_t>(config.vertical.levels),
                            has_surface)
@@ -1585,7 +1595,8 @@ int main(const int argc, const char* const argv[]) {
                            state, static_cast<std::size_t>(config.vertical.levels)),
              .config_fingerprint = fingerprint,
              .layout_id =
-                 multitracer
+                 moist ? mps::dry_hydrostatic_moist_checkpoint_layout(registry)
+                 : multitracer
                      ? mps::dry_hydrostatic_multitracer_checkpoint_layout(registry,
                                                                           has_surface)
                      : std::string(has_surface

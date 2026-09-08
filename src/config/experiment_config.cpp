@@ -608,6 +608,8 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
         throw parse_error(line, "unknown tracer role " + std::string(value));
     } else if (property == "initial_mixing_ratio") {
       found->initial_mixing_ratio = parse_real(value, line, key);
+    } else if (property == "initial_relative_humidity") {
+      found->initial_relative_humidity = parse_real(value, line, key);
     } else if (property == "require_nonnegative") {
       found->require_nonnegative = parse_bool(value, line, key);
     } else if (property == "horizontal_diffusion") {
@@ -681,10 +683,40 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.convection.kind = ConvectionKind::kNone;
     else if (value == "dry_adjustment")
       config.convection.kind = ConvectionKind::kDryAdjustment;
+    else if (value == "simple_betts_miller")
+      config.convection.kind = ConvectionKind::kSimpleBettsMiller;
     else
       throw parse_error(line, "unknown convection.kind " + std::string(value));
   } else if (key == "convection.stability_tolerance_k") {
     config.convection.stability_tolerance_k = parse_real(value, line, key);
+  } else if (key == "convection.relaxation_time_s") {
+    config.convection.relaxation_time_s = parse_real(value, line, key);
+  } else if (key == "convection.reference_relative_humidity") {
+    config.convection.reference_relative_humidity = parse_real(value, line, key);
+  } else if (key == "moisture.kind") {
+    if (value == "none")
+      config.moisture.kind = MoistureKind::kNone;
+    else if (value == "dilute_water")
+      config.moisture.kind = MoistureKind::kDiluteWater;
+    else
+      throw parse_error(line, "unknown moisture.kind " + std::string(value));
+  } else if (key == "moisture.condensation") {
+    if (value == "none")
+      config.moisture.condensation = CondensationKind::kNone;
+    else if (value == "saturation_adjustment")
+      config.moisture.condensation = CondensationKind::kSaturationAdjustment;
+    else
+      throw parse_error(line, "unknown moisture.condensation " + std::string(value));
+  } else if (key == "moisture.surface_exchange") {
+    if (value == "none")
+      config.moisture.surface_exchange = SurfaceMoistureExchange::kNone;
+    else if (value == "bulk")
+      config.moisture.surface_exchange = SurfaceMoistureExchange::kBulk;
+    else
+      throw parse_error(line,
+                        "unknown moisture.surface_exchange " + std::string(value));
+  } else if (key == "moisture.maximum_physics_substep_s") {
+    config.moisture.maximum_physics_substep_s = parse_real(value, line, key);
   } else if (key == "boundary_layer.kind") {
     if (value == "none")
       config.boundary_layer.kind = BoundaryLayerKind::kNone;
@@ -735,6 +767,14 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
   } else if (key == "surface.smoothing_passes") {
     if (!config.surface.has_value()) config.surface.emplace();
     config.surface->smoothing_passes = parse_index(value, line, key);
+  } else if (key == "surface.hydrology.kind") {
+    if (!config.surface.has_value()) config.surface.emplace();
+    if (value == "none")
+      config.surface->hydrology_kind = SurfaceHydrologyKind::kNone;
+    else if (value == "bucket")
+      config.surface->hydrology_kind = SurfaceHydrologyKind::kBucket;
+    else
+      throw parse_error(line, "unknown surface.hydrology.kind " + std::string(value));
   } else if (key.starts_with("surface.")) {
     if (!config.surface.has_value()) config.surface.emplace();
     const Real parsed = parse_real(value, line, key);
@@ -760,6 +800,10 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
       config.surface->ocean_roughness_momentum_m = parsed;
     else if (key == "surface.ocean_roughness_heat_m")
       config.surface->ocean_roughness_heat_m = parsed;
+    else if (key == "surface.hydrology.capacity_kg_m2")
+      config.surface->hydrology_capacity_kg_m2 = parsed;
+    else if (key == "surface.hydrology.initial_fraction")
+      config.surface->hydrology_initial_fraction = parsed;
     else if (key == "surface.cfl")
       config.surface->cfl = parsed;
     else
@@ -821,6 +865,15 @@ void ExperimentConfig::validate() const {
       if (tracer.require_nonnegative && tracer.initial_mixing_ratio < 0.0)
         throw std::invalid_argument(
             "nonnegative tracer requires a nonnegative initial mixing ratio");
+      if (tracer.initial_relative_humidity.has_value()) {
+        require_finite(*tracer.initial_relative_humidity,
+                       "tracer initial_relative_humidity");
+        if (tracer.role != TracerRole::kWaterVapor ||
+            *tracer.initial_relative_humidity < 0.0 ||
+            *tracer.initial_relative_humidity > 1.0)
+          throw std::invalid_argument(
+              "initial relative humidity requires water_vapor and must be in [0, 1]");
+      }
     }
   }
   if (kind != ExperimentKind::kDryHydrostatic &&
@@ -830,7 +883,8 @@ void ExperimentConfig::validate() const {
         "semi-implicit integration is valid only for dry_hydrostatic");
   if (kind != ExperimentKind::kDryHydrostatic &&
       (convection.kind != ConvectionKind::kNone ||
-       boundary_layer.kind != BoundaryLayerKind::kNone))
+       boundary_layer.kind != BoundaryLayerKind::kNone ||
+       moisture.kind != MoistureKind::kNone))
     throw std::invalid_argument(
         "convection and boundary layer are valid only for dry_hydrostatic");
   require_non_negative(run.start_time_s, "run.start_time_s");
@@ -983,6 +1037,14 @@ void ExperimentConfig::validate() const {
             "dry convective adjustment requires gray_radiation physics");
       require_non_negative(convection.stability_tolerance_k,
                            "convection.stability_tolerance_k");
+      if (convection.kind == ConvectionKind::kSimpleBettsMiller) {
+        require_positive(convection.relaxation_time_s, "convection.relaxation_time_s");
+        require_positive(convection.reference_relative_humidity,
+                         "convection.reference_relative_humidity");
+        if (convection.reference_relative_humidity > 1.0)
+          throw std::invalid_argument(
+              "convection.reference_relative_humidity must not exceed one");
+      }
     }
     if (boundary_layer.kind != BoundaryLayerKind::kNone) {
       if (physics.kind != PhysicsKind::kGrayRadiation)
@@ -1005,6 +1067,46 @@ void ExperimentConfig::validate() const {
       if (surface->air_exchange_coefficient_w_m2_k != 0.0)
         throw std::invalid_argument(
             "boundary layer requires zero legacy air exchange coefficient");
+    }
+    if (moisture.kind == MoistureKind::kDiluteWater) {
+      const TracerRegistry registry(tracers);
+      if (!registry.water_vapor_index().has_value())
+        throw std::invalid_argument("dilute_water requires one water_vapor tracer");
+      require_positive(moisture.maximum_physics_substep_s,
+                       "moisture.maximum_physics_substep_s");
+      if (physics.kind != PhysicsKind::kGrayRadiation || !surface.has_value())
+        throw std::invalid_argument(
+            "dilute_water driver runs require gray_radiation and a surface");
+      if (convection.kind == ConvectionKind::kSimpleBettsMiller &&
+          moisture.condensation != CondensationKind::kSaturationAdjustment)
+        throw std::invalid_argument(
+            "simple_betts_miller requires saturation_adjustment");
+      if (moisture.surface_exchange == SurfaceMoistureExchange::kBulk) {
+        if (boundary_layer.kind != BoundaryLayerKind::kBulkKProfile ||
+            !surface.has_value())
+          throw std::invalid_argument(
+              "bulk moisture exchange requires bulk boundary layer and surface");
+        if (surface->hydrology_kind != SurfaceHydrologyKind::kBucket)
+          throw std::invalid_argument(
+              "bulk moisture exchange requires bucket hydrology");
+      }
+      if (surface.has_value() &&
+          surface->hydrology_kind == SurfaceHydrologyKind::kBucket) {
+        require_positive(surface->hydrology_capacity_kg_m2,
+                         "surface.hydrology.capacity_kg_m2");
+        require_finite(surface->hydrology_initial_fraction,
+                       "surface.hydrology.initial_fraction");
+        if (surface->hydrology_initial_fraction < 0.0 ||
+            surface->hydrology_initial_fraction > 1.0)
+          throw std::invalid_argument(
+              "surface.hydrology.initial_fraction must be in [0, 1]");
+      }
+    } else if (convection.kind == ConvectionKind::kSimpleBettsMiller ||
+               moisture.condensation != CondensationKind::kNone ||
+               moisture.surface_exchange != SurfaceMoistureExchange::kNone ||
+               (surface.has_value() &&
+                surface->hydrology_kind != SurfaceHydrologyKind::kNone)) {
+      throw std::invalid_argument("moist physics options require dilute_water");
     }
     require_finite(dry_hydrostatic.cfl, "dry_hydrostatic.cfl");
     if (!(dry_hydrostatic.cfl > 0.0 && dry_hydrostatic.cfl <= 1.0))
@@ -1415,6 +1517,21 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
       (has_surface_input || has_surface_fingerprint || has_surface_quadrature ||
        has_surface_smoothing))
     throw std::runtime_error("uniform surface geography rejects Earth data options");
+  const bool has_hydrology_key = std::ranges::any_of(
+      seen_keys, [](const auto& key) { return key.starts_with("surface.hydrology."); });
+  if (has_hydrology_key && !has_surface_geography)
+    throw std::runtime_error("surface hydrology requires surface geography");
+  if (config.surface.has_value() &&
+      config.surface->hydrology_kind == SurfaceHydrologyKind::kBucket) {
+    if (!seen_keys.contains("surface.hydrology.capacity_kg_m2") ||
+        !seen_keys.contains("surface.hydrology.initial_fraction"))
+      throw std::runtime_error(
+          "bucket hydrology requires capacity and initial fraction");
+  } else if (has_hydrology_key &&
+             (seen_keys.contains("surface.hydrology.capacity_kg_m2") ||
+              seen_keys.contains("surface.hydrology.initial_fraction"))) {
+    throw std::runtime_error("surface hydrology parameters require bucket");
+  }
 
   const bool has_forcing_geometry = seen_keys.contains("forcing.geometry");
   if ((config.physics.kind == PhysicsKind::kPlanetaryNewtonian) != has_forcing_geometry)
@@ -1448,10 +1565,35 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
       seen_keys, [](const auto& key) { return key.starts_with("convection."); });
   if (config.kind != ExperimentKind::kDryHydrostatic && has_convection_key)
     throw std::runtime_error("convection keys are valid only for dry_hydrostatic");
-  if (config.convection.kind == ConvectionKind::kDryAdjustment) {
+  if (config.convection.kind == ConvectionKind::kDryAdjustment ||
+      config.convection.kind == ConvectionKind::kSimpleBettsMiller) {
     require_keys(seen_keys, kConvectionRequiredKeys);
-  } else if (seen_keys.contains("convection.stability_tolerance_k")) {
+    if (config.convection.kind == ConvectionKind::kSimpleBettsMiller &&
+        (!seen_keys.contains("convection.relaxation_time_s") ||
+         !seen_keys.contains("convection.reference_relative_humidity")))
+      throw std::runtime_error(
+          "simple_betts_miller requires relaxation time and reference humidity");
+  } else if (std::ranges::any_of(seen_keys, [](const auto& key) {
+               return key.starts_with("convection.") && key != "convection.kind";
+             })) {
     throw std::runtime_error("convection parameters require dry_adjustment");
+  }
+
+  const bool has_moisture_key = std::ranges::any_of(
+      seen_keys, [](const auto& key) { return key.starts_with("moisture."); });
+  if (config.kind != ExperimentKind::kDryHydrostatic && has_moisture_key)
+    throw std::runtime_error("moisture keys are valid only for dry_hydrostatic");
+  if (config.moisture.kind == MoistureKind::kDiluteWater) {
+    for (const auto key :
+         {"moisture.kind", "moisture.condensation", "moisture.surface_exchange",
+          "moisture.maximum_physics_substep_s"})
+      if (!seen_keys.contains(key))
+        throw std::runtime_error("dilute_water is missing required key " +
+                                 std::string(key));
+  } else if (has_moisture_key && std::ranges::any_of(seen_keys, [](const auto& key) {
+               return key != "moisture.kind" && key.starts_with("moisture.");
+             })) {
+    throw std::runtime_error("moisture parameters require dilute_water");
   }
 
   const bool has_tracer_key = std::ranges::any_of(
@@ -1634,15 +1776,20 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
           output << config.tracers[index].name;
         }
         output << '\n';
-        for (const auto& tracer : config.tracers)
+        for (const auto& tracer : config.tracers) {
           output << "tracers." << tracer.name
-                 << ".role = " << tracer_role_name(tracer.role) << '\n'
-                 << "tracers." << tracer.name
-                 << ".initial_mixing_ratio = " << tracer.initial_mixing_ratio << '\n'
-                 << "tracers." << tracer.name << ".require_nonnegative = "
+                 << ".role = " << tracer_role_name(tracer.role) << '\n';
+          if (tracer.initial_relative_humidity.has_value())
+            output << "tracers." << tracer.name << ".initial_relative_humidity = "
+                   << *tracer.initial_relative_humidity << '\n';
+          else
+            output << "tracers." << tracer.name
+                   << ".initial_mixing_ratio = " << tracer.initial_mixing_ratio << '\n';
+          output << "tracers." << tracer.name << ".require_nonnegative = "
                  << (tracer.require_nonnegative ? "true" : "false") << '\n'
                  << "tracers." << tracer.name << ".horizontal_diffusion = "
                  << (tracer.horizontal_diffusion ? "true" : "false") << '\n';
+        }
       }
       if (config.dry_hydrostatic.time_integrator ==
           DryHydrostaticTimeIntegrator::kSemiImplicit) {
@@ -1689,6 +1836,26 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
                << '\n'
                << "convection.stability_tolerance_k = "
                << config.convection.stability_tolerance_k << '\n';
+      if (config.convection.kind == ConvectionKind::kSimpleBettsMiller)
+        output << "convection.relaxation_time_s = "
+               << config.convection.relaxation_time_s << '\n'
+               << "convection.reference_relative_humidity = "
+               << config.convection.reference_relative_humidity << '\n';
+      if (config.moisture.kind != MoistureKind::kNone)
+        output << "moisture.kind = " << moisture_kind_name(config.moisture.kind) << '\n'
+               << "moisture.condensation = "
+               << (config.moisture.condensation ==
+                           CondensationKind::kSaturationAdjustment
+                       ? "saturation_adjustment"
+                       : "none")
+               << '\n'
+               << "moisture.surface_exchange = "
+               << (config.moisture.surface_exchange == SurfaceMoistureExchange::kBulk
+                       ? "bulk"
+                       : "none")
+               << '\n'
+               << "moisture.maximum_physics_substep_s = "
+               << config.moisture.maximum_physics_substep_s << '\n';
       if (config.boundary_layer.kind != BoundaryLayerKind::kNone)
         output << "boundary_layer.kind = "
                << boundary_layer_kind_name(config.boundary_layer.kind) << '\n'
@@ -1742,6 +1909,12 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
                  << config.surface->ocean_roughness_momentum_m << '\n'
                  << "surface.ocean_roughness_heat_m = "
                  << config.surface->ocean_roughness_heat_m << '\n';
+        if (config.surface->hydrology_kind == SurfaceHydrologyKind::kBucket)
+          output << "surface.hydrology.kind = bucket\n"
+                 << "surface.hydrology.capacity_kg_m2 = "
+                 << config.surface->hydrology_capacity_kg_m2 << '\n'
+                 << "surface.hydrology.initial_fraction = "
+                 << config.surface->hydrology_initial_fraction << '\n';
       }
       if (config.radiation.has_value())
         output << "radiation.shortwave_absorption_m2_kg = "
@@ -1874,8 +2047,14 @@ std::string_view convection_kind_name(const ConvectionKind kind) noexcept {
       return "none";
     case ConvectionKind::kDryAdjustment:
       return "dry_adjustment";
+    case ConvectionKind::kSimpleBettsMiller:
+      return "simple_betts_miller";
   }
   return "unknown";
+}
+
+std::string_view moisture_kind_name(const MoistureKind kind) noexcept {
+  return kind == MoistureKind::kDiluteWater ? "dilute_water" : "none";
 }
 
 std::string_view boundary_layer_kind_name(const BoundaryLayerKind kind) noexcept {
