@@ -75,7 +75,8 @@ def main():
     fingerprints = {}
     for arg in command:
         path = Path(arg)
-        if path.is_file() and (path.suffix == '.cfg' or arg == command[0]):
+        if path.is_file() and (path.suffix in ('.cfg', '.chk', '.checkpoint')
+                               or arg == command[0]):
             fingerprints[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
     result = dict(schema_version=1, time_utc=datetime.now(timezone.utc).isoformat(),
                   command=command, commit=capture(['git', 'rev-parse', 'HEAD']),

@@ -27,3 +27,25 @@ Phase 13 の既存1200日CSVを修正版で再集計し、(200日,1200日] は
 
 P14.01 の残作業: 発達後checkpointを含む比較行列、詳細physics/copy/solver計測、
 高解像度・thread条件別baseline。初日の測定だけでSBM性能や方式の採否は判定しない。
+
+### 発達後の比較 fixture
+
+`benchmark_moist` の末尾に `INITIAL_CHECKPOINT SOURCE_CONFIG` を指定すると、
+元configのfingerprintで検証した湿潤checkpointから指定日数だけ積分する。
+物理設定・tracer registry・格子を維持し、時間積分と診断の設定だけ変更できる。
+CLIのtop/refinementは元の座標と整合することを確認した上で、丸めを含めた元の
+鉛直座標をそのまま用いる。これは比較専用のimportであり、production restartの契約は変えない。
+蒸発・降水はimport時点の累積値を差し引き、水台帳も開始時の海洋・外部流出を含む。
+共通runnerはcheckpointのSHA256も記録する。
+
+```sh
+python3 tools/benchmark_phase14.py --output output/phase14/developed-baseline.json -- \
+  build/release/tools/benchmark_moist configs/phase13_moist_pilot.cfg \
+  1 6 20 1800 3 20000 5 output/phase14/developed.csv \
+  output/phase13_moist_pilot/pilot.chk configs/phase13_moist_pilot.cfg
+```
+
+1200日checkpointから1800秒進めるsmokeでRHS=5/step、retry=0、対流降水比0.9845。
+`phase14.fixture` は実際に生成したcheckpointを使い、経過秒数・区間蒸発・RHS=4の
+2反復import・同条件再実行のsnapshot byte一致・物理/鉛直座標不一致の拒否を検証する。
+既存Release 105テストと新しいfixtureテストが成功。

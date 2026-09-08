@@ -19,6 +19,8 @@
 
 #include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
 #include "myplanetsim/diagnostics/moist_diagnostics.hpp"
+#include "myplanetsim/io/checkpoint.hpp"
+#include "myplanetsim/io/run_metadata.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
 #include "myplanetsim/dynamics/tracer_registry.hpp"
 #include "myplanetsim/physics/moist_thermodynamics.hpp"
@@ -141,9 +143,9 @@ void operator delete(void* pointer, std::size_t) noexcept { std::free(pointer); 
 void operator delete[](void* pointer, std::size_t) noexcept { std::free(pointer); }
 
 int main(int argc, char** argv) {
-  if (argc != 10) {
+  if (argc != 10 && argc != 12) {
     std::cerr << "usage: benchmark_moist CONFIG DAYS N K DT ITERATIONS TOP_PA "
-                 "REFINEMENT SNAPSHOT\n"
+                 "REFINEMENT SNAPSHOT [INITIAL_CHECKPOINT SOURCE_CONFIG]\n"
                  "ITERATIONS=0 selects SSP-RK3; positive values select centered "
                  "semi-implicit.\n";
     return 2;
@@ -166,6 +168,23 @@ int main(int argc, char** argv) {
     config.vertical.levels = levels_value;
     config.vertical.a_half_pa = coefficients.a_half_pa;
     config.vertical.b_half = coefficients.b_half;
+    if (argc == 12) {
+      // Keep the fixture's exact geometry, including decimal serialization.
+      // The positional top/refinement arguments must still describe that grid.
+      const auto source = mps::load_experiment_config(argv[11]);
+      const auto matches = [](const auto& requested, const auto& stored) {
+        if (requested.size() != stored.size()) return false;
+        for (std::size_t i = 0; i < requested.size(); ++i)
+          if (std::abs(requested[i] - stored[i]) >
+              1e-9 * std::max(1.0, std::abs(requested[i]))) return false;
+        return true;
+      };
+      if (!matches(coefficients.a_half_pa, source.vertical.a_half_pa) ||
+          !matches(coefficients.b_half, source.vertical.b_half))
+        throw std::invalid_argument("benchmark checkpoint top/refinement differ");
+      config.vertical.a_half_pa = source.vertical.a_half_pa;
+      config.vertical.b_half = source.vertical.b_half;
+    }
     config.diagnostics.interval_steps = static_cast<std::uint64_t>(
         std::max(1.0, std::ceil(86400.0 / config.run.time_step_s)));
     if (iterations > 0) {
@@ -205,6 +224,42 @@ int main(int argc, char** argv) {
     const mps::DiluteMoistThermodynamics thermodynamics{
         .gas_constant_dry_air_j_kg_k = config.planet.gas_constant_j_kg_k,
         .heat_capacity_cp_j_kg_k = config.planet.heat_capacity_cp_j_kg_k};
+    if (argc == 12) {
+      const auto source = mps::load_experiment_config(argv[11]);
+      if (source.grid.cells_per_panel != config.grid.cells_per_panel ||
+          source.vertical.levels != config.vertical.levels ||
+          source.vertical.a_half_pa != config.vertical.a_half_pa ||
+          source.vertical.b_half != config.vertical.b_half)
+        throw std::invalid_argument("benchmark checkpoint grid/vertical coordinates differ");
+      // Permit only time integration and diagnostic/output controls to differ.
+      // This is an explicit comparison fixture import, not production restart.
+      auto compatible = config;
+      compatible.run = source.run;
+      compatible.diagnostics = source.diagnostics;
+      compatible.semi_implicit = source.semi_implicit;
+      compatible.dry_hydrostatic.time_integrator = source.dry_hydrostatic.time_integrator;
+      compatible.dry_hydrostatic.advective_cfl = source.dry_hydrostatic.advective_cfl;
+      if (mps::config_fingerprint(compatible) != mps::config_fingerprint(source))
+        throw std::invalid_argument("benchmark checkpoint physical configuration differs");
+      if (!water_vapor_tracer)
+        throw std::invalid_argument("checkpoint fixture requires dilute water");
+      const auto cells = driver.grid().cell_count();
+      const auto checkpoint = mps::read_checkpoint_file(
+          argv[10], mps::config_fingerprint(source),
+          mps::dry_hydrostatic_moist_checkpoint_layout(registry),
+          cells + (4 + registry.size()) * cells * levels + 2 * cells + 6);
+      state = mps::unflatten_dry_hydrostatic_moist_state(
+          checkpoint.time_s, checkpoint.step, checkpoint.state, cells, levels,
+          registry.size());
+    }
+    const double initial_time_s = state.time_s;
+    const double end_time_s = initial_time_s + std::stod(argv[2]) * 86400.0;
+    const double initial_evaporation = state.cumulative_evaporation_kg;
+    const double initial_convective_rain = state.cumulative_convective_precipitation_kg;
+    const double initial_grid_rain = state.cumulative_grid_scale_precipitation_kg;
+    const double initial_runoff = state.cumulative_runoff_kg;
+    const double initial_ocean = state.cumulative_ocean_water_change_kg;
+    const double initial_outflow = state.cumulative_external_outflow_kg;
     const auto initial_derived = driver.diagnose(state);
     const auto initial_dry = mps::diagnose_dry_hydrostatic_budgets(
         driver.grid(), state, initial_derived, config.planet);
@@ -212,7 +267,8 @@ int main(int argc, char** argv) {
                                                  water_vapor_tracer, thermodynamics);
     const auto initial_tracer_mass = tracer_masses(driver.grid(), state, levels);
     const double initial_system_water =
-        initial_summary.atmospheric_water_kg + initial_summary.land_water_kg;
+        initial_summary.atmospheric_water_kg + initial_summary.land_water_kg +
+        initial_ocean + initial_outflow;
 
     std::ofstream samples(std::string(argv[9]) + ".samples.csv");
     if (!samples) throw std::runtime_error("cannot open moist sample diagnostics");
@@ -244,7 +300,7 @@ int main(int argc, char** argv) {
     const bool measure_allocations = std::getenv("MPS_COUNT_ALLOCATIONS") != nullptr;
     count_allocations.store(measure_allocations, std::memory_order_relaxed);
     driver.advance(
-        state, config.run.end_time_s,
+        state, end_time_s,
         [&](const mps::DryHydrostaticState& sampled,
             const mps::DryHydrostaticDerived* derived,
             const mps::DryHydrostaticStepDiagnostics& step) {
@@ -312,12 +368,14 @@ int main(int argc, char** argv) {
     const double final_system_water =
         final_summary.atmospheric_water_kg + final_summary.land_water_kg +
         state.cumulative_ocean_water_change_kg + state.cumulative_external_outflow_kg;
+    const double evaporation = state.cumulative_evaporation_kg - initial_evaporation;
+    const double convective_rain =
+        state.cumulative_convective_precipitation_kg - initial_convective_rain;
+    const double grid_rain = state.cumulative_grid_scale_precipitation_kg - initial_grid_rain;
+    const double runoff = state.cumulative_runoff_kg - initial_runoff;
     const double exchange_scale =
         std::max({1.0, initial_system_water,
-                  std::abs(state.cumulative_evaporation_kg) +
-                      state.cumulative_convective_precipitation_kg +
-                      state.cumulative_grid_scale_precipitation_kg +
-                      state.cumulative_runoff_kg});
+                  std::abs(evaporation) + convective_rain + grid_rain + runoff});
     double maximum_tracer_relative_drift = 0.0;
     for (std::size_t tracer = 0; tracer < final_tracer_mass.size(); ++tracer) {
       if (water_vapor_tracer && tracer == *water_vapor_tracer) continue;
@@ -357,11 +415,11 @@ int main(int argc, char** argv) {
     if (!snapshot) throw std::runtime_error("cannot write moist snapshot");
 
     const double area = driver.grid().total_area_m2();
-    const double total_precipitation = state.cumulative_convective_precipitation_kg +
-                                       state.cumulative_grid_scale_precipitation_kg;
+    const double total_precipitation = convective_rain + grid_rain;
     std::cout
         << std::setprecision(17) << "elapsed_s=" << elapsed << '\n'
         << "seconds_per_model_day=" << elapsed * 86400.0 / accepted_seconds << '\n'
+        << "initial_time_s=" << initial_time_s << '\n'
         << "full_rhs_initial=" << full_rhs.initial << '\n'
         << "full_rhs_iteration=" << full_rhs.iteration << '\n'
         << "full_rhs_final=" << full_rhs.final << '\n'
@@ -417,12 +475,12 @@ int main(int argc, char** argv) {
         << "maximum_relative_humidity=" << final_summary.maximum_relative_humidity
         << '\n'
         << "evaporation_kg_m2_s="
-        << state.cumulative_evaporation_kg / (area * accepted_seconds) << '\n'
+        << evaporation / (area * accepted_seconds) << '\n'
         << "precipitation_kg_m2_s=" << total_precipitation / (area * accepted_seconds)
         << '\n'
         << "convective_precipitation_fraction="
         << (total_precipitation > 0.0
-                ? state.cumulative_convective_precipitation_kg / total_precipitation
+                ? convective_rain / total_precipitation
                 : 0.0)
         << '\n'
         << "toa_net_upward_w_m2=" << toa_net_upward_energy_j / (area * accepted_seconds)
