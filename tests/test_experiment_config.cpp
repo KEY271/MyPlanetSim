@@ -298,24 +298,22 @@ radiation.cfl = 0.5
   changed.radiation->shortwave_absorption_m2_kg = 1e-5;
   MPS_CHECK(mps::config_fingerprint(changed) != mps::config_fingerprint(gray));
 
-  const auto scheduled = parse(
-      std::string(kValidDryHydrostaticConfig) + suffix +
-      "physics.schedule = process_intervals\n"
-      "radiation.diagnostic_interval_s = 1800\n");
+  const auto scheduled = parse(std::string(kValidDryHydrostaticConfig) + suffix +
+                               "physics.schedule = process_intervals\n"
+                               "radiation.diagnostic_interval_s = 1800\n");
   MPS_CHECK(scheduled.physics_schedule.kind ==
             mps::PhysicsScheduleKind::kProcessIntervals);
-  MPS_CHECK_NEAR(scheduled.physics_schedule.radiation_diagnostic_interval_s,
-                 1800.0, 0.0);
+  MPS_CHECK_NEAR(scheduled.physics_schedule.radiation_diagnostic_interval_s, 1800.0,
+                 0.0);
   std::ostringstream scheduled_text;
   mps::write_experiment_config(scheduled_text, scheduled);
   MPS_CHECK_EQ(mps::config_fingerprint(parse(scheduled_text.str())),
                mps::config_fingerprint(scheduled));
-  MPS_CHECK_THROWS_AS(
-      parse(std::string(kValidDryHydrostaticConfig) + suffix +
-            "physics.schedule = process_intervals\n"
-            "radiation.diagnostic_interval_s = 1800\n"
-            "moisture.maximum_physics_substep_s = 300\n"),
-      std::runtime_error);
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidDryHydrostaticConfig) + suffix +
+                            "physics.schedule = process_intervals\n"
+                            "radiation.diagnostic_interval_s = 1800\n"
+                            "moisture.maximum_physics_substep_s = 300\n"),
+                      std::runtime_error);
 
   const auto convection = parse(std::string(kValidDryHydrostaticConfig) + suffix +
                                 "convection.kind = dry_adjustment\n"
@@ -391,7 +389,8 @@ MPS_TEST_CASE("the Phase 14 candidate preset round trips with process intervals"
   const auto config =
       mps::load_experiment_config(root / "configs" / "phase14_moist_candidate.cfg");
   MPS_CHECK(config.moisture.kind == mps::MoistureKind::kDiluteWater);
-  MPS_CHECK(config.physics_schedule.kind == mps::PhysicsScheduleKind::kProcessIntervals);
+  MPS_CHECK(config.physics_schedule.kind ==
+            mps::PhysicsScheduleKind::kProcessIntervals);
   MPS_CHECK(config.physics_schedule.convection_update_mode ==
             mps::ConvectionUpdateMode::kIntermittent);
   MPS_CHECK_NEAR(config.physics_schedule.boundary_layer_maximum_update_interval_s,

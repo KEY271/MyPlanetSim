@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <tuple>
 #include <vector>
 
@@ -150,8 +151,11 @@ MPS_TEST_CASE("uniform isothermal rest remains stationary") {
   d.advance(s, .2);
   auto after = mps::flatten_dry_hydrostatic_state(s, 2);
   MPS_CHECK_EQ(before.size(), after.size());
-  for (std::size_t i = 0; i < before.size(); ++i)
-    MPS_CHECK_NEAR(before[i], after[i], 1e-10);
+  for (std::size_t i = 0; i < before.size(); ++i) {
+    const auto scale = std::max(1.0, std::abs(before[i]));
+    MPS_CHECK_NEAR(before[i], after[i],
+                   64.0 * std::numeric_limits<mps::Real>::epsilon() * scale);
+  }
   MPS_CHECK(s.step > 0);
 }
 

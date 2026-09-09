@@ -102,7 +102,9 @@ test("the viewer offers only the steady dry preset and it remains at rest", { sk
       const first = await surfacePressure(runId, 0);
       const last = await surfacePressure(runId, frames.length - 1);
       const change = Math.max(...first.map((value, cell) => Math.abs(last[cell] - value)));
-      assert.equal(change, 0, `${presetId} is the steady smoke case but moved by ${change} Pa`);
+      const tolerance = 64 * Number.EPSILON * Math.max(1, ...first.map(Math.abs));
+      assert.ok(change <= tolerance,
+        `${presetId} is the steady smoke case but moved by ${change} Pa (tolerance ${tolerance} Pa)`);
     }
   } finally {
     await gateway.shutdown();

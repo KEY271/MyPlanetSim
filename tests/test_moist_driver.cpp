@@ -152,8 +152,7 @@ void make_conditionally_unstable(const mps::DryHydrostaticDriver& driver,
           300.0 * std::pow(pressure / 100000.0, 0.19) + 0.5 * (level % 2);
       const double saturation =
           0.622 * 611.2 *
-          std::exp(17.67 * (temperature - 273.15) /
-                   (temperature - 273.15 + 243.5)) /
+          std::exp(17.67 * (temperature - 273.15) / (temperature - 273.15 + 243.5)) /
           pressure;
       const double relative_humidity = level + 2 >= derived.levels ? 0.95 : 0.5;
       state.potential_temperature_mass_k_kg_m2[index] =
@@ -256,8 +255,7 @@ MPS_TEST_CASE("a drifted convection reference is re-diagnosed, not applied") {
   config.vertical.levels = 8;
   config.vertical.a_half_pa = {20000.0, 17500.0, 15000.0, 12500.0, 10000.0,
                                7500.0,  5000.0,  2500.0,  0.0};
-  config.vertical.b_half = {0.0,   0.125, 0.25,  0.375, 0.5,
-                            0.625, 0.75,  0.875, 1.0};
+  config.vertical.b_half = {0.0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0};
   config.semi_implicit->maximum_implicit_modes = 5;
   config.validate();
   const mps::DryHydrostaticDriver driver(config);

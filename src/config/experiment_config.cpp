@@ -1530,7 +1530,8 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
   if (has_process_schedule &&
       config.physics_schedule.kind == PhysicsScheduleKind::kLegacy &&
       has_process_interval)
-    throw std::runtime_error("legacy physics schedule does not accept process intervals");
+    throw std::runtime_error(
+        "legacy physics schedule does not accept process intervals");
   if (config.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals) {
     if (seen_keys.contains("moisture.maximum_physics_substep_s"))
       throw std::runtime_error(
@@ -1545,8 +1546,7 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
           "process schedule convection requires diagnostic_interval_s");
     if (config.convection.kind == ConvectionKind::kSimpleBettsMiller &&
         !seen_keys.contains("convection.update_mode"))
-      throw std::runtime_error(
-          "process schedule SBM requires convection.update_mode");
+      throw std::runtime_error("process schedule SBM requires convection.update_mode");
     if (config.physics.kind == PhysicsKind::kGrayRadiation &&
         !seen_keys.contains("radiation.diagnostic_interval_s"))
       throw std::runtime_error(
@@ -2151,8 +2151,7 @@ std::string_view physics_kind_name(const PhysicsKind kind) noexcept {
   return "unknown";
 }
 
-std::string_view physics_schedule_kind_name(
-    const PhysicsScheduleKind kind) noexcept {
+std::string_view physics_schedule_kind_name(const PhysicsScheduleKind kind) noexcept {
   switch (kind) {
     case PhysicsScheduleKind::kLegacy:
       return "legacy";
@@ -2162,8 +2161,7 @@ std::string_view physics_schedule_kind_name(
   return "unknown";
 }
 
-std::string_view convection_update_mode_name(
-    const ConvectionUpdateMode mode) noexcept {
+std::string_view convection_update_mode_name(const ConvectionUpdateMode mode) noexcept {
   switch (mode) {
     case ConvectionUpdateMode::kIntermittent:
       return "intermittent";
