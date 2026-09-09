@@ -1,5 +1,7 @@
 #pragma once
 
+#include <exception>
+
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_state.hpp"
 #include "myplanetsim/dynamics/surface_boundary.hpp"
@@ -59,8 +61,10 @@ struct MoistPhysicsColumnWorkspace {
 };
 
 struct MoistPhysicsCouplingWorkspace {
-  MoistPhysicsColumnWorkspace column;
+  std::vector<MoistPhysicsColumnWorkspace> columns;
   std::vector<SbmReferenceCache> convection_cache;
+  std::vector<MoistPhysicsStepDiagnostics> column_diagnostics;
+  std::vector<std::exception_ptr> column_failures;
 };
 
 void reset_sbm_reference_cache(MoistPhysicsCouplingWorkspace& workspace,

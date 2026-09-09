@@ -4,10 +4,67 @@
 #include <cmath>
 #include <stdexcept>
 
+#if defined(MPS_ENABLE_OPENMP)
+#include <omp.h>
+#endif
+
 #include "myplanetsim/physics/saturation_adjustment.hpp"
 #include "myplanetsim/physics/surface_hydrology.hpp"
 
 namespace mps {
+namespace {
+
+[[nodiscard]] std::size_t physics_worker_count() {
+#if defined(MPS_ENABLE_OPENMP)
+  return static_cast<std::size_t>(std::max(1, omp_get_max_threads()));
+#else
+  return 1;
+#endif
+}
+
+[[nodiscard]] std::size_t physics_worker_index() {
+#if defined(MPS_ENABLE_OPENMP)
+  return static_cast<std::size_t>(omp_get_thread_num());
+#else
+  return 0;
+#endif
+}
+
+void accumulate_diagnostics(MoistPhysicsStepDiagnostics& total,
+                            const MoistPhysicsStepDiagnostics& column) {
+  total.evaporation_kg += column.evaporation_kg;
+  total.convective_precipitation_kg += column.convective_precipitation_kg;
+  total.grid_scale_precipitation_kg += column.grid_scale_precipitation_kg;
+  total.runoff_kg += column.runoff_kg;
+  total.ocean_water_change_kg += column.ocean_water_change_kg;
+  total.external_outflow_kg += column.external_outflow_kg;
+  total.water_budget_residual_kg += column.water_budget_residual_kg;
+  total.moist_enthalpy_budget_residual_j += column.moist_enthalpy_budget_residual_j;
+  total.maximum_relative_humidity =
+      std::max(total.maximum_relative_humidity, column.maximum_relative_humidity);
+  total.maximum_temperature_increment_k = std::max(
+      total.maximum_temperature_increment_k, column.maximum_temperature_increment_k);
+  total.maximum_vapor_increment =
+      std::max(total.maximum_vapor_increment, column.maximum_vapor_increment);
+  total.cape_area_time_integral_j_m2_s_kg += column.cape_area_time_integral_j_m2_s_kg;
+  total.cin_area_time_integral_j_m2_s_kg += column.cin_area_time_integral_j_m2_s_kg;
+  total.lcl_pressure_area_time_integral_pa_m2_s +=
+      column.lcl_pressure_area_time_integral_pa_m2_s;
+  total.convection_top_pressure_area_time_integral_pa_m2_s +=
+      column.convection_top_pressure_area_time_integral_pa_m2_s;
+  total.active_area_time_m2_s += column.active_area_time_m2_s;
+  total.deep_area_time_m2_s += column.deep_area_time_m2_s;
+  total.shallow_area_time_m2_s += column.shallow_area_time_m2_s;
+  total.inactive_area_time_m2_s += column.inactive_area_time_m2_s;
+  total.model_top_area_time_m2_s += column.model_top_area_time_m2_s;
+  total.deep_column_count += column.deep_column_count;
+  total.shallow_column_count += column.shallow_column_count;
+  total.inactive_column_count += column.inactive_column_count;
+  total.sbm_diagnostic_column_count += column.sbm_diagnostic_column_count;
+  total.sbm_relaxation_column_count += column.sbm_relaxation_column_count;
+}
+
+}  // namespace
 
 void reset_sbm_reference_cache(MoistPhysicsCouplingWorkspace& workspace,
                                const std::size_t cells) {
@@ -35,9 +92,14 @@ void apply_moist_column_physics(
       .gas_constant_dry_air_j_kg_k = planet.gas_constant_j_kg_k,
       .heat_capacity_cp_j_kg_k = planet.heat_capacity_cp_j_kg_k};
   diagnostics = {};
-  auto& column_workspace = workspace.column;
-  column_workspace.vapor_mixing_ratio.resize(levels);
-  for (std::size_t cell = 0; cell < cells; ++cell) {
+  const std::size_t workers = physics_worker_count();
+  workspace.columns.resize(workers);
+  for (auto& column : workspace.columns) column.vapor_mixing_ratio.resize(levels);
+  workspace.column_diagnostics.resize(cells);
+  workspace.column_failures.resize(cells);
+  const auto apply_column = [&](const std::size_t cell,
+                                MoistPhysicsStepDiagnostics& diagnostics,
+                                MoistPhysicsColumnWorkspace& column_workspace) {
     const std::size_t begin = cell * levels;
     const std::size_t vapor_begin =
         dry_hydrostatic_tracer_offset(water_vapor_tracer, cell, 0, cells, levels);
@@ -196,6 +258,27 @@ void apply_moist_column_physics(
     }
     diagnostics.water_budget_residual_kg +=
         area * ((final_atmospheric_water - initial_atmospheric_water) + precipitation);
+  };
+
+#if defined(MPS_ENABLE_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+  for (std::ptrdiff_t cell_index = 0; cell_index < static_cast<std::ptrdiff_t>(cells);
+       ++cell_index) {
+    const auto cell = static_cast<std::size_t>(cell_index);
+    workspace.column_diagnostics[cell] = {};
+    workspace.column_failures[cell] = nullptr;
+    try {
+      apply_column(cell, workspace.column_diagnostics[cell],
+                   workspace.columns[physics_worker_index()]);
+    } catch (...) {
+      workspace.column_failures[cell] = std::current_exception();
+    }
+  }
+  for (std::size_t cell = 0; cell < cells; ++cell) {
+    if (workspace.column_failures[cell] != nullptr)
+      std::rethrow_exception(workspace.column_failures[cell]);
+    accumulate_diagnostics(diagnostics, workspace.column_diagnostics[cell]);
   }
   state.cumulative_convective_precipitation_kg +=
       diagnostics.convective_precipitation_kg;

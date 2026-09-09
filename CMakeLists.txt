@@ -11,7 +11,7 @@ include(cmake/MyPlanetSimWarnings.cmake)
 include(cmake/MyPlanetSimSanitizers.cmake)
 include(cmake/MyPlanetSimFormatting.cmake)
 
-option(MPS_ENABLE_OPENMP "Parallelize dry-core face reconstruction with OpenMP" OFF)
+option(MPS_ENABLE_OPENMP "Parallelize dry-core and column kernels with OpenMP" OFF)
 if(MPS_ENABLE_OPENMP)
   find_package(OpenMP REQUIRED COMPONENTS CXX)
 endif()

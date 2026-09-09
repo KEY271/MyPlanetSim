@@ -176,3 +176,9 @@ surface response、熱の通常解と潜熱 response でそれぞれ再利用す
 SBM reference/result、鉛直 geometry と水蒸気 profile を一つの column workspace にまとめた。
 水蒸気 profile は cell loop の外で一度だけ確保して再利用するため、cell ごとの一時 vector allocation は
 発生しない。serial の cell 順、SBM cache の寿命、state と台帳の算術順は変更していない。
+
+column workspace を OpenMP worker ごとに確保し、水平 cell を `schedule(static)` で並列化した。
+各 column の診断と失敗情報は cell 固有の slot に書き、parallel region の外で cell 順に集約・再送出する。
+したがって OpenMP region を例外が横断せず、台帳の加算順は serial と同じである。
+OpenMP OFF の Release 109 tests、OpenMP ON の `OMP_NUM_THREADS=1` と4の各109 tests が成功した。
+長時間の thread scaling は未測定であり、P14.07 の利用者実行用 runner へ分離する。
