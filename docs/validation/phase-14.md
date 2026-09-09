@@ -228,3 +228,20 @@ build/release/tools/benchmark_field_layout --cells 55296 --levels 40 --component
 ```
 
 本番採否には既存 moist benchmark の model-day wall と RSS も含める。長い比較は自動実行しない。
+
+## P14.10: modal transform batch
+
+[modal batch ADR 0026](../adr/0026-phase14-modal-batching.md) の規約で、semi-implicit
+momentum の forward/inverse transform を8 cell laneずつ pack する。x/y/z は同じ係数行列の
+複数 RHS とし、cell ごとの level/mode 加算順、selected mode mask、非選択 mode の identity
+correction は維持した。11 cell の tail を含む batched/scalar 比較、round-trip、既存の
+mode residual、balance、long-step test が成功した。
+
+solver iteration と pack を含む比較は foreground で実行できる。
+
+```console
+MPS_PROFILE_RHS=1 build/release/tools/benchmark_semi_implicit \
+  configs/phase10_held_suarez_semi_implicit.cfg --steps 100
+```
+
+K=20/40/80 と mode 数の長い行列は自動実行せず、係数や solver tolerance の tuning も行わない。

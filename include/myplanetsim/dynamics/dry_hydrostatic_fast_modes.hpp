@@ -14,6 +14,12 @@ namespace mps {
 
 struct DryHydrostaticFastOperator;
 
+struct DryHydrostaticModalBatchWorkspace {
+  std::vector<Real> packed_x;
+  std::vector<Real> packed_y;
+  std::vector<Real> packed_z;
+};
+
 struct DryHydrostaticReferenceColumn {
   Real surface_pressure_pa = 0.0;
   Real temperature_k = 0.0;
@@ -78,5 +84,18 @@ void project_onto_vertical_modes(const DryHydrostaticVerticalModes& modes,
 void reconstruct_from_vertical_modes(const DryHydrostaticVerticalModes& modes,
                                      std::span<const Real> mode_values,
                                      std::span<Real> level_values);
+
+// Cell-major inputs are packed one small cell block at a time as
+// [level-or-mode][lane]. Each lane retains the scalar level/mode addition order.
+void project_onto_vertical_modes_batched(const DryHydrostaticVerticalModes& modes,
+                                         std::size_t cells,
+                                         std::span<const Vec3> level_values,
+                                         std::span<Vec3> mode_values,
+                                         std::span<const unsigned char> active_modes,
+                                         DryHydrostaticModalBatchWorkspace& workspace);
+void accumulate_from_vertical_modes_batched(
+    const DryHydrostaticVerticalModes& modes, std::size_t cells,
+    std::span<const Vec3> mode_values, std::span<const unsigned char> active_modes,
+    std::span<Vec3> level_values, DryHydrostaticModalBatchWorkspace& workspace);
 
 }  // namespace mps

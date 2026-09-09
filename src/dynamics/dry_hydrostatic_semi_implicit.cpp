@@ -252,20 +252,10 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
 
   workspace.modal_momentum.assign(volume, {});
   workspace.modal_momentum_right_hand_side.assign(volume, {});
-  for (std::size_t cell = 0; cell < cells; ++cell) {
-    for (std::size_t mode = 0; mode < levels; ++mode) {
-      if (workspace.selected_mode_mask[mode] == 0) continue;
-      Vec3 value{};
-      for (std::size_t level = 0; level < levels; ++level) {
-        value = value + modes.inverse_eigenvectors[mode * levels + level] *
-                            workspace.effective_momentum[dry_hydrostatic_offset(
-                                cell, level, levels)];
-      }
-      const auto n = dry_hydrostatic_offset(cell, mode, levels);
-      workspace.modal_momentum[n] = value;
-      workspace.modal_momentum_right_hand_side[n] = value;
-    }
-  }
+  project_onto_vertical_modes_batched(
+      modes, cells, workspace.effective_momentum, workspace.modal_momentum,
+      workspace.selected_mode_mask, workspace.modal_batch);
+  workspace.modal_momentum_right_hand_side = workspace.modal_momentum;
 
   DryHydrostaticModalSolveResult result{.all_converged = true,
                                         .selected_modes = selected_modes.size()};
@@ -349,21 +339,13 @@ DryHydrostaticModalSolveResult solve_dry_hydrostatic_modal_correction(
   correction.horizontal_momentum_mass_kg_m_s = workspace.effective_momentum;
   correction.potential_temperature_mass_k_kg_m2 =
       right_hand_side.potential_temperature_mass_k_kg_m2;
-  for (std::size_t cell = 0; cell < cells; ++cell) {
-    for (std::size_t level = 0; level < levels; ++level) {
-      Vec3 value = correction.horizontal_momentum_mass_kg_m_s[dry_hydrostatic_offset(
-          cell, level, levels)];
-      for (std::size_t mode = 0; mode < levels; ++mode) {
-        if (workspace.selected_mode_mask[mode] == 0) continue;
-        const auto modal = dry_hydrostatic_offset(cell, mode, levels);
-        value = value + modes.eigenvectors[mode * levels + level] *
-                            (workspace.modal_momentum[modal] -
-                             workspace.modal_momentum_right_hand_side[modal]);
-      }
-      correction.horizontal_momentum_mass_kg_m_s[dry_hydrostatic_offset(
-          cell, level, levels)] = value;
-    }
-  }
+  workspace.modal_delta.resize(volume);
+  for (std::size_t n = 0; n < volume; ++n)
+    workspace.modal_delta[n] =
+        workspace.modal_momentum[n] - workspace.modal_momentum_right_hand_side[n];
+  accumulate_from_vertical_modes_batched(
+      modes, cells, workspace.modal_delta, workspace.selected_mode_mask,
+      correction.horizontal_momentum_mass_kg_m_s, workspace.modal_batch);
 
   workspace.momentum_perturbation.surface_pressure_pa.assign(cells, 0.0);
   workspace.momentum_perturbation.horizontal_momentum_mass_kg_m_s =

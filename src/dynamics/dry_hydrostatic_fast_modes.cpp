@@ -538,4 +538,108 @@ void reconstruct_from_vertical_modes(const DryHydrostaticVerticalModes& modes,
   }
 }
 
+void project_onto_vertical_modes_batched(
+    const DryHydrostaticVerticalModes& modes, const std::size_t cells,
+    const std::span<const Vec3> level_values, const std::span<Vec3> mode_values,
+    const std::span<const unsigned char> active_modes,
+    DryHydrostaticModalBatchWorkspace& workspace) {
+  constexpr std::size_t lanes = 8;
+  const auto mode_count = modes.mode_count();
+  if (modes.levels == 0 || level_values.size() != cells * modes.levels ||
+      mode_values.size() != cells * mode_count ||
+      (!active_modes.empty() && active_modes.size() != mode_count) ||
+      modes.inverse_eigenvectors.size() != mode_count * modes.levels)
+    throw std::invalid_argument("batched vertical mode projection shapes differ");
+  std::fill(mode_values.begin(), mode_values.end(), Vec3{});
+  workspace.packed_x.resize(modes.levels * lanes);
+  workspace.packed_y.resize(modes.levels * lanes);
+  workspace.packed_z.resize(modes.levels * lanes);
+  for (std::size_t first_cell = 0; first_cell < cells; first_cell += lanes) {
+    const auto width = std::min(lanes, cells - first_cell);
+    for (std::size_t level = 0; level < modes.levels; ++level) {
+      for (std::size_t lane = 0; lane < width; ++lane) {
+        const auto value = level_values[(first_cell + lane) * modes.levels + level];
+        workspace.packed_x[level * lanes + lane] = value.x;
+        workspace.packed_y[level * lanes + lane] = value.y;
+        workspace.packed_z[level * lanes + lane] = value.z;
+      }
+    }
+    for (std::size_t mode = 0; mode < mode_count; ++mode) {
+      if (!active_modes.empty() && active_modes[mode] == 0) continue;
+      Real sum_x[lanes]{};
+      Real sum_y[lanes]{};
+      Real sum_z[lanes]{};
+      for (std::size_t level = 0; level < modes.levels; ++level) {
+        const Real coefficient =
+            modes.inverse_eigenvectors[mode * modes.levels + level];
+#if defined(MPS_ENABLE_OPENMP)
+#pragma omp simd
+#endif
+        for (std::size_t lane = 0; lane < width; ++lane) {
+          sum_x[lane] += coefficient * workspace.packed_x[level * lanes + lane];
+          sum_y[lane] += coefficient * workspace.packed_y[level * lanes + lane];
+          sum_z[lane] += coefficient * workspace.packed_z[level * lanes + lane];
+        }
+      }
+      for (std::size_t lane = 0; lane < width; ++lane)
+        mode_values[(first_cell + lane) * mode_count + mode] = {
+            sum_x[lane], sum_y[lane], sum_z[lane]};
+    }
+  }
+}
+
+void accumulate_from_vertical_modes_batched(
+    const DryHydrostaticVerticalModes& modes, const std::size_t cells,
+    const std::span<const Vec3> mode_values,
+    const std::span<const unsigned char> active_modes,
+    const std::span<Vec3> level_values, DryHydrostaticModalBatchWorkspace& workspace) {
+  constexpr std::size_t lanes = 8;
+  const auto mode_count = modes.mode_count();
+  if (modes.levels == 0 || mode_values.size() != cells * mode_count ||
+      level_values.size() != cells * modes.levels ||
+      (!active_modes.empty() && active_modes.size() != mode_count) ||
+      modes.eigenvectors.size() != mode_count * modes.levels)
+    throw std::invalid_argument("batched vertical mode reconstruction shapes differ");
+  workspace.packed_x.resize(mode_count * lanes);
+  workspace.packed_y.resize(mode_count * lanes);
+  workspace.packed_z.resize(mode_count * lanes);
+  for (std::size_t first_cell = 0; first_cell < cells; first_cell += lanes) {
+    const auto width = std::min(lanes, cells - first_cell);
+    for (std::size_t mode = 0; mode < mode_count; ++mode) {
+      for (std::size_t lane = 0; lane < width; ++lane) {
+        const auto value = mode_values[(first_cell + lane) * mode_count + mode];
+        workspace.packed_x[mode * lanes + lane] = value.x;
+        workspace.packed_y[mode * lanes + lane] = value.y;
+        workspace.packed_z[mode * lanes + lane] = value.z;
+      }
+    }
+    for (std::size_t level = 0; level < modes.levels; ++level) {
+      Real sum_x[lanes]{};
+      Real sum_y[lanes]{};
+      Real sum_z[lanes]{};
+      for (std::size_t lane = 0; lane < width; ++lane) {
+        const auto value = level_values[(first_cell + lane) * modes.levels + level];
+        sum_x[lane] = value.x;
+        sum_y[lane] = value.y;
+        sum_z[lane] = value.z;
+      }
+      for (std::size_t mode = 0; mode < mode_count; ++mode) {
+        if (!active_modes.empty() && active_modes[mode] == 0) continue;
+        const Real coefficient = modes.eigenvectors[mode * modes.levels + level];
+#if defined(MPS_ENABLE_OPENMP)
+#pragma omp simd
+#endif
+        for (std::size_t lane = 0; lane < width; ++lane) {
+          sum_x[lane] += coefficient * workspace.packed_x[mode * lanes + lane];
+          sum_y[lane] += coefficient * workspace.packed_y[mode * lanes + lane];
+          sum_z[lane] += coefficient * workspace.packed_z[mode * lanes + lane];
+        }
+      }
+      for (std::size_t lane = 0; lane < width; ++lane)
+        level_values[(first_cell + lane) * modes.levels + level] = {
+            sum_x[lane], sum_y[lane], sum_z[lane]};
+    }
+  }
+}
+
 }  // namespace mps

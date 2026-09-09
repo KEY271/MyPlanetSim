@@ -132,4 +132,47 @@ MPS_TEST_CASE("full vertical modes diagonalize the reference fast structure") {
             std::string::npos);
 }
 
+MPS_TEST_CASE(
+    "batched modal transforms preserve scalar addition order and tail lanes") {
+  const auto c = coordinate();
+  const auto reference =
+      mps::make_dry_hydrostatic_reference_column(c, planet, parameters);
+  const auto fast = mps::make_dry_hydrostatic_fast_operator(c, planet, reference);
+  const auto modes = mps::make_dry_hydrostatic_vertical_modes(reference, planet, fast);
+  constexpr std::size_t cells = 11;
+  std::vector<mps::Vec3> levels(cells * modes.levels);
+  for (std::size_t cell = 0; cell < cells; ++cell)
+    for (std::size_t level = 0; level < modes.levels; ++level) {
+      const auto value = static_cast<mps::Real>(10 * cell + level + 1);
+      levels[cell * modes.levels + level] = {value, -2.0 * value, 0.5 * value};
+    }
+  const auto original = levels;
+  std::vector<mps::Vec3> modal(cells * modes.mode_count());
+  mps::DryHydrostaticModalBatchWorkspace workspace;
+  std::vector<unsigned char> all_modes(modes.mode_count(), 1);
+  mps::project_onto_vertical_modes_batched(modes, cells, levels, modal, all_modes,
+                                           workspace);
+  for (std::size_t cell = 0; cell < cells; ++cell) {
+    std::vector<mps::Real> scalar_level(modes.levels);
+    std::vector<mps::Real> scalar_mode(modes.mode_count());
+    for (std::size_t level = 0; level < modes.levels; ++level)
+      scalar_level[level] = levels[cell * modes.levels + level].x;
+    mps::project_onto_vertical_modes(modes, scalar_level, scalar_mode);
+    for (std::size_t mode = 0; mode < modes.mode_count(); ++mode) {
+      const auto actual = modal[cell * modes.mode_count() + mode];
+      MPS_CHECK_EQ(actual.x, scalar_mode[mode]);
+      MPS_CHECK_EQ(actual.y, -2.0 * scalar_mode[mode]);
+      MPS_CHECK_EQ(actual.z, 0.5 * scalar_mode[mode]);
+    }
+  }
+  std::fill(levels.begin(), levels.end(), mps::Vec3{});
+  mps::accumulate_from_vertical_modes_batched(modes, cells, modal, all_modes, levels,
+                                              workspace);
+  for (std::size_t n = 0; n < levels.size(); ++n) {
+    MPS_CHECK_NEAR(levels[n].x, original[n].x, 2.0e-9);
+    MPS_CHECK_NEAR(levels[n].y, original[n].y, 4.0e-9);
+    MPS_CHECK_NEAR(levels[n].z, original[n].z, 1.0e-9);
+  }
+}
+
 int main() { return mps::test::run_all(); }

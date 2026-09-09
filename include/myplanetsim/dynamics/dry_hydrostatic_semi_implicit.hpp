@@ -32,6 +32,8 @@ struct DryHydrostaticSemiImplicitWorkspace {
   std::vector<Vec3> effective_momentum;
   std::vector<Vec3> modal_momentum;
   std::vector<Vec3> modal_momentum_right_hand_side;
+  std::vector<Vec3> modal_delta;
+  DryHydrostaticModalBatchWorkspace modal_batch;
   std::vector<Real> modal_divergence;
   std::vector<Real> modal_solution;
   std::vector<Real> vector_divergence_edge_flux;
