@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect the small, reproducible Phase 13 matrix summaries for the report."""
+"""Collect the small, reproducible moist-physics matrix summaries."""
 
 import argparse
 import json
@@ -20,8 +20,9 @@ def main():
     parser.add_argument("--comparison", type=Path,
                         default=ROOT / "output/phase13-comparison")
     parser.add_argument("--destination", type=Path,
-                        default=ROOT / "docs/validation/phase-13-results.json")
+                        default=ROOT / "output/reports/moist-results.json")
     args = parser.parse_args()
+    args.destination.parent.mkdir(parents=True, exist_ok=True)
     result = {}
     for suite in ("one-day", "thirty-day"):
         directory = args.comparison / suite

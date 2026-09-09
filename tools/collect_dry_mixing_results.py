@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Collect the Phase 12 measurements into docs/validation/phase-12-results.json.
-
-The raw snapshots and per-step records stay under `output/`; this keeps only the small
-summaries the validation report cites, so the report's numbers stay reproducible.
-"""
+"""Collect compact dry-mixing summaries beside the generated run data."""
 import argparse
 import csv
 import json
@@ -40,8 +36,9 @@ def main():
     parser.add_argument('--pilot', type=Path,
                         default=Path('output/phase12-pilot/pilot.csv'))
     parser.add_argument('--destination', type=Path,
-                        default=Path('docs/validation/phase-12-results.json'))
+                        default=Path('output/reports/dry-mixing-results.json'))
     args = parser.parse_args()
+    args.destination.parent.mkdir(parents=True, exist_ok=True)
     result = {
         'one_day': {name: entry.get('metrics', entry)
                     for name, entry in

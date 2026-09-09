@@ -64,7 +64,7 @@ def main():
     if float(config_values.get('moisture.maximum_physics_substep_s', '300')) != 300:
         parser.error('this matrix requires the legacy physics maximum of 300 s')
     args.output.mkdir(parents=True, exist_ok=True)
-    manifest_path = ROOT / 'docs/validation/phase-14-manifest.json'
+    manifest_path = ROOT / 'tools/performance-policy.json'
     manifest = json.loads(manifest_path.read_text())
     points = {}
     provenance = {}

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Compare the Phase 14 integrated candidate against the Phase 13 legacy baseline.
+"""Compare the process-interval candidate against the legacy scheduler baseline.
 
 Both points use the same binary, grid, vertical coordinate, tracer registry and
 model interval; only the physics schedule (and optionally the ICI iteration count)
-differs.  The registered gates of `docs/validation/phase-14-manifest.json` are
+differs.  The registered gates of `tools/performance-policy.json` are
 evaluated against the baseline of the same run length, so a one-day comparison uses
 the one-day row and a thirty-day comparison uses the thirty-day row.
 
@@ -224,7 +224,7 @@ def main():
         parser.error('repeated measurements need at least five repetitions')
     repetitions = None if args.single else args.repetitions
     args.output.mkdir(parents=True, exist_ok=True)
-    manifest_path = ROOT / 'docs/validation/phase-14-manifest.json'
+    manifest_path = ROOT / 'tools/performance-policy.json'
     manifest = json.loads(manifest_path.read_text())
 
     points = {'baseline': (BASELINE_CONFIG, args.iterations),
