@@ -245,3 +245,24 @@ MPS_PROFILE_RHS=1 build/release/tools/benchmark_semi_implicit \
 ```
 
 K=20/40/80 と mode 数の長い行列は自動実行せず、係数や solver tolerance の tuning も行わない。
+
+## P14.11: horizontal tile
+
+[tile ADR 0027](../adr/0027-phase14-horizontal-tiles.md) に tile interior、2-cell halo、
+boundary edge owner と immutable stage の規約を固定した。halo は edge graph で構成するため panel
+seam/corner を特別扱いしない。width 8/16/32 について全 cell の一意な所属、全 edge の一意な
+owner、interior の直接隣接 cell が local/halo にあることを unit test で検証した。
+
+production RHS は edge owner tile ごとに flux を一度計算し、tile の disjoint interior cell が
+edge ID 順に gather する。既存 driver と multi-tracer test は同じ許容差で成功する。
+global prepared-gradient と compact edge-flux buffer は残す。測定なしに複雑な境界 exchange へ
+置換しない。tile metadata bytes と halo reference 数は profile に出力する。
+
+tile 幅の RHS byte 一致と短い比較は次を foreground で実行できる。
+
+```console
+cmake --build --preset release --target benchmark_tiles
+build/release/tools/benchmark_tiles configs/phase13_moist_pilot.cfg --rhs-count 20
+```
+
+N=24/48/96 の反復比較は長時間になり得るため、自動実行しない。

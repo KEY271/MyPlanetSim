@@ -195,7 +195,12 @@ int main(int argc, char** argv) {
               << driver.rhs_profile().prepared_reconstruction_bytes << '\n'
               << "edge_flux_bytes=" << driver.rhs_profile().edge_flux_bytes << '\n'
               << "eliminated_face_state_bytes="
-              << driver.rhs_profile().eliminated_face_state_bytes << '\n';
+              << driver.rhs_profile().eliminated_face_state_bytes << '\n'
+              << "tile_count=" << driver.rhs_profile().tile_count << '\n'
+              << "tile_halo_cell_references="
+              << driver.rhs_profile().tile_halo_cell_references << '\n'
+              << "tile_metadata_bytes=" << driver.rhs_profile().tile_metadata_bytes
+              << '\n';
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "benchmark error: " << error.what() << '\n';

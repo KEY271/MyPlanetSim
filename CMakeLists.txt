@@ -90,6 +90,7 @@ add_library(
   src/dynamics/shallow_water_reconstruction.cpp
   src/geometry/cubed_sphere.cpp
   src/grid/cubed_sphere_grid.cpp
+  src/grid/cubed_sphere_tiles.cpp
   src/grid/dual_topology.cpp
   src/io/checkpoint.cpp
   src/io/frame.cpp
@@ -182,6 +183,10 @@ target_compile_features(benchmark_field_layout PRIVATE cxx_std_20)
 target_link_libraries(benchmark_field_layout PRIVATE myplanetsim_warnings myplanetsim_sanitizers)
 target_include_directories(benchmark_field_layout PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set_target_properties(benchmark_field_layout PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools")
+
+add_executable(benchmark_tiles tools/benchmark_tiles.cpp)
+target_link_libraries(benchmark_tiles PRIVATE myplanetsim_core myplanetsim_warnings myplanetsim_sanitizers)
+set_target_properties(benchmark_tiles PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools")
 
 include(CTest)
 if(BUILD_TESTING)

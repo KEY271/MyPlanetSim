@@ -12,6 +12,7 @@
 #include "myplanetsim/dynamics/surface_boundary.hpp"
 #include "myplanetsim/dynamics/surface_orography.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
+#include "myplanetsim/grid/cubed_sphere_tiles.hpp"
 #include "myplanetsim/physics/dry_mixing_coupling.hpp"
 #include "myplanetsim/physics/gray_radiation_coupling.hpp"
 #include "myplanetsim/physics/held_suarez.hpp"
@@ -25,6 +26,9 @@ struct DryHydrostaticRhsProfile {
   std::size_t prepared_reconstruction_bytes = 0;
   std::size_t edge_flux_bytes = 0;
   std::size_t eliminated_face_state_bytes = 0;
+  std::size_t tile_count = 0;
+  std::size_t tile_halo_cell_references = 0;
+  std::size_t tile_metadata_bytes = 0;
 };
 struct DryHydrostaticRhs {
   std::vector<Real> surface_pressure_pa_s;
@@ -138,7 +142,9 @@ using DryHydrostaticObserver =
 using DryHydrostaticCancel = std::function<bool()>;
 class DryHydrostaticDriver {
  public:
-  explicit DryHydrostaticDriver(ExperimentConfig config);
+  explicit DryHydrostaticDriver(
+      ExperimentConfig config,
+      std::size_t horizontal_tile_width = kDryHydrostaticTileWidth);
   // Benchmark-only instrumentation, disabled by default; never serialized.
   void enable_rhs_profiling(bool enabled) const { profile_enabled_ = enabled; }
   void reset_rhs_profile() const { rhs_profile_ = {}; }
@@ -182,6 +188,7 @@ class DryHydrostaticDriver {
   mutable DryHydrostaticRhsProfile rhs_profile_{};
   ExperimentConfig config_;
   CubedSphereGrid grid_;
+  std::vector<CubedSphereTile> horizontal_tiles_;
   AtmosphericHybridCoordinate coordinate_;
   SurfaceOrography orography_;
   std::optional<SurfaceBoundary> surface_boundary_;

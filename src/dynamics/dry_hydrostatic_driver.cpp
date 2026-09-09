@@ -634,9 +634,12 @@ struct ScheduledRadiationStep {
 
 }  // namespace
 
-DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
+DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c,
+                                           const std::size_t horizontal_tile_width)
     : config_(std::move(c)),
       grid_(config_.grid.cells_per_panel, config_.planet.radius_m),
+      horizontal_tiles_(make_cubed_sphere_tiles(grid_, horizontal_tile_width,
+                                                kDryHydrostaticTileHaloRadius)),
       coordinate_({config_.vertical.a_half_pa, config_.vertical.b_half},
                   config_.vertical.minimum_surface_pressure_pa,
                   config_.vertical.maximum_surface_pressure_pa,
@@ -811,7 +814,21 @@ void DryHydrostaticDriver::rhs_with_components(
     rhs_profile_.seconds[region] += std::chrono::duration<Real>(now - stamp).count();
     stamp = now;
   };
-  if (profile_enabled_) ++rhs_profile_.calls;
+  if (profile_enabled_) {
+    ++rhs_profile_.calls;
+    std::size_t halo_references = 0;
+    std::size_t index_references = 0;
+    for (const auto& tile : horizontal_tiles_) {
+      halo_references += tile.halo_cells.size();
+      index_references +=
+          tile.interior_cells.size() + tile.halo_cells.size() + tile.owned_edges.size();
+    }
+    rhs_profile_.tile_count = horizontal_tiles_.size();
+    rhs_profile_.tile_halo_cell_references = halo_references;
+    rhs_profile_.tile_metadata_bytes =
+        horizontal_tiles_.size() * sizeof(CubedSphereTile) +
+        index_references * sizeof(std::size_t);
+  }
   auto& workspace = workspace_;
   diagnose_dry_hydrostatic_state(s, coordinate_, config_.planet,
                                  orography_.surface_geopotential_m2_s2(),
@@ -869,36 +886,40 @@ void DryHydrostaticDriver::rhs_with_components(
         std::max(rhs_profile_.edge_flux_bytes,
                  workspace.edge_flux.size() * sizeof(DryHydrostaticEdgeFlux) +
                      workspace.edge_tracer_flux.size() * sizeof(Real));
+  std::fill(workspace.edge_flux_failures.begin(), workspace.edge_flux_failures.end(),
+            nullptr);
 #if defined(MPS_ENABLE_OPENMP)
 #pragma omp parallel for schedule(static)
 #endif
-  for (std::ptrdiff_t edge_index = 0;
-       edge_index < static_cast<std::ptrdiff_t>(edge_count); ++edge_index) {
-    const auto edge_id = static_cast<std::size_t>(edge_index);
-    const auto& e = edges[edge_id];
-    const auto& cached_edge = grid_.edge_cache()[e.id];
-    const EdgeTangentBasis basis{cached_edge.normal, cached_edge.tangent};
-    workspace.edge_flux_failures[edge_id] = nullptr;
-    try {
-      for (std::size_t k = 0; k < K; ++k) {
-        const auto face =
-            reconstruct_dry_hydrostatic_edge(grid_, d, reconstructed, e.id, k);
-        workspace.edge_flux[e.id * K + k] = rusanov_dry_hydrostatic_flux(
-            face.left, face.right, basis, config_.planet.gas_constant_j_kg_k,
-            config_.planet.heat_capacity_cp_j_kg_k, compute_fast_wave_cfl);
-        for (std::size_t tracer = 0; tracer < d.tracer_count; ++tracer) {
-          const auto q = (tracer * edge_count + e.id) * K + k;
-          workspace.edge_tracer_flux[q] = rusanov_dry_hydrostatic_tracer_flux(
-              face.left, face.right,
-              reconstruct_dry_hydrostatic_tracer_face(grid_, d, reconstructed, true,
-                                                      tracer, e.id, k),
-              reconstruct_dry_hydrostatic_tracer_face(grid_, d, reconstructed, false,
-                                                      tracer, e.id, k),
-              basis);
+  for (std::ptrdiff_t tile_index = 0;
+       tile_index < static_cast<std::ptrdiff_t>(horizontal_tiles_.size());
+       ++tile_index) {
+    for (const auto edge_id :
+         horizontal_tiles_[static_cast<std::size_t>(tile_index)].owned_edges) {
+      const auto& e = edges[edge_id];
+      const auto& cached_edge = grid_.edge_cache()[e.id];
+      const EdgeTangentBasis basis{cached_edge.normal, cached_edge.tangent};
+      try {
+        for (std::size_t k = 0; k < K; ++k) {
+          const auto face =
+              reconstruct_dry_hydrostatic_edge(grid_, d, reconstructed, e.id, k);
+          workspace.edge_flux[e.id * K + k] = rusanov_dry_hydrostatic_flux(
+              face.left, face.right, basis, config_.planet.gas_constant_j_kg_k,
+              config_.planet.heat_capacity_cp_j_kg_k, compute_fast_wave_cfl);
+          for (std::size_t tracer = 0; tracer < d.tracer_count; ++tracer) {
+            const auto q = (tracer * edge_count + e.id) * K + k;
+            workspace.edge_tracer_flux[q] = rusanov_dry_hydrostatic_tracer_flux(
+                face.left, face.right,
+                reconstruct_dry_hydrostatic_tracer_face(grid_, d, reconstructed, true,
+                                                        tracer, e.id, k),
+                reconstruct_dry_hydrostatic_tracer_face(grid_, d, reconstructed, false,
+                                                        tracer, e.id, k),
+                basis);
+          }
         }
+      } catch (...) {
+        workspace.edge_flux_failures[edge_id] = std::current_exception();
       }
-    } catch (...) {
-      workspace.edge_flux_failures[edge_id] = std::current_exception();
     }
   }
   for (std::size_t edge = 0; edge < edge_count; ++edge)
@@ -908,34 +929,37 @@ void DryHydrostaticDriver::rhs_with_components(
 #if defined(MPS_ENABLE_OPENMP)
 #pragma omp parallel for schedule(static)
 #endif
-  for (std::ptrdiff_t cell_index = 0; cell_index < static_cast<std::ptrdiff_t>(C);
-       ++cell_index) {
-    const auto cell = static_cast<std::size_t>(cell_index);
-    std::array<std::size_t, 4> cell_edges{};
-    for (std::size_t side = 0; side < cell_edges.size(); ++side)
-      cell_edges[side] = grid_.cell_cache()[cell].edges[side].edge;
-    std::ranges::sort(cell_edges);
-    for (const auto edge : cell_edges) {
-      const auto& e = edges[edge];
-      const auto& cached = grid_.edge_cache()[edge];
-      const Real sign = cached.left_cell == cell ? -1.0 : 1.0;
-      const Real scale = sign * e.length_m / grid_.cells()[cell].area_m2;
-      for (std::size_t k = 0; k < K; ++k) {
-        const auto n = dry_hydrostatic_offset(cell, k, K);
-        const auto& flux = workspace.edge_flux[edge * K + k];
-        h.air_mass[n] += scale * flux.air_mass_kg_m_s;
-        h.momentum[n] = h.momentum[n] + scale * flux.momentum_kg_s2;
-        h.potential_temperature_mass[n] +=
-            scale * flux.potential_temperature_mass_k_kg_m_s;
-        for (std::size_t tracer = 0; tracer < d.tracer_count; ++tracer) {
-          const auto q = dry_hydrostatic_tracer_offset(tracer, cell, k, C, K);
-          const auto edge_q = (tracer * edge_count + edge) * K + k;
-          h.tracer_mass[q] += scale * workspace.edge_tracer_flux[edge_q];
+  for (std::ptrdiff_t tile_index = 0;
+       tile_index < static_cast<std::ptrdiff_t>(horizontal_tiles_.size());
+       ++tile_index) {
+    for (const auto cell :
+         horizontal_tiles_[static_cast<std::size_t>(tile_index)].interior_cells) {
+      std::array<std::size_t, 4> cell_edges{};
+      for (std::size_t side = 0; side < cell_edges.size(); ++side)
+        cell_edges[side] = grid_.cell_cache()[cell].edges[side].edge;
+      std::ranges::sort(cell_edges);
+      for (const auto edge : cell_edges) {
+        const auto& e = edges[edge];
+        const auto& cached = grid_.edge_cache()[edge];
+        const Real sign = cached.left_cell == cell ? -1.0 : 1.0;
+        const Real scale = sign * e.length_m / grid_.cells()[cell].area_m2;
+        for (std::size_t k = 0; k < K; ++k) {
+          const auto n = dry_hydrostatic_offset(cell, k, K);
+          const auto& flux = workspace.edge_flux[edge * K + k];
+          h.air_mass[n] += scale * flux.air_mass_kg_m_s;
+          h.momentum[n] = h.momentum[n] + scale * flux.momentum_kg_s2;
+          h.potential_temperature_mass[n] +=
+              scale * flux.potential_temperature_mass_k_kg_m_s;
+          for (std::size_t tracer = 0; tracer < d.tracer_count; ++tracer) {
+            const auto q = dry_hydrostatic_tracer_offset(tracer, cell, k, C, K);
+            const auto edge_q = (tracer * edge_count + edge) * K + k;
+            h.tracer_mass[q] += scale * workspace.edge_tracer_flux[edge_q];
+          }
+          if (compute_fast_wave_cfl)
+            face_fast_wave_speed_length[n] += e.length_m * flux.maximum_wave_speed_m_s;
+          face_advective_speed_length[n] +=
+              e.length_m * flux.maximum_dissipation_speed_m_s;
         }
-        if (compute_fast_wave_cfl)
-          face_fast_wave_speed_length[n] += e.length_m * flux.maximum_wave_speed_m_s;
-        face_advective_speed_length[n] +=
-            e.length_m * flux.maximum_dissipation_speed_m_s;
       }
     }
   }
