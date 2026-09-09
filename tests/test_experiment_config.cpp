@@ -384,6 +384,44 @@ MPS_TEST_CASE("registered Phase 8 presets parse and validate") {
   }
 }
 
+// A moist process-interval preset has no legacy substep maximum to declare, so the
+// dilute-water required-key list and the canonical writer must both omit that key.
+MPS_TEST_CASE("the Phase 14 candidate preset round trips with process intervals") {
+  const auto root = std::filesystem::path(__FILE__).parent_path().parent_path();
+  const auto config =
+      mps::load_experiment_config(root / "configs" / "phase14_moist_candidate.cfg");
+  MPS_CHECK(config.moisture.kind == mps::MoistureKind::kDiluteWater);
+  MPS_CHECK(config.physics_schedule.kind == mps::PhysicsScheduleKind::kProcessIntervals);
+  MPS_CHECK(config.physics_schedule.convection_update_mode ==
+            mps::ConvectionUpdateMode::kCachedRelaxation);
+  MPS_CHECK_NEAR(config.physics_schedule.boundary_layer_maximum_update_interval_s,
+                 600.0, 0.0);
+  MPS_CHECK_NEAR(config.physics_schedule.convection_diagnostic_interval_s, 900.0, 0.0);
+  MPS_CHECK_NEAR(config.physics_schedule.radiation_diagnostic_interval_s, 1800.0, 0.0);
+  std::ostringstream canonical;
+  mps::write_experiment_config(canonical, config);
+  MPS_CHECK(canonical.str().find("moisture.maximum_physics_substep_s") ==
+            std::string::npos);
+  MPS_CHECK_EQ(mps::config_fingerprint(parse(canonical.str())),
+               mps::config_fingerprint(config));
+
+  // The legacy schedule still requires the key it uses.
+  std::string legacy;
+  std::istringstream lines(canonical.str());
+  for (std::string line; std::getline(lines, line);) {
+    if (line.starts_with("physics.schedule") ||
+        line.starts_with("boundary_layer.maximum_update_interval_s") ||
+        line.starts_with("convection.diagnostic_interval_s") ||
+        line.starts_with("convection.update_mode") ||
+        line.starts_with("radiation.diagnostic_interval_s"))
+      continue;
+    legacy += line + "\n";
+  }
+  MPS_CHECK_THROWS_AS(parse(legacy), std::runtime_error);
+  MPS_CHECK(parse(legacy + "moisture.maximum_physics_substep_s = 300\n")
+                .physics_schedule.kind == mps::PhysicsScheduleKind::kLegacy);
+}
+
 MPS_TEST_CASE("configuration has a canonical round trip") {
   const auto first = parse(kValidConfig);
   std::ostringstream output;

@@ -1666,11 +1666,16 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     throw std::runtime_error("moisture keys are valid only for dry_hydrostatic");
   if (config.moisture.kind == MoistureKind::kDiluteWater) {
     for (const auto key :
-         {"moisture.kind", "moisture.condensation", "moisture.surface_exchange",
-          "moisture.maximum_physics_substep_s"})
+         {"moisture.kind", "moisture.condensation", "moisture.surface_exchange"})
       if (!seen_keys.contains(key))
         throw std::runtime_error("dilute_water is missing required key " +
                                  std::string(key));
+    // The process-interval schedule replaces the single moist substep maximum with
+    // per-process intervals and rejects the legacy key above, so it cannot be required.
+    if (config.physics_schedule.kind == PhysicsScheduleKind::kLegacy &&
+        !seen_keys.contains("moisture.maximum_physics_substep_s"))
+      throw std::runtime_error(
+          "dilute_water is missing required key moisture.maximum_physics_substep_s");
   } else if (has_moisture_key && std::ranges::any_of(seen_keys, [](const auto& key) {
                return key != "moisture.kind" && key.starts_with("moisture.");
              })) {
@@ -1952,8 +1957,12 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
                << (config.moisture.surface_exchange == SurfaceMoistureExchange::kBulk
                        ? "bulk"
                        : "none")
-               << '\n'
-               << "moisture.maximum_physics_substep_s = "
+               << '\n';
+      // The process-interval schedule rejects the legacy substep maximum on load,
+      // so a written config must not carry it.
+      if (config.moisture.kind != MoistureKind::kNone &&
+          config.physics_schedule.kind == PhysicsScheduleKind::kLegacy)
+        output << "moisture.maximum_physics_substep_s = "
                << config.moisture.maximum_physics_substep_s << '\n';
       if (config.boundary_layer.kind != BoundaryLayerKind::kNone)
         output << "boundary_layer.kind = "
