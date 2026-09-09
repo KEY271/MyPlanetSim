@@ -266,6 +266,24 @@ int main(int argc, char** argv) {
           checkpoint.time_s, checkpoint.step, checkpoint.state, cells, levels,
           registry.size());
     }
+    // Optional micro-perturbation of the starting temperature. It measures how much
+    // of a difference between two runs is internal variability rather than a change
+    // of method, and is deterministic so a member can be reproduced exactly.
+    if (const char* const perturbation = std::getenv("MPS_INITIAL_PERTURBATION_K")) {
+      const double amplitude = std::stod(perturbation);
+      if (!std::isfinite(amplitude))
+        throw std::invalid_argument("initial perturbation must be finite");
+      const auto perturbed_derived = driver.diagnose(state);
+      const std::size_t cells = driver.grid().cell_count();
+      for (std::size_t cell = 0; cell < cells; ++cell)
+        for (std::size_t level = 0; level < levels; ++level) {
+          const std::size_t index = mps::dry_hydrostatic_offset(cell, level, levels);
+          state.potential_temperature_mass_k_kg_m2[index] +=
+              perturbed_derived.air_mass_kg_m2[index] * amplitude *
+              std::sin(static_cast<double>(cell) + 0.5 * static_cast<double>(level)) /
+              perturbed_derived.exner_full[index];
+        }
+    }
     const double initial_time_s = state.time_s;
     const double end_time_s = initial_time_s + std::stod(argv[2]) * 86400.0;
     const double initial_evaporation = state.cumulative_evaporation_kg;

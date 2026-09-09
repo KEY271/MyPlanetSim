@@ -61,6 +61,29 @@ class Metrics(unittest.TestCase):
             with self.assertRaises(ValueError):
                 final.mass_weighted_temperature_rms(candidate, reference)
 
+    def test_block_statistics_use_offsets_and_ledger_differences(self):
+        header = ('day,mean_temperature_k,mean_surface_temperature_k,'
+                  'precipitable_water_kg_m2,cumulative_evaporation_kg,'
+                  'cumulative_convective_precipitation_kg,'
+                  'cumulative_grid_scale_precipitation_kg,cumulative_runoff_kg\n')
+        # A run that starts at day 1200 uses the same block as one starting at zero.
+        body = ('1200,280,290,60,0,0,0,0\n'
+                '1201,281,291,62,86400,43200,43200,0\n'
+                '1202,283,293,66,259200,129600,129600,0\n')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'run.csv.samples.csv'
+            path.write_text(header + body)
+            block = final.block_statistics(path, 1, 2)
+            self.assertEqual(block['block_days'], 1)
+            self.assertEqual(block['mean_mean_temperature_k'], 283)
+            self.assertEqual(block['mean_precipitable_water_kg_m2'], 66)
+            # (259200 - 86400) kg over one day.
+            self.assertAlmostEqual(block['evaporation_kg_s'], 2.0)
+            self.assertAlmostEqual(block['precipitation_kg_s'], 2.0)
+            self.assertAlmostEqual(block['convective_fraction'], 0.5)
+            with self.assertRaises(ValueError):
+                final.block_statistics(path, 2, 2)
+
     def test_missing_benchmark_output_is_rejected(self):
         with self.assertRaises(ValueError):
             final.metrics('accepted_steps=48\n')

@@ -103,6 +103,50 @@ def zonal_rms(rows, references, band_deg, field):
                          for key in candidate) / len(candidate))
 
 
+def block_statistics(samples_path, first_day, last_day):
+    """Time means and interval-integrated exchanges over (first_day, last_day].
+
+    The day bounds are offsets from the first sample, so a run that starts from a
+    developed checkpoint uses the same block as a run that starts at day zero.
+    Instantaneous fields of a chaotic run separate even when the climate agrees, so
+    the adoption comparison also needs averages over a block of days. Cumulative
+    ledgers are differenced across the block, never sampled at one instant.
+    """
+    rows = snapshot_rows(samples_path)
+    if not rows:
+        raise ValueError(f'{samples_path}: no samples')
+    origin = float(rows[0]['day'])
+    first_day += origin
+    last_day += origin
+    block = [row for row in rows if first_day < float(row['day']) <= last_day]
+    start = [row for row in rows if float(row['day']) <= first_day]
+    if not block or not start:
+        raise ValueError(f'{samples_path}: block ({first_day}, {last_day}] is empty')
+    opening = start[-1]
+    closing = block[-1]
+    seconds = (float(closing['day']) - float(opening['day'])) * 86400.0
+    if seconds <= 0:
+        raise ValueError(f'{samples_path}: block has no duration')
+    result = {f'mean_{field}': sum(float(row[field]) for row in block) / len(block)
+              for field in ('mean_temperature_k', 'mean_surface_temperature_k',
+                            'precipitable_water_kg_m2')}
+    for field, name in (('cumulative_evaporation_kg', 'evaporation_kg_s'),
+                        ('cumulative_runoff_kg', 'runoff_kg_s')):
+        result[name] = (float(closing[field]) - float(opening[field])) / seconds
+    result['precipitation_kg_s'] = (
+        (float(closing['cumulative_convective_precipitation_kg']) +
+         float(closing['cumulative_grid_scale_precipitation_kg'])) -
+        (float(opening['cumulative_convective_precipitation_kg']) +
+         float(opening['cumulative_grid_scale_precipitation_kg']))) / seconds
+    result['convective_fraction'] = (
+        (float(closing['cumulative_convective_precipitation_kg']) -
+         float(opening['cumulative_convective_precipitation_kg'])) /
+        max(result['precipitation_kg_s'] * seconds, 1e-30))
+    result['block_days'] = float(closing['day']) - float(opening['day'])
+    result['block_samples'] = float(len(block))
+    return result
+
+
 def global_mean_temperature(rows):
     weighted = weight = 0.0
     for row in rows:
@@ -163,6 +207,15 @@ def main():
                         help='also measure the candidate with two ICI iterations')
     parser.add_argument('--checkpoint', type=Path)
     parser.add_argument('--source-config', type=Path)
+    parser.add_argument('--members', type=int, default=0,
+                        help='number of micro-perturbed baseline members used to '
+                             'measure how much of a difference is internal variability')
+    parser.add_argument('--perturbation-k', type=float, default=1e-10,
+                        help='amplitude of the deterministic initial temperature '
+                             'perturbation of each member')
+    parser.add_argument('--statistics-from-day', type=float,
+                        help='first day excluded from the block statistics; the '
+                             'default discards the first half of the run')
     parser.add_argument('--summarize-only', action='store_true')
     args = parser.parse_args()
     if bool(args.checkpoint) != bool(args.source_config):
@@ -178,6 +231,10 @@ def main():
               'candidate': (args.candidate_config, args.iterations)}
     if args.with_ici2:
         points['candidate-ici2'] = (args.candidate_config, 2)
+    # Members repeat the baseline method; only the starting state differs, by an
+    # amplitude far below any physical or discretization difference.
+    for member in range(1, args.members + 1):
+        points[f'member{member}'] = (BASELINE_CONFIG, args.iterations)
     measurements = {}
     provenance = {}
     environment = {key: value for key, value in os.environ.items()
@@ -191,10 +248,16 @@ def main():
         if args.checkpoint:
             command += [str(args.checkpoint.resolve()),
                         str(args.source_config.resolve())]
+        member_environment = dict(environment)
+        if key.startswith('member'):
+            member_environment['MPS_INITIAL_PERTURBATION_K'] = repr(
+                args.perturbation_k * int(key.removeprefix('member')))
+        else:
+            member_environment.pop('MPS_INITIAL_PERTURBATION_K', None)
         if not args.summarize_only:
             print(f'Measuring {key}', flush=True)
             measure(command, destination.with_suffix('.json'), repetitions,
-                    environment)
+                    member_environment)
         result = json.loads(destination.with_suffix('.json').read_text())
         if result['command'] != command:
             raise ValueError(f'{key}: stored measurement command differs')
@@ -213,6 +276,10 @@ def main():
     gate_name = 'one_day' if args.days <= 1 else 'thirty_day'
     if 1 < args.days < 30:
         gate_name = 'thirty_day (applied to a shorter interval)'
+    first_day = (args.statistics_from_day if args.statistics_from_day is not None
+                 else args.days / 2.0)
+    reference_block = block_statistics(args.output / 'baseline.csv.samples.csv',
+                                       first_day, args.days)
     comparisons = {}
     for key, values in measurements.items():
         rows = snapshot_rows(args.output / f'{key}.csv')
@@ -275,9 +342,57 @@ def main():
                                                gate['zonal_temperature_rms_k'])
             checks['zonal_wind_rms'] = (comparison['zonal_wind_rms_m_s'] <=
                                         gate['zonal_wind_rms_m_s'])
+        block = block_statistics(args.output / f'{key}.csv.samples.csv',
+                                 first_day, args.days)
+        comparison['block'] = block
+        comparison['block_mean_temperature_difference_k'] = abs(
+            block['mean_mean_temperature_k'] - reference_block['mean_mean_temperature_k'])
+        comparison['block_surface_temperature_difference_k'] = abs(
+            block['mean_mean_surface_temperature_k'] -
+            reference_block['mean_mean_surface_temperature_k'])
+        for field in ('mean_precipitable_water_kg_m2', 'evaporation_kg_s',
+                      'precipitation_kg_s'):
+            comparison['block_' + field + '_relative_difference'] = abs(
+                block[field] - reference_block[field]) / max(
+                    abs(reference_block[field]), 1e-30)
+        checks['block_mean_temperature'] = (
+            comparison['block_mean_temperature_difference_k'] <=
+            gate['mean_temperature_k'])
+        checks['block_pw'] = (
+            comparison['block_mean_precipitable_water_kg_m2_relative_difference'] <=
+            gate['pw_relative'])
+        checks['block_evaporation_precipitation'] = all(
+            comparison['block_' + field + '_relative_difference'] <=
+            gate['integrated_evaporation_precipitation_relative']
+            for field in ('evaporation_kg_s', 'precipitation_kg_s'))
         comparison['gate_checks'] = checks
         comparison['measured_gates_pass'] = all(checks.values())
         comparisons[key] = comparison
+
+    # The noise floor of this comparison: the largest difference that the unchanged
+    # baseline method produces from a perturbation of 1e-10 K.
+    internal_spread = None
+    member_keys = [key for key in comparisons if key.startswith('member')]
+    if member_keys:
+        internal_spread = {
+            field: max(comparisons[key][field] for key in member_keys)
+            for field in ('temperature_rms_k', 'mean_temperature_difference_k',
+                          'zonal_temperature_rms_k', 'zonal_wind_rms_m_s',
+                          'toa_difference_w_m2', 'convective_fraction_difference',
+                          'precipitable_water_kg_m2_relative_difference',
+                          'evaporation_kg_m2_s_relative_difference',
+                          'precipitation_kg_m2_s_relative_difference',
+                          'block_mean_temperature_difference_k',
+                          'block_surface_temperature_difference_k',
+                          'block_mean_precipitable_water_kg_m2_relative_difference',
+                          'block_evaporation_kg_s_relative_difference',
+                          'block_precipitation_kg_s_relative_difference')}
+        internal_spread['members'] = len(member_keys)
+        internal_spread['perturbation_k'] = args.perturbation_k
+        internal_spread['candidate_exceeds_spread'] = {
+            field: comparisons['candidate'][field] > value
+            for field, value in internal_spread.items()
+            if isinstance(value, float) and field != 'perturbation_k'}
 
     result = dict(
         schema_version=1,
@@ -287,10 +402,12 @@ def main():
         days=args.days, grid=dict(cells_per_panel=args.n, levels=args.levels,
                                   dt_s=args.dt, iterations=args.iterations),
         applied_gate=gate_name, band_deg=args.band_deg,
+        statistics_block=f'({first_day}, {args.days}] days',
         mode='single' if args.single else f'{args.repetitions} repetitions',
         manifest_sha256=hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
         missing=['CAPE distribution', 'rain p95/p99 tails', 'top-reaching fraction',
                  'terrain and finite land fraction cases'],
+        internal_spread=internal_spread,
         provenance=provenance, points=measurements, comparisons=comparisons)
     (args.output / 'comparison.json').write_text(
         json.dumps(result, indent=2, allow_nan=False) + '\n')
@@ -298,6 +415,13 @@ def main():
     for key, comparison in comparisons.items():
         print(f"{key}: speedup={comparison['speedup_over_baseline']:.4f} "
               f"gates={'pass' if comparison['measured_gates_pass'] else 'FAIL'}")
+    if internal_spread is not None:
+        print('internal spread of ' + str(internal_spread['members']) +
+              f" perturbed baseline members (+-{args.perturbation_k} K):")
+        for field, value in internal_spread.items():
+            if isinstance(value, float) and field != 'perturbation_k':
+                print(f"  {field}: candidate={comparisons['candidate'][field]:.6g} "
+                      f"spread={value:.6g}")
 
 
 if __name__ == '__main__':
