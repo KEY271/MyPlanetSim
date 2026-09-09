@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Measure the fixed ICI 2/3/5 by dt=450/900/1800 matrix, without tuning.
+"""Measure the fixed ICI 2/3/5 and ARK2 IMEX by dt=450/900/1800 matrix, no tuning.
 
 Each point runs warm-up, five timings, five profiles, and allocation accounting
 through benchmark_phase14.py. Optional checkpoint import tests developed states.
 The reference keeps the legacy physics maximum at 300 s (450 s dynamics uses
-two 225 s substeps). Same-dt comparisons isolate dynamics iteration count;
+two 225 s substeps). Same-dt comparisons isolate the time integration method;
 the 450 s reference is NOT the finer 75 s physics or long-term climate gate.
+The ARK2 comparator solves every vertical mode and adds fast operator
+applications, so its cost is compared against ICI 2 at the same dt.
 """
 import argparse
 import csv
@@ -49,6 +51,9 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--summarize-only', action='store_true',
                         help='recheck and aggregate existing measurements without rerunning')
+    parser.add_argument('--measure-dt', type=int, nargs='+', choices=(450, 900, 1800),
+                        help='measure only these dynamics time steps and reuse the '
+                             'stored measurements of the other rows')
     args = parser.parse_args()
     if bool(args.checkpoint) != bool(args.source_config):
         parser.error('checkpoint and source-config must be supplied together')
@@ -64,19 +69,25 @@ def main():
     points = {}
     provenance = {}
     for dt in (450, 900, 1800):
-        for iterations in (2, 3, 5):
-            key = f'dt{dt}-ici{iterations}'
+        for iterations in (2, 3, 5, -1):
+            key = f'dt{dt}-' + ('ark2' if iterations < 0 else f'ici{iterations}')
             destination = args.output / key
             command = [str(args.binary.resolve()), str(args.config.resolve()),
                        '1', '6', '20', str(dt), str(iterations), '20000', '5',
                        str(destination.with_suffix('.csv').resolve())]
             if args.checkpoint:
                 command += [str(args.checkpoint.resolve()), str(args.source_config.resolve())]
-            if not args.summarize_only:
+            measure = not args.summarize_only and (
+                args.measure_dt is None or dt in args.measure_dt)
+            if measure:
                 print(f'Measuring {key}', flush=True)
                 subprocess.run([sys.executable, str(ROOT / 'tools/benchmark_phase14.py'),
                                 '--output', str(destination.with_suffix('.json').resolve()),
                                 '--', *command], cwd=ROOT, check=True)
+            if not measure and not destination.with_suffix('.json').is_file():
+                # A staged partial measurement; aggregate once every row exists.
+                print(f'Skipping unmeasured {key}', flush=True)
+                continue
             result = json.loads(destination.with_suffix('.json').read_text())
             if result['command'] != command:
                 raise ValueError(f'{key}: stored measurement command differs')
@@ -94,6 +105,9 @@ def main():
                               'full_rhs_per_step', 'accepted_steps', 'retries'):
                     if row[field] != points[key][field]:
                         raise ValueError(f'{key}: nondeterministic {field}')
+    if len(points) != 12:
+        print(f'{len(points)}/12 rows measured; comparison.json not written', flush=True)
+        return
     for path in (args.binary, args.config, args.checkpoint, args.source_config):
         if path is not None and len({p['binary_and_config_sha256'][str(path.resolve())]
                                      for p in provenance.values()}) != 1:
@@ -115,6 +129,8 @@ def main():
                 abs(reference[field]), floor if field.endswith('_s') else 1e-12)
         comparison['toa_difference_w_m2'] = abs(values['toa_net_upward_w_m2'] - reference['toa_net_upward_w_m2'])
         comparison['speedup_over_ici3_same_dt'] = points[key.split('-')[0] + '-ici3']['elapsed_s'] / values['elapsed_s']
+        # The IMEX adoption gate of the plan is measured against fixed two-iteration ICI.
+        comparison['speedup_over_ici2_same_dt'] = points[key.split('-')[0] + '-ici2']['elapsed_s'] / values['elapsed_s']
         gate = manifest['one_day']
         comparison['measured_one_day_gates_pass'] = (
             comparison['temperature_rms_k'] <= gate['mass_weighted_temperature_rms_k']

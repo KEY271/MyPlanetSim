@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted as an independent comparison method; not adopted by a production preset.
+Accepted as an independent comparison method; rejected for production use after
+the integrated screening.
 
 ## Context
 
@@ -30,18 +31,20 @@ the explicit RHS, the linear implicit RHS and the solve of
 `[I - gamma*dt*L] z = r`. Unit tests pin the complete table, stage times, call counts,
 split linear second-order convergence and failure atomicity.
 
-The production dry-hydrostatic driver is unchanged by this decision. A later commit
-must adapt the model state and fast operator, then compare wave accuracy, conservation,
-explicit constraints and end-to-end cost. In particular, the ARK2 update is not the
-last implicit stage, so a separate final full-RHS check would raise its nonlinear RHS
-count from three to four. Omitting that check requires cheap state/CFL checks and
-stage-weighted budgets first.
+The dry-hydrostatic comparison path adapts the model state and complete fast operator,
+solves every vertical mode, checks each stage, and uses the stage weights for budgets.
+The ARK2 update is not the last implicit stage, so the retained final full-RHS check
+raises its nonlinear RHS count from three to four. This preserves the existing final
+state/CFL check and first-same-as-last reuse contract.
 
 ## Consequences
 
 - The independent reference method and its accounting exist without SUNDIALS linkage.
-- The initial model integration should retain all three full nonlinear stage
-  evaluations; fast-operator calls must be reported separately.
+- The model integration retains all three full nonlinear stage evaluations and reports
+  fast-operator calls separately.
 - No preset, tolerance, diffusion or physical parameter changes are justified here.
-- If the complete model comparison is not more accurate or faster in its natural form,
-  ARK2 may be recorded as not adopted without coefficient fine tuning.
+- At N=6/K=20, one moist day and dt=1800 s, a single Release screening run was 4.8%
+  slower than ICI2 while both used four full RHS evaluations per step. It also increased
+  linear iterations from 126 to 329 and added 144 fast-operator calls per day.
+- This fails the pre-registered requirement to beat an accurate ICI2 path by at least
+  10%. ARK2 is therefore not adopted and is not coefficient- or tolerance-tuned.

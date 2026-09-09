@@ -1,7 +1,8 @@
 # Phase 14 検証記録
 
 状態: P14.01 を実装・検証中。P14.02 の固定反復比較を実装。
-predictor/IMEX の独立 ARK2 比較器まで実装。モデル結合比較、P14.03 以後は未着手。
+predictor/IMEX の独立 ARK2 比較器とモデル結合まで実装。ARK2 は自然な構成の
+短時間 screening で不採用。P14.03 以後は未着手。
 速度の数値目標を満たすための diffusion、残差許容値、物理パラメータの調整は行わない。
 
 ## P14.01: 計測基盤
@@ -105,5 +106,22 @@ P14.03以後の実装も未完了。今回の測定だけでこれらを完了�
 v7.7.0 の既定二次 additive pair の完全な表、stage 時刻、評価回数を固定した。
 汎用 `Ark2Imex` の split linear ODE で二次収束を確認し、明示 RHS 3回、線形作用3回、
 非自明な陰 stage solve 2回を回帰試験にした。これは production driver や preset の採用ではない。
-最終 full RHS を従来どおり追加すれば nonlinear RHS は4回になるため、モデル結合では
-安い state/CFL 検査と stage weight による収支を先に成立させてから比較する。
+モデル結合は3 stage の全 nonlinear RHS、全鉛直 mode の2回の陰 solve、3回の fast
+operator、stage weight による収支を実装した。既存の最終 state/CFL 検査と次 step への
+RHS 再利用を維持したため full RHS は ICI2 と同じ4回/step である。乾燥波の保存、stage
+回数、solve 回数を回帰試験にした。
+
+正式な12点反復測定の前に、同一 Release binary・初期 N=6/K=20・1日・dt=1800秒で
+1回の screening を行った。ICI2 は2.5033秒、ARK2 は2.6243秒で、ARK2 は4.8%遅かった。
+ARK2 は linear iteration 126→329、fast operator 0→144回/日となり、full RHS は双方
+192回/日だった。平均温度差は `1.13e-5 K`、PW差は `4.37e-6 kg m-2`、retryは双方0。
+これは分散を評価した性能測定ではなく、長い比較行列は以下のコマンドで利用者が実行する。
+
+```console
+python3 tools/compare_phase14_ici.py --output output/phase14/ici-with-ark2
+```
+
+**採否:** ARK2 は production preset に採用しない。full RHS を安全に3回以下へ減らすには
+最終検査・収支・再利用契約をさらに変更する必要があり、現状は ICI2 より仕事量が多い。
+10%以上高速という事前 gate に対して逆方向であり、係数、許容値、mode数の fine tuning は
+行わない。比較器と runner は将来の方式検証用に残す。
