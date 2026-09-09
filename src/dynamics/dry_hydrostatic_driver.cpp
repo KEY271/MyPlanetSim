@@ -585,7 +585,8 @@ void add_semi_implicit_correction(DryHydrostaticState& state,
     const GrayRadiationDiagnostics& first, const Real first_weight,
     const GrayRadiationDiagnostics& second, const Real second_weight,
     const GrayRadiationDiagnostics& third = {}, const Real third_weight = 0.0) {
-  const auto weighted = [&](const Real GrayRadiationDiagnostics::* member) {
+  using DiagnosticMember = Real GrayRadiationDiagnostics::*;
+  const auto weighted = [&](const DiagnosticMember member) {
     return first_weight * first.*member + second_weight * second.*member +
            third_weight * third.*member;
   };
@@ -1960,7 +1961,8 @@ void DryHydrostaticDriver::advance(
             grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,
             accepted_radiation_surface_temperature, dt, step.radiation_rates);
       if (config_.physics.kind == PhysicsKind::kSurfaceEnergyBalance) {
-        const auto weighted = [&](const Real SurfaceEnergyDiagnostics::* member) {
+        using DiagnosticMember = Real SurfaceEnergyDiagnostics::*;
+        const auto weighted = [&](const DiagnosticMember member) {
           if (use_ark2_comparison)
             return ark2_weighted([&](const DryHydrostaticRhs& rhs) {
               return rhs.surface_diagnostics.*member;
