@@ -1,14 +1,35 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_fast_operator.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <stdexcept>
+
+#if defined(MPS_ENABLE_OPENMP)
+#include <omp.h>
+#endif
 
 #include "myplanetsim/core/validation.hpp"
 #include "myplanetsim/numerics/spherical_operators.hpp"
 
 namespace mps {
 namespace {
+
+[[nodiscard]] std::size_t fast_worker_count() {
+#if defined(MPS_ENABLE_OPENMP)
+  return static_cast<std::size_t>(std::max(1, omp_get_max_threads()));
+#else
+  return 1;
+#endif
+}
+
+[[nodiscard]] std::size_t fast_worker_index() {
+#if defined(MPS_ENABLE_OPENMP)
+  return static_cast<std::size_t>(omp_get_thread_num());
+#else
+  return 0;
+#endif
+}
 
 struct ColumnDiagnostics {
   std::vector<Real> pressure_pa;
@@ -212,81 +233,139 @@ void apply_dry_hydrostatic_fast_operator(
     result.tendency.potential_temperature_mass.assign(volume, 0.0);
     workspace.horizontal_air_mass_tendency.assign(volume, 0.0);
     workspace.horizontal_potential_temperature_mass_tendency.assign(volume, 0.0);
-
-    for (const auto& edge : grid.edges()) {
-      const auto& cached = grid.edge_cache()[edge.id];
+    const auto edges = grid.edges();
+    workspace.edge_integrated_mass_flux.resize(edges.size() * levels);
+#if defined(MPS_ENABLE_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+    for (std::ptrdiff_t edge_index = 0;
+         edge_index < static_cast<std::ptrdiff_t>(edges.size()); ++edge_index) {
+      const auto edge_id = static_cast<std::size_t>(edge_index);
+      const auto& edge = edges[edge_id];
+      const auto& cached = grid.edge_cache()[edge_id];
       for (std::size_t level = 0; level < levels; ++level) {
         const auto left = dry_hydrostatic_offset(cached.left_cell, level, levels);
         const auto right = dry_hydrostatic_offset(cached.right_cell, level, levels);
-        const Real integrated_mass_flux =
+        workspace.edge_integrated_mass_flux[edge_id * levels + level] =
             0.5 *
             dot(perturbation.horizontal_momentum_mass_kg_m_s[left] +
                     perturbation.horizontal_momentum_mass_kg_m_s[right],
                 edge.outward_normal_from_left) *
             edge.length_m;
-        const auto scatter = [&](const std::size_t cell, const std::size_t n,
-                                 const Real sign) {
+      }
+    }
+#if defined(MPS_ENABLE_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+    for (std::ptrdiff_t cell_index = 0; cell_index < static_cast<std::ptrdiff_t>(cells);
+         ++cell_index) {
+      const auto cell = static_cast<std::size_t>(cell_index);
+      std::array<std::size_t, 4> cell_edges{};
+      for (std::size_t side = 0; side < cell_edges.size(); ++side)
+        cell_edges[side] = grid.cell_cache()[cell].edges[side].edge;
+      std::ranges::sort(cell_edges);
+      for (const auto edge : cell_edges) {
+        const auto& cached = grid.edge_cache()[edge];
+        const Real sign = cached.left_cell == cell ? -1.0 : 1.0;
+        for (std::size_t level = 0; level < levels; ++level) {
+          const auto n = dry_hydrostatic_offset(cell, level, levels);
           const Real mass_tendency =
-              sign * integrated_mass_flux / grid.cells()[cell].area_m2;
+              sign * workspace.edge_integrated_mass_flux[edge * levels + level] /
+              grid.cells()[cell].area_m2;
           workspace.horizontal_air_mass_tendency[n] += mass_tendency;
           workspace.horizontal_potential_temperature_mass_tendency[n] +=
               op.reference_potential_temperature_k[level] * mass_tendency;
-        };
-        scatter(cached.left_cell, left, -1.0);
-        scatter(cached.right_cell, right, 1.0);
+        }
       }
     }
 
-    for (std::size_t cell = 0; cell < cells; ++cell) {
+    workspace.vertical_mass_flux_workers.resize(fast_worker_count());
+    workspace.failures.resize(cells);
+#if defined(MPS_ENABLE_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+    for (std::ptrdiff_t cell_index = 0; cell_index < static_cast<std::ptrdiff_t>(cells);
+         ++cell_index) {
+      const auto cell = static_cast<std::size_t>(cell_index);
       const auto begin = cell * levels;
-      diagnose_vertical_mass_flux(
-          std::span<const Real>(workspace.horizontal_air_mass_tendency.data() + begin,
-                                levels),
-          op.b_half, planet.gravity_m_s2, workspace.vertical_mass_flux);
-      result.surface_pressure_pa_s[cell] =
-          workspace.vertical_mass_flux.surface_pressure_tendency_pa_s;
-      for (std::size_t level = 0; level < levels; ++level) {
-        const auto n = begin + level;
-        result.tendency.air_mass[n] =
-            workspace.vertical_mass_flux.target_air_mass_tendency_kg_m2_s[level];
-        result.tendency.potential_temperature_mass[n] =
-            workspace.horizontal_potential_temperature_mass_tendency[n] +
-            workspace.vertical_mass_flux.interface_flux_kg_m2_s[level] *
-                op.reference_interface_potential_temperature_k[level] -
-            workspace.vertical_mass_flux.interface_flux_kg_m2_s[level + 1] *
-                op.reference_interface_potential_temperature_k[level + 1];
+      auto& vertical_mass_flux =
+          workspace.vertical_mass_flux_workers[fast_worker_index()];
+      workspace.failures[cell] = nullptr;
+      try {
+        diagnose_vertical_mass_flux(
+            std::span<const Real>(workspace.horizontal_air_mass_tendency.data() + begin,
+                                  levels),
+            op.b_half, planet.gravity_m_s2, vertical_mass_flux);
+        result.surface_pressure_pa_s[cell] =
+            vertical_mass_flux.surface_pressure_tendency_pa_s;
+        for (std::size_t level = 0; level < levels; ++level) {
+          const auto n = begin + level;
+          result.tendency.air_mass[n] =
+              vertical_mass_flux.target_air_mass_tendency_kg_m2_s[level];
+          result.tendency.potential_temperature_mass[n] =
+              workspace.horizontal_potential_temperature_mass_tendency[n] +
+              vertical_mass_flux.interface_flux_kg_m2_s[level] *
+                  op.reference_interface_potential_temperature_k[level] -
+              vertical_mass_flux.interface_flux_kg_m2_s[level + 1] *
+                  op.reference_interface_potential_temperature_k[level + 1];
+        }
+      } catch (...) {
+        workspace.failures[cell] = std::current_exception();
       }
     }
+    for (std::size_t cell = 0; cell < cells; ++cell)
+      if (workspace.failures[cell] != nullptr)
+        std::rethrow_exception(workspace.failures[cell]);
   }
 
   if (compute_momentum_from_scalar) {
     result.tendency.momentum.assign(volume, {});
-    workspace.geopotential_perturbation.resize(cells);
-    workspace.geopotential_gradient.resize(cells);
-    for (std::size_t level = 0; level < levels; ++level) {
-      for (std::size_t cell = 0; cell < cells; ++cell) {
-        Real pressure_potential = (op.geopotential_from_surface_pressure[level] +
-                                   op.reference_specific_volume_m3_kg[level] *
-                                       op.pressure_from_surface_pressure[level]) *
-                                  perturbation.surface_pressure_pa[cell];
-        for (std::size_t source = 0; source < levels; ++source) {
-          pressure_potential +=
-              op.geopotential_from_potential_temperature_mass[level * levels + source] *
-              perturbation.potential_temperature_mass_k_kg_m2[dry_hydrostatic_offset(
-                  cell, source, levels)];
+    const auto workers = std::min(levels, fast_worker_count());
+    workspace.level_workers.resize(workers);
+    for (auto& worker : workspace.level_workers) {
+      worker.geopotential_perturbation.resize(cells);
+      worker.geopotential_gradient.resize(cells);
+    }
+    workspace.failures.resize(levels);
+#if defined(MPS_ENABLE_OPENMP)
+#pragma omp parallel for schedule(static) num_threads(workers)
+#endif
+    for (std::ptrdiff_t level_index = 0;
+         level_index < static_cast<std::ptrdiff_t>(levels); ++level_index) {
+      const auto level = static_cast<std::size_t>(level_index);
+      auto& worker = workspace.level_workers[fast_worker_index()];
+      workspace.failures[level] = nullptr;
+      try {
+        for (std::size_t cell = 0; cell < cells; ++cell) {
+          Real pressure_potential = (op.geopotential_from_surface_pressure[level] +
+                                     op.reference_specific_volume_m3_kg[level] *
+                                         op.pressure_from_surface_pressure[level]) *
+                                    perturbation.surface_pressure_pa[cell];
+          for (std::size_t source = 0; source < levels; ++source) {
+            pressure_potential +=
+                op.geopotential_from_potential_temperature_mass[level * levels +
+                                                                source] *
+                perturbation.potential_temperature_mass_k_kg_m2[dry_hydrostatic_offset(
+                    cell, source, levels)];
+          }
+          worker.geopotential_perturbation[cell] = pressure_potential;
         }
-        workspace.geopotential_perturbation[cell] = pressure_potential;
-      }
-      least_squares_gradient(grid, workspace.geopotential_perturbation,
-                             workspace.geopotential_gradient);
-      for (std::size_t cell = 0; cell < cells; ++cell) {
-        const auto n = dry_hydrostatic_offset(cell, level, levels);
-        result.tendency.momentum[n] =
-            -op.reference_air_mass_kg_m2[level] *
-            project_tangent(workspace.geopotential_gradient[cell],
-                            grid.cells()[cell].center);
+        least_squares_gradient(grid, worker.geopotential_perturbation,
+                               worker.geopotential_gradient);
+        for (std::size_t cell = 0; cell < cells; ++cell) {
+          const auto n = dry_hydrostatic_offset(cell, level, levels);
+          result.tendency.momentum[n] =
+              -op.reference_air_mass_kg_m2[level] *
+              project_tangent(worker.geopotential_gradient[cell],
+                              grid.cells()[cell].center);
+        }
+      } catch (...) {
+        workspace.failures[level] = std::current_exception();
       }
     }
+    for (std::size_t level = 0; level < levels; ++level)
+      if (workspace.failures[level] != nullptr)
+        std::rethrow_exception(workspace.failures[level]);
   }
   if (compute_scalar_from_momentum && compute_momentum_from_scalar)
     result.tendency.tracer_mass.assign(volume, 0.0);

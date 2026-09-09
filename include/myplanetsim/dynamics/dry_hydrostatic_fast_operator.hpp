@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <span>
 #include <vector>
 
@@ -35,14 +36,20 @@ struct DryHydrostaticFastOperator {
   std::vector<Real> geopotential_from_potential_temperature_mass;
 };
 
+struct DryHydrostaticFastOperatorLevelWorkspace {
+  std::vector<Real> geopotential_perturbation;
+  std::vector<Vec3> geopotential_gradient;
+};
+
 struct DryHydrostaticFastOperatorWorkspace {
   std::vector<Real> horizontal_air_mass_tendency;
   std::vector<Real> horizontal_potential_temperature_mass_tendency;
   std::vector<Real> pressure_perturbation;
-  std::vector<Real> geopotential_perturbation;
+  std::vector<Real> edge_integrated_mass_flux;
   std::vector<Vec3> pressure_gradient;
-  std::vector<Vec3> geopotential_gradient;
-  VerticalMassFlux vertical_mass_flux;
+  std::vector<VerticalMassFlux> vertical_mass_flux_workers;
+  std::vector<DryHydrostaticFastOperatorLevelWorkspace> level_workers;
+  std::vector<std::exception_ptr> failures;
 };
 
 [[nodiscard]] DryHydrostaticFastOperator make_dry_hydrostatic_fast_operator(
