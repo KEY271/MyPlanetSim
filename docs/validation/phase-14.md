@@ -135,3 +135,10 @@ python3 tools/compare_phase14_ici.py --output output/phase14/ici-with-ark2
 過程別経路では BL 200秒、SBM 300秒、力学600秒の event union が4イベント、BL 3回に
 なること、retryなし、水 inventory 保存を explicit driver で確認した。失敗イベントは
 state、bucket、累積台帳、step診断をまとめて戻してから due process を二分する。
+
+過程別経路では gray radiation を full RHS から除き、event の物理時刻で1回診断して
+その実 interval の保存量・地表温度更新へ適用する。600秒の explicit/semi-implicit
+結合試験で radiation column call が従来の stage 回数ではなく全球1回になること、放射収支が
+有限、水保存、retry 0を確認した。各力学step末で全 increment を適用し終えるため cache/時計を
+checkpointへ持ち越さず、旧 moist layout のまま legacy/過程別 × explicit/semi-implicit の
+連続1200秒と600秒再開が byte 一致する。observer の瞬時放射診断は積分状態を変更しない。

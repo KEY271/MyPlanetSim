@@ -185,30 +185,34 @@ MPS_TEST_CASE("explicit and semi-implicit drivers accept subcycled moist steps")
 }
 
 MPS_TEST_CASE("process scheduler applies independent accepted intervals") {
-  auto config = moist_config(false);
-  config.physics_schedule = {
-      .kind = mps::PhysicsScheduleKind::kProcessIntervals,
-      .boundary_layer_maximum_update_interval_s = 200.0,
-      .convection_diagnostic_interval_s = 300.0,
-      .convection_update_mode = mps::ConvectionUpdateMode::kIntermittent,
-      .radiation_diagnostic_interval_s = 600.0};
-  config.validate();
-  const mps::DryHydrostaticDriver driver(config);
-  auto state = driver.initial_state();
-  const double initial_water = water_inventory(driver, state);
-  mps::DryHydrostaticStepDiagnostics accepted;
-  driver.advance(state, config.run.end_time_s,
-                 [&](const auto& sampled, const auto*, const auto& step) {
-                   if (sampled.step > 0) accepted = step;
-                 });
-  MPS_CHECK_EQ(accepted.physics_substep_count, 4U);
-  MPS_CHECK_EQ(accepted.boundary_layer_column_call_count,
-               3U * driver.grid().cell_count());
-  MPS_CHECK_EQ(accepted.convection_column_call_count,
-               4U * driver.grid().cell_count());
-  MPS_CHECK_EQ(accepted.physics_retry_count, 0U);
-  MPS_CHECK_NEAR(water_inventory(driver, state), initial_water,
-                 2e-12 * initial_water);
+  for (const bool semi_implicit : {false, true}) {
+    auto config = moist_config(semi_implicit);
+    config.physics_schedule = {
+        .kind = mps::PhysicsScheduleKind::kProcessIntervals,
+        .boundary_layer_maximum_update_interval_s = 200.0,
+        .convection_diagnostic_interval_s = 300.0,
+        .convection_update_mode = mps::ConvectionUpdateMode::kIntermittent,
+        .radiation_diagnostic_interval_s = 600.0};
+    config.validate();
+    const mps::DryHydrostaticDriver driver(config);
+    auto state = driver.initial_state();
+    const double initial_water = water_inventory(driver, state);
+    mps::DryHydrostaticStepDiagnostics accepted;
+    driver.advance(state, config.run.end_time_s,
+                   [&](const auto& sampled, const auto*, const auto& step) {
+                     if (sampled.step > 0) accepted = step;
+                   });
+    MPS_CHECK_EQ(accepted.physics_substep_count, 4U);
+    MPS_CHECK_EQ(accepted.radiation_column_call_count, driver.grid().cell_count());
+    MPS_CHECK_EQ(accepted.boundary_layer_column_call_count,
+                 3U * driver.grid().cell_count());
+    MPS_CHECK_EQ(accepted.convection_column_call_count,
+                 4U * driver.grid().cell_count());
+    MPS_CHECK_EQ(accepted.physics_retry_count, 0U);
+    MPS_CHECK(std::isfinite(accepted.radiation_budget.toa_net_upward_energy_j));
+    MPS_CHECK_NEAR(water_inventory(driver, state), initial_water,
+                   2e-12 * initial_water);
+  }
 }
 
 MPS_TEST_CASE("moist checkpoint preserves bucket and accepted ledgers") {
@@ -228,27 +232,36 @@ MPS_TEST_CASE("moist checkpoint preserves bucket and accepted ledgers") {
 
 MPS_TEST_CASE("moist restart follows the uninterrupted accepted-step partition") {
   for (const bool semi_implicit : {false, true}) {
-    auto config = moist_config(semi_implicit);
-    config.run.end_time_s = 1200.0;
-    config.validate();
+    for (const bool process_intervals : {false, true}) {
+      auto config = moist_config(semi_implicit);
+      config.run.end_time_s = 1200.0;
+      if (process_intervals)
+        config.physics_schedule = {
+            .kind = mps::PhysicsScheduleKind::kProcessIntervals,
+            .boundary_layer_maximum_update_interval_s = 300.0,
+            .convection_diagnostic_interval_s = 600.0,
+            .convection_update_mode = mps::ConvectionUpdateMode::kIntermittent,
+            .radiation_diagnostic_interval_s = 600.0};
+      config.validate();
 
-    const mps::DryHydrostaticDriver continuous_driver(config);
-    auto continuous = continuous_driver.initial_state();
-    continuous_driver.advance(continuous, 1200.0);
+      const mps::DryHydrostaticDriver continuous_driver(config);
+      auto continuous = continuous_driver.initial_state();
+      continuous_driver.advance(continuous, 1200.0);
 
-    const mps::DryHydrostaticDriver first_driver(config);
-    auto split = first_driver.initial_state();
-    first_driver.advance(split, 600.0);
-    const auto checkpoint = mps::flatten_dry_hydrostatic_moist_state(split, 2);
-    auto restarted = mps::unflatten_dry_hydrostatic_moist_state(
-        split.time_s, split.step, checkpoint, first_driver.grid().cell_count(), 2, 2);
-    const mps::DryHydrostaticDriver restart_driver(config);
-    restart_driver.advance(restarted, 1200.0);
+      const mps::DryHydrostaticDriver first_driver(config);
+      auto split = first_driver.initial_state();
+      first_driver.advance(split, 600.0);
+      const auto checkpoint = mps::flatten_dry_hydrostatic_moist_state(split, 2);
+      auto restarted = mps::unflatten_dry_hydrostatic_moist_state(
+          split.time_s, split.step, checkpoint, first_driver.grid().cell_count(), 2, 2);
+      const mps::DryHydrostaticDriver restart_driver(config);
+      restart_driver.advance(restarted, 1200.0);
 
-    MPS_CHECK_EQ(restarted.time_s, continuous.time_s);
-    MPS_CHECK_EQ(restarted.step, continuous.step);
-    MPS_CHECK(mps::flatten_dry_hydrostatic_moist_state(restarted, 2) ==
-              mps::flatten_dry_hydrostatic_moist_state(continuous, 2));
+      MPS_CHECK_EQ(restarted.time_s, continuous.time_s);
+      MPS_CHECK_EQ(restarted.step, continuous.step);
+      MPS_CHECK(mps::flatten_dry_hydrostatic_moist_state(restarted, 2) ==
+                mps::flatten_dry_hydrostatic_moist_state(continuous, 2));
+    }
   }
 }
 

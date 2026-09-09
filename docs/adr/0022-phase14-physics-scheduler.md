@@ -2,8 +2,7 @@
 
 ## Status
 
-Accepted and integrated for local moist processes. Radiation integration remains
-staged separately.
+Accepted and integrated.
 
 ## Context
 
@@ -41,4 +40,11 @@ necessary reference state and invalidation metadata.
 - The driver executes BL and SBM deadlines through the event union. A failed event
   restores the complete state and accepted diagnostics before bisecting all processes
   due at that event.
-- Radiation remains in the RHS until its cached-flux update is integrated separately.
+- In process-interval mode gray radiation is removed from every dynamics RHS stage.
+  One column diagnosis at each radiation event is applied over that event's actual
+  interval, before BL/surface. Its physical evaluation time is the event deadline.
+- Radiation and local processes finish at every accepted dynamics-step boundary. No
+  cache or unapplied increment crosses that boundary, so the moist checkpoint schema
+  does not change. Restarts at step boundaries reproduce the uninterrupted state.
+- A radiation update that exceeds its diagnosed explicit stability limit enters the
+  same atomic event rollback and bisection path as local physics.

@@ -65,8 +65,7 @@ void add_scaled_rhs(DryHydrostaticState& state, const DryHydrostaticRhs& tendenc
     state.tracer_mass_kg_m2[n] += scale * tendency.tendency.tracer_mass[n];
   // The surface temperature is prognostic only when a surface model is active.
   for (std::size_t cell = 0; cell < state.surface_temperature_k.size(); ++cell)
-    state.surface_temperature_k[cell] +=
-        scale * tendency.surface_temperature_k_s[cell];
+    state.surface_temperature_k[cell] += scale * tendency.surface_temperature_k_s[cell];
 }
 
 void add_scaled_fast_tendency(DryHydrostaticState& state,
@@ -623,6 +622,14 @@ void add_semi_implicit_correction(DryHydrostaticState& state,
   };
 }
 
+struct ScheduledRadiationStep {
+  GrayRadiationDiagnostics rates{};
+  Real stable_time_step_s = std::numeric_limits<Real>::infinity();
+  std::vector<Real> surface_temperature_after_update;
+  std::size_t column_call_count = 0;
+  Real wall_seconds = 0.0;
+};
+
 }  // namespace
 
 DryHydrostaticDriver::DryHydrostaticDriver(ExperimentConfig c)
@@ -976,7 +983,9 @@ void DryHydrostaticDriver::rhs_with_components(
   Real radiation_wall_seconds = 0.0;
   Real surface_dt = std::numeric_limits<Real>::infinity();
   Real radiation_dt = std::numeric_limits<Real>::infinity();
-  result.surface_temperature_k_s.clear();
+  // A split local-physics path can own a nonempty surface state while contributing
+  // no surface tendency to the dynamics RHS.
+  result.surface_temperature_k_s.assign(s.surface_temperature_k.size(), 0.0);
   if (config_.physics.kind == PhysicsKind::kHeldSuarez) {
     held_suarez_tendency(grid_, coordinate_, d, s.surface_pressure_pa, config_.planet,
                          workspace.atmospheric_physics,
@@ -1039,7 +1048,8 @@ void DryHydrostaticDriver::rhs_with_components(
           physics.potential_temperature_mass_k_kg_m2_s[n];
     }
     physics_diagnostics = physics.diagnostics;
-  } else if (config_.physics.kind == PhysicsKind::kGrayRadiation) {
+  } else if (config_.physics.kind == PhysicsKind::kGrayRadiation &&
+             config_.physics_schedule.kind == PhysicsScheduleKind::kLegacy) {
     const auto orbit_state =
         evaluate_orbit(*config_.orbit, config_.planet.rotation_rate_rad_s,
                        s.time_s - config_.run.start_time_s);
@@ -1187,195 +1197,259 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                                    config_.vertical.maximum_surface_pressure_pa,
                                    config_.vertical.temperature_floor_k);
   };
-  const auto apply_local_physics =
-      [&](DryHydrostaticState& stage, const Real dynamics_time_step_s,
-          DryMixingStepDiagnostics& boundary_layer_diagnostics,
-          DryConvectionDiagnostics& convection_diagnostics,
-          MoistPhysicsStepDiagnostics& moist_diagnostics,
-          std::size_t& boundary_layer_calls, std::size_t& convection_calls,
-          std::size_t& physics_substeps, std::size_t& physics_retries) {
-        std::vector<PhysicsEvent> events;
-        if (config_.physics_schedule.kind == PhysicsScheduleKind::kLegacy) {
-          std::size_t substeps = 1;
-          if (config_.moisture.kind == MoistureKind::kDiluteWater) {
-          Real maximum_substep = config_.moisture.maximum_physics_substep_s;
-          if (config_.convection.kind == ConvectionKind::kSimpleBettsMiller)
-            maximum_substep =
-                std::min(maximum_substep, 0.25 * config_.convection.relaxation_time_s);
-          substeps = static_cast<std::size_t>(
-              std::ceil(dynamics_time_step_s / maximum_substep));
-          }
-          const Real local_time_step =
-              dynamics_time_step_s / static_cast<Real>(substeps);
-          events.reserve(substeps);
-          for (std::size_t substep = 0; substep < substeps; ++substep)
-            events.push_back(
-                {.end_time_offset_s = (substep + 1) * local_time_step,
-                 .interval_s = local_time_step,
-                 .radiation_interval_s = local_time_step,
-                 .boundary_layer_interval_s = local_time_step,
-                 .convection_interval_s = local_time_step,
-                 .radiation = config_.physics.kind == PhysicsKind::kGrayRadiation,
-                 .boundary_layer =
-                     config_.boundary_layer.kind != BoundaryLayerKind::kNone,
-                 .convection = config_.convection.kind != ConvectionKind::kNone,
-                 .saturation_adjustment =
-                     config_.moisture.kind == MoistureKind::kDiluteWater});
-        } else {
-          // Radiation still resides in the dynamics RHS in this staged commit. Its
-          // deadline joins this event union when the cached-flux update is moved out.
-          events = make_physics_events(
-              config_.physics_schedule, dynamics_time_step_s, false,
-              config_.boundary_layer.kind != BoundaryLayerKind::kNone,
-              config_.convection.kind != ConvectionKind::kNone,
-              config_.moisture.kind == MoistureKind::kDiluteWater);
-        }
-        boundary_layer_diagnostics = {};
-        convection_diagnostics = {};
-        moist_diagnostics = {};
-        bool has_convection_diagnostics = false;
-        constexpr std::size_t kMaximumPhysicsSubstepRefinements = 10;
-        struct PendingPhysicsInterval {
-          Real event_interval_s;
-          Real boundary_layer_interval_s;
-          Real convection_interval_s;
-          std::size_t refinement;
-          bool boundary_layer;
-          bool convection;
-          bool saturation_adjustment;
-        };
-        DryHydrostaticState saved_stage;
-        std::array<PendingPhysicsInterval, kMaximumPhysicsSubstepRefinements + 1>
-            pending_intervals{};
-        for (const auto& event : events) {
-          std::size_t pending_count = 0;
-          pending_intervals[pending_count++] = {
-              .event_interval_s = event.interval_s,
-              .boundary_layer_interval_s = event.boundary_layer_interval_s,
-              .convection_interval_s = event.convection_interval_s,
-              .refinement = 0,
-              .boundary_layer = event.boundary_layer,
-              .convection = event.convection,
-              .saturation_adjustment = event.saturation_adjustment};
-          while (pending_count > 0) {
-            const auto interval = pending_intervals[--pending_count];
-            saved_stage = stage;
-            const auto saved_boundary_layer = boundary_layer_diagnostics;
-            const auto saved_convection = convection_diagnostics;
-            const auto saved_moisture = moist_diagnostics;
-            const bool saved_has_convection = has_convection_diagnostics;
-            ++physics_substeps;
-            try {
-              diagnose_and_validate(stage);
-              if (interval.boundary_layer) {
-                std::optional<MoistBoundaryLayerCoupling> moist_boundary;
-                if (config_.moisture.kind == MoistureKind::kDiluteWater &&
-                    config_.moisture.surface_exchange ==
-                        SurfaceMoistureExchange::kBulk) {
-                  moist_boundary = MoistBoundaryLayerCoupling{
-                      .water_vapor_tracer = *water_vapor_tracer,
-                      .land_water_kg_m2 = stage.land_water_kg_m2,
-                      .bucket_capacity_kg_m2 =
-                          config_.surface->hydrology_capacity_kg_m2,
-                      .thermodynamics = {.gas_constant_dry_air_j_kg_k =
-                                             config_.planet.gas_constant_j_kg_k,
-                                         .heat_capacity_cp_j_kg_k =
-                                             config_.planet.heat_capacity_cp_j_kg_k}};
-                }
-                DryMixingStepDiagnostics local_boundary_layer;
-                apply_dry_boundary_layer(
-                    grid_, coordinate_, *surface_boundary_, stage, workspace_.derived,
-                    config_.planet, *config_.surface, config_.boundary_layer,
-                    interval.boundary_layer_interval_s, local_boundary_layer,
-                    workspace_.dry_mixing_workspace,
-                    moist_boundary ? &*moist_boundary : nullptr);
-                boundary_layer_calls += grid_.cell_count();
-                accumulate_boundary_layer_diagnostics(
-                    boundary_layer_diagnostics, local_boundary_layer,
-                    interval.boundary_layer_interval_s / dynamics_time_step_s);
-                if (moist_boundary) {
-                  stage.cumulative_evaporation_kg +=
-                      local_boundary_layer.evaporation_kg;
-                  stage.cumulative_runoff_kg += local_boundary_layer.runoff_kg;
-                  stage.cumulative_ocean_water_change_kg +=
-                      local_boundary_layer.ocean_water_change_kg;
-                  stage.cumulative_external_outflow_kg +=
-                      local_boundary_layer.external_outflow_kg;
-                  moist_diagnostics.evaporation_kg +=
-                      local_boundary_layer.evaporation_kg;
-                  moist_diagnostics.runoff_kg += local_boundary_layer.runoff_kg;
-                  moist_diagnostics.ocean_water_change_kg +=
-                      local_boundary_layer.ocean_water_change_kg;
-                  moist_diagnostics.external_outflow_kg +=
-                      local_boundary_layer.external_outflow_kg;
-                  moist_diagnostics.water_budget_residual_kg +=
-                      local_boundary_layer.water_budget_residual_kg;
-                  moist_diagnostics.moist_enthalpy_budget_residual_j +=
-                      local_boundary_layer.moist_enthalpy_budget_residual_j;
-                }
-                diagnose_and_validate(stage);
-              }
-              DryConvectionDiagnostics local_convection;
-              if (interval.boundary_layer || interval.convection) {
-                local_convection =
-                    apply_dry_convection(config_, grid_, stage, workspace_.derived,
-                                         workspace_.convective_adjustment,
-                                         workspace_.convective_adjustment_workspace);
-              }
-              if (config_.convection.kind != ConvectionKind::kNone &&
-                  (interval.boundary_layer || interval.convection)) {
-                convection_calls += grid_.cell_count();
-                accumulate_convection_diagnostics(
-                    convection_diagnostics, local_convection,
-                    interval.event_interval_s / dynamics_time_step_s,
-                    has_convection_diagnostics);
-                diagnose_and_validate(stage);
-              }
-              if (interval.saturation_adjustment) {
-                auto convection = config_.convection;
-                if (!interval.convection) convection.kind = ConvectionKind::kNone;
-                MoistPhysicsStepDiagnostics local;
-                apply_moist_column_physics(
-                    grid_, coordinate_, *surface_boundary_, stage, workspace_.derived,
-                    *water_vapor_tracer, config_.planet, config_.moisture,
-                    convection, *config_.surface,
-                    interval.convection
-                        ? interval.convection_interval_s
-                        : interval.event_interval_s,
-                    local,
-                    workspace_.moist_workspace);
-                accumulate_moist_physics_diagnostics(moist_diagnostics, local);
-                diagnose_and_validate(stage);
-              }
-            } catch (const std::runtime_error&) {
-              stage = saved_stage;
-              boundary_layer_diagnostics = saved_boundary_layer;
-              convection_diagnostics = saved_convection;
-              moist_diagnostics = saved_moisture;
-              has_convection_diagnostics = saved_has_convection;
-              if (interval.refinement == kMaximumPhysicsSubstepRefinements) throw;
-              ++physics_retries;
-              const auto half = [&](PendingPhysicsInterval part) {
-                part.event_interval_s *= 0.5;
-                part.boundary_layer_interval_s *= 0.5;
-                part.convection_interval_s *= 0.5;
-                ++part.refinement;
-                return part;
-              };
-              const auto first = half(interval);
-              auto second = first;
-              second.event_interval_s = interval.event_interval_s - first.event_interval_s;
-              second.boundary_layer_interval_s =
-                  interval.boundary_layer_interval_s -
-                  first.boundary_layer_interval_s;
-              second.convection_interval_s = interval.convection_interval_s -
-                                              first.convection_interval_s;
-              pending_intervals[pending_count++] = second;
-              pending_intervals[pending_count++] = first;
+  const auto apply_local_physics = [&](DryHydrostaticState& stage,
+                                       const Real dynamics_time_step_s,
+                                       DryMixingStepDiagnostics&
+                                           boundary_layer_diagnostics,
+                                       DryConvectionDiagnostics& convection_diagnostics,
+                                       MoistPhysicsStepDiagnostics& moist_diagnostics,
+                                       ScheduledRadiationStep& scheduled_radiation,
+                                       std::size_t& boundary_layer_calls,
+                                       std::size_t& convection_calls,
+                                       std::size_t& physics_substeps,
+                                       std::size_t& physics_retries) {
+    std::vector<PhysicsEvent> events;
+    if (config_.physics_schedule.kind == PhysicsScheduleKind::kLegacy) {
+      std::size_t substeps = 1;
+      if (config_.moisture.kind == MoistureKind::kDiluteWater) {
+        Real maximum_substep = config_.moisture.maximum_physics_substep_s;
+        if (config_.convection.kind == ConvectionKind::kSimpleBettsMiller)
+          maximum_substep =
+              std::min(maximum_substep, 0.25 * config_.convection.relaxation_time_s);
+        substeps =
+            static_cast<std::size_t>(std::ceil(dynamics_time_step_s / maximum_substep));
+      }
+      const Real local_time_step = dynamics_time_step_s / static_cast<Real>(substeps);
+      events.reserve(substeps);
+      for (std::size_t substep = 0; substep < substeps; ++substep)
+        events.push_back(
+            {.end_time_offset_s = (substep + 1) * local_time_step,
+             .interval_s = local_time_step,
+             .radiation_interval_s = 0.0,
+             .boundary_layer_interval_s = local_time_step,
+             .convection_interval_s = local_time_step,
+             .radiation = false,
+             .boundary_layer = config_.boundary_layer.kind != BoundaryLayerKind::kNone,
+             .convection = config_.convection.kind != ConvectionKind::kNone,
+             .saturation_adjustment =
+                 config_.moisture.kind == MoistureKind::kDiluteWater});
+    } else {
+      // Radiation still resides in the dynamics RHS in this staged commit. Its
+      // deadline joins this event union when the cached-flux update is moved out.
+      events =
+          make_physics_events(config_.physics_schedule, dynamics_time_step_s,
+                              config_.physics.kind == PhysicsKind::kGrayRadiation,
+                              config_.boundary_layer.kind != BoundaryLayerKind::kNone,
+                              config_.convection.kind != ConvectionKind::kNone,
+                              config_.moisture.kind == MoistureKind::kDiluteWater);
+    }
+    boundary_layer_diagnostics = {};
+    convection_diagnostics = {};
+    moist_diagnostics = {};
+    scheduled_radiation = {};
+    bool has_convection_diagnostics = false;
+    constexpr std::size_t kMaximumPhysicsSubstepRefinements = 10;
+    struct PendingPhysicsInterval {
+      Real event_interval_s;
+      Real end_time_offset_s;
+      Real radiation_interval_s;
+      Real boundary_layer_interval_s;
+      Real convection_interval_s;
+      std::size_t refinement;
+      bool radiation;
+      bool boundary_layer;
+      bool convection;
+      bool saturation_adjustment;
+    };
+    DryHydrostaticState saved_stage;
+    std::array<PendingPhysicsInterval, kMaximumPhysicsSubstepRefinements + 1>
+        pending_intervals{};
+    for (const auto& event : events) {
+      std::size_t pending_count = 0;
+      pending_intervals[pending_count++] = {
+          .event_interval_s = event.interval_s,
+          .end_time_offset_s = event.end_time_offset_s,
+          .radiation_interval_s = event.radiation_interval_s,
+          .boundary_layer_interval_s = event.boundary_layer_interval_s,
+          .convection_interval_s = event.convection_interval_s,
+          .refinement = 0,
+          .radiation = event.radiation,
+          .boundary_layer = event.boundary_layer,
+          .convection = event.convection,
+          .saturation_adjustment = event.saturation_adjustment};
+      while (pending_count > 0) {
+        const auto interval = pending_intervals[--pending_count];
+        saved_stage = stage;
+        const auto saved_boundary_layer = boundary_layer_diagnostics;
+        const auto saved_convection = convection_diagnostics;
+        const auto saved_moisture = moist_diagnostics;
+        const auto saved_radiation_rates = scheduled_radiation.rates;
+        const auto saved_radiation_stable = scheduled_radiation.stable_time_step_s;
+        const auto saved_radiation_surface =
+            scheduled_radiation.surface_temperature_after_update;
+        const bool saved_has_convection = has_convection_diagnostics;
+        ++physics_substeps;
+        try {
+          diagnose_and_validate(stage);
+          if (interval.radiation) {
+            const Real evaluation_time_s =
+                stage.time_s - dynamics_time_step_s + interval.end_time_offset_s;
+            const auto orbit_state =
+                evaluate_orbit(*config_.orbit, config_.planet.rotation_rate_rad_s,
+                               evaluation_time_s - config_.run.start_time_s);
+            const auto wall_start = std::chrono::steady_clock::now();
+            gray_radiation_tendency(
+                grid_, coordinate_, *surface_boundary_, stage.surface_temperature_k,
+                workspace_.derived, stage.surface_pressure_pa, config_.planet,
+                *config_.surface, *config_.radiation, orbit_state,
+                config_.boundary_layer.kind == BoundaryLayerKind::kNone,
+                workspace_.gray_radiation_physics, workspace_.gray_radiation_workspace);
+            scheduled_radiation.wall_seconds +=
+                std::chrono::duration<Real>(std::chrono::steady_clock::now() -
+                                            wall_start)
+                    .count();
+            scheduled_radiation.column_call_count += grid_.cell_count();
+            const auto& tendency = workspace_.gray_radiation_physics;
+            scheduled_radiation.stable_time_step_s = std::min(
+                scheduled_radiation.stable_time_step_s, tendency.stable_time_step_s);
+            if (interval.radiation_interval_s > tendency.stable_time_step_s)
+              throw std::runtime_error(
+                  "scheduled radiation violates its explicit stability limit");
+            for (std::size_t n = 0; n < stage.potential_temperature_mass_k_kg_m2.size();
+                 ++n) {
+              stage.potential_temperature_mass_k_kg_m2[n] +=
+                  interval.radiation_interval_s *
+                  tendency.potential_temperature_mass_k_kg_m2_s[n];
+              stage.horizontal_momentum_mass_kg_m_s[n] =
+                  stage.horizontal_momentum_mass_kg_m_s[n] +
+                  interval.radiation_interval_s *
+                      tendency.horizontal_momentum_mass_kg_m_s2[n];
             }
+            for (std::size_t cell = 0; cell < stage.surface_temperature_k.size();
+                 ++cell)
+              stage.surface_temperature_k[cell] +=
+                  interval.radiation_interval_s *
+                  tendency.surface_temperature_k_s[cell];
+            scheduled_radiation.rates = weighted_radiation_diagnostics(
+                scheduled_radiation.rates, 1.0, tendency.diagnostics,
+                interval.radiation_interval_s / dynamics_time_step_s);
+            scheduled_radiation.surface_temperature_after_update =
+                stage.surface_temperature_k;
+            project_momentum(stage);
+            diagnose_and_validate(stage);
           }
+          if (interval.boundary_layer) {
+            std::optional<MoistBoundaryLayerCoupling> moist_boundary;
+            if (config_.moisture.kind == MoistureKind::kDiluteWater &&
+                config_.moisture.surface_exchange == SurfaceMoistureExchange::kBulk) {
+              moist_boundary = MoistBoundaryLayerCoupling{
+                  .water_vapor_tracer = *water_vapor_tracer,
+                  .land_water_kg_m2 = stage.land_water_kg_m2,
+                  .bucket_capacity_kg_m2 = config_.surface->hydrology_capacity_kg_m2,
+                  .thermodynamics = {
+                      .gas_constant_dry_air_j_kg_k = config_.planet.gas_constant_j_kg_k,
+                      .heat_capacity_cp_j_kg_k =
+                          config_.planet.heat_capacity_cp_j_kg_k}};
+            }
+            DryMixingStepDiagnostics local_boundary_layer;
+            apply_dry_boundary_layer(
+                grid_, coordinate_, *surface_boundary_, stage, workspace_.derived,
+                config_.planet, *config_.surface, config_.boundary_layer,
+                interval.boundary_layer_interval_s, local_boundary_layer,
+                workspace_.dry_mixing_workspace,
+                moist_boundary ? &*moist_boundary : nullptr);
+            boundary_layer_calls += grid_.cell_count();
+            accumulate_boundary_layer_diagnostics(
+                boundary_layer_diagnostics, local_boundary_layer,
+                interval.boundary_layer_interval_s / dynamics_time_step_s);
+            if (moist_boundary) {
+              stage.cumulative_evaporation_kg += local_boundary_layer.evaporation_kg;
+              stage.cumulative_runoff_kg += local_boundary_layer.runoff_kg;
+              stage.cumulative_ocean_water_change_kg +=
+                  local_boundary_layer.ocean_water_change_kg;
+              stage.cumulative_external_outflow_kg +=
+                  local_boundary_layer.external_outflow_kg;
+              moist_diagnostics.evaporation_kg += local_boundary_layer.evaporation_kg;
+              moist_diagnostics.runoff_kg += local_boundary_layer.runoff_kg;
+              moist_diagnostics.ocean_water_change_kg +=
+                  local_boundary_layer.ocean_water_change_kg;
+              moist_diagnostics.external_outflow_kg +=
+                  local_boundary_layer.external_outflow_kg;
+              moist_diagnostics.water_budget_residual_kg +=
+                  local_boundary_layer.water_budget_residual_kg;
+              moist_diagnostics.moist_enthalpy_budget_residual_j +=
+                  local_boundary_layer.moist_enthalpy_budget_residual_j;
+            }
+            diagnose_and_validate(stage);
+          }
+          DryConvectionDiagnostics local_convection;
+          if (interval.boundary_layer || interval.convection) {
+            local_convection =
+                apply_dry_convection(config_, grid_, stage, workspace_.derived,
+                                     workspace_.convective_adjustment,
+                                     workspace_.convective_adjustment_workspace);
+          }
+          if (config_.convection.kind != ConvectionKind::kNone &&
+              (interval.boundary_layer || interval.convection)) {
+            convection_calls += grid_.cell_count();
+            accumulate_convection_diagnostics(
+                convection_diagnostics, local_convection,
+                interval.event_interval_s / dynamics_time_step_s,
+                has_convection_diagnostics);
+            diagnose_and_validate(stage);
+          }
+          if (interval.saturation_adjustment) {
+            auto convection = config_.convection;
+            if (!interval.convection) convection.kind = ConvectionKind::kNone;
+            MoistPhysicsStepDiagnostics local;
+            apply_moist_column_physics(
+                grid_, coordinate_, *surface_boundary_, stage, workspace_.derived,
+                *water_vapor_tracer, config_.planet, config_.moisture, convection,
+                *config_.surface,
+                interval.convection ? interval.convection_interval_s
+                                    : interval.event_interval_s,
+                local, workspace_.moist_workspace);
+            accumulate_moist_physics_diagnostics(moist_diagnostics, local);
+            diagnose_and_validate(stage);
+          }
+        } catch (const std::runtime_error&) {
+          stage = saved_stage;
+          boundary_layer_diagnostics = saved_boundary_layer;
+          convection_diagnostics = saved_convection;
+          moist_diagnostics = saved_moisture;
+          scheduled_radiation.rates = saved_radiation_rates;
+          scheduled_radiation.stable_time_step_s = saved_radiation_stable;
+          scheduled_radiation.surface_temperature_after_update =
+              saved_radiation_surface;
+          has_convection_diagnostics = saved_has_convection;
+          if (interval.refinement == kMaximumPhysicsSubstepRefinements) throw;
+          ++physics_retries;
+          const auto half = [&](PendingPhysicsInterval part) {
+            part.event_interval_s *= 0.5;
+            part.radiation_interval_s *= 0.5;
+            part.boundary_layer_interval_s *= 0.5;
+            part.convection_interval_s *= 0.5;
+            ++part.refinement;
+            return part;
+          };
+          auto first = half(interval);
+          auto second = first;
+          const Real split_time = interval.end_time_offset_s - first.event_interval_s;
+          first.end_time_offset_s = split_time;
+          second.end_time_offset_s = interval.end_time_offset_s;
+          second.event_interval_s = interval.event_interval_s - first.event_interval_s;
+          second.radiation_interval_s =
+              interval.radiation_interval_s - first.radiation_interval_s;
+          second.boundary_layer_interval_s =
+              interval.boundary_layer_interval_s - first.boundary_layer_interval_s;
+          second.convection_interval_s =
+              interval.convection_interval_s - first.convection_interval_s;
+          pending_intervals[pending_count++] = second;
+          pending_intervals[pending_count++] = first;
         }
-      };
+      }
+    }
+  };
   if (config_.dry_hydrostatic.time_integrator !=
       DryHydrostaticTimeIntegrator::kExplicitSspRk3) {
     const auto& parameters = *config_.semi_implicit;
@@ -1396,7 +1470,8 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     const bool rhs_is_time_independent =
         config_.physics.kind != PhysicsKind::kPlanetaryNewtonian &&
         config_.physics.kind != PhysicsKind::kSurfaceEnergyBalance &&
-        config_.physics.kind != PhysicsKind::kGrayRadiation;
+        (config_.physics.kind != PhysicsKind::kGrayRadiation ||
+         config_.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals);
     while (s.time_s < end) {
       if (cancel && cancel()) {
         // A cancellation can arrive between observations. Flush the pending
@@ -1428,6 +1503,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       DryMixingStepDiagnostics accepted_boundary_layer{};
       DryConvectionDiagnostics accepted_convection{};
       MoistPhysicsStepDiagnostics accepted_moisture{};
+      ScheduledRadiationStep scheduled_radiation{};
       std::vector<Real> accepted_radiation_surface_temperature;
       const DryHydrostaticState initial = s;
       if (reference_is_per_step) update_semi_implicit_reference(initial);
@@ -1618,11 +1694,18 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         }
         candidate.step = initial.step + 1;
         diagnose_and_validate(candidate);
-        accepted_radiation_surface_temperature = candidate.surface_temperature_k;
+        if (config_.physics_schedule.kind == PhysicsScheduleKind::kLegacy)
+          accepted_radiation_surface_temperature = candidate.surface_temperature_k;
         apply_local_physics(
             candidate, attempted_dt, accepted_boundary_layer, accepted_convection,
-            accepted_moisture, boundary_layer_column_call_count,
+            accepted_moisture, scheduled_radiation, boundary_layer_column_call_count,
             convection_column_call_count, physics_substep_count, physics_retry_count);
+        if (config_.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals) {
+          radiation_column_call_count += scheduled_radiation.column_call_count;
+          radiation_wall_seconds += scheduled_radiation.wall_seconds;
+          accepted_radiation_surface_temperature =
+              scheduled_radiation.surface_temperature_after_update;
+        }
         return candidate;
       };
 
@@ -1664,7 +1747,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                ark2_weights[2] * value(ark2_stage_rhs[1]);
       };
       const Real thermal_energy_rate =
-          use_ark2_comparison
+          config_.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals
+              ? scheduled_radiation.rates.dry_thermal_energy_rate_w
+          : use_ark2_comparison
               ? ark2_weighted([](const DryHydrostaticRhs& rhs) {
                   return rhs.physics_diagnostics.thermal_energy_rate_w;
                 })
@@ -1673,7 +1758,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                     parameters.implicit_weight *
                         candidate_rhs.physics_diagnostics.thermal_energy_rate_w;
       const Real drag_energy_rate =
-          use_ark2_comparison
+          config_.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals
+              ? scheduled_radiation.rates.rayleigh_drag_work_w
+          : use_ark2_comparison
               ? ark2_weighted([](const DryHydrostaticRhs& rhs) {
                   return rhs.physics_diagnostics.rayleigh_drag_work_w;
                 })
@@ -1705,8 +1792,10 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         return result;
       };
       Real radiation_stable_time_step_s =
-          std::min(initial_rhs.radiation_stable_time_step_s,
-                   candidate_rhs.radiation_stable_time_step_s);
+          config_.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals
+              ? scheduled_radiation.stable_time_step_s
+              : std::min(initial_rhs.radiation_stable_time_step_s,
+                         candidate_rhs.radiation_stable_time_step_s);
       if (use_ark2_comparison)
         radiation_stable_time_step_s =
             std::min({radiation_stable_time_step_s,
@@ -1755,7 +1844,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           .wall_seconds_rhs = rhs_wall_seconds,
           .wall_seconds_linear_solve = linear_solve_wall_seconds};
       if (config_.physics.kind == PhysicsKind::kGrayRadiation) {
-        if (use_ark2_comparison)
+        if (config_.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals)
+          step.radiation_rates = scheduled_radiation.rates;
+        else if (use_ark2_comparison)
           step.radiation_rates = weighted_radiation_diagnostics(
               initial_rhs.radiation_diagnostics, ark2_weights[0],
               ark2_stage_rhs[0].radiation_diagnostics, ark2_weights[1],
@@ -1831,6 +1922,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     DryMixingStepDiagnostics accepted_boundary_layer{};
     DryConvectionDiagnostics accepted_convection{};
     MoistPhysicsStepDiagnostics accepted_moisture{};
+    ScheduledRadiationStep scheduled_radiation{};
     std::vector<Real> accepted_radiation_surface_temperature;
     FullRhsEvaluationCounts full_rhs{.initial = 1};
     rhs(initial, rhs1);
@@ -1904,11 +1996,18 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       project_momentum(next);
       try {
         diagnose_and_validate(next);
-        accepted_radiation_surface_temperature = next.surface_temperature_k;
-        apply_local_physics(next, dt, accepted_boundary_layer, accepted_convection,
-                            accepted_moisture, boundary_layer_column_call_count,
-                            convection_column_call_count, physics_substep_count,
-                            physics_retry_count);
+        if (config_.physics_schedule.kind == PhysicsScheduleKind::kLegacy)
+          accepted_radiation_surface_temperature = next.surface_temperature_k;
+        apply_local_physics(
+            next, dt, accepted_boundary_layer, accepted_convection, accepted_moisture,
+            scheduled_radiation, boundary_layer_column_call_count,
+            convection_column_call_count, physics_substep_count, physics_retry_count);
+        if (config_.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals) {
+          radiation_column_call_count += scheduled_radiation.column_call_count;
+          radiation_wall_seconds += scheduled_radiation.wall_seconds;
+          accepted_radiation_surface_temperature =
+              scheduled_radiation.surface_temperature_after_update;
+        }
       } catch (const std::runtime_error&) {
         ++invariant_retry_count;
         halve_time_step(initial, dt);
@@ -1918,13 +2017,19 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       DryHydrostaticStepDiagnostics step{
           .full_rhs = full_rhs,
           .thermal_energy_contribution_j =
-              dt * (rhs1.physics_diagnostics.thermal_energy_rate_w / 6.0 +
-                    rhs2.physics_diagnostics.thermal_energy_rate_w / 6.0 +
-                    2.0 * rhs3.physics_diagnostics.thermal_energy_rate_w / 3.0),
+              dt *
+              (config_.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals
+                   ? scheduled_radiation.rates.dry_thermal_energy_rate_w
+                   : rhs1.physics_diagnostics.thermal_energy_rate_w / 6.0 +
+                         rhs2.physics_diagnostics.thermal_energy_rate_w / 6.0 +
+                         2.0 * rhs3.physics_diagnostics.thermal_energy_rate_w / 3.0),
           .rayleigh_drag_energy_contribution_j =
-              dt * (rhs1.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
-                    rhs2.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
-                    2.0 * rhs3.physics_diagnostics.rayleigh_drag_work_w / 3.0),
+              dt *
+              (config_.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals
+                   ? scheduled_radiation.rates.rayleigh_drag_work_w
+                   : rhs1.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
+                         rhs2.physics_diagnostics.rayleigh_drag_work_w / 6.0 +
+                         2.0 * rhs3.physics_diagnostics.rayleigh_drag_work_w / 3.0),
           .boundary_layer = accepted_boundary_layer,
           .convection = accepted_convection,
           .moisture = accepted_moisture,
@@ -1934,9 +2039,10 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                     2.0 * rhs3.diffusion_kinetic_energy_rate_w / 3.0),
           .requested_time_step_s = requested_dt,
           .accepted_time_step_s = dt,
-          .radiation_stable_time_step_s = std::min({rhs1.radiation_stable_time_step_s,
-                                                    rhs2.radiation_stable_time_step_s,
-                                                    rhs3.radiation_stable_time_step_s}),
+          .radiation_stable_time_step_s = std::min(
+              {rhs1.radiation_stable_time_step_s, rhs2.radiation_stable_time_step_s,
+               rhs3.radiation_stable_time_step_s,
+               scheduled_radiation.stable_time_step_s}),
           .retry_count = cfl_retry_count + invariant_retry_count,
           .cfl_retry_count = cfl_retry_count,
           .invariant_retry_count = invariant_retry_count,
@@ -1947,9 +2053,12 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           .physics_retry_count = physics_retry_count,
           .radiation_wall_seconds = radiation_wall_seconds};
       if (config_.physics.kind == PhysicsKind::kGrayRadiation)
-        step.radiation_rates = weighted_radiation_diagnostics(
-            rhs1.radiation_diagnostics, 1.0 / 6.0, rhs2.radiation_diagnostics,
-            1.0 / 6.0, rhs3.radiation_diagnostics, 2.0 / 3.0);
+        step.radiation_rates =
+            config_.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals
+                ? scheduled_radiation.rates
+                : weighted_radiation_diagnostics(rhs1.radiation_diagnostics, 1.0 / 6.0,
+                                                 rhs2.radiation_diagnostics, 1.0 / 6.0,
+                                                 rhs3.radiation_diagnostics, 2.0 / 3.0);
       if (config_.physics.kind == PhysicsKind::kGrayRadiation)
         step.radiation_budget = integrate_gray_radiation_budget(
             grid_, *surface_boundary_, *config_.surface, initial.surface_temperature_k,
