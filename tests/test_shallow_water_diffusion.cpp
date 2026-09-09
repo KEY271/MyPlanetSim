@@ -1,6 +1,7 @@
 #include <cmath>
 
 #include "myplanetsim/dynamics/shallow_water_diffusion.hpp"
+#include "myplanetsim/numerics/diffusion_stability.hpp"
 #include "support/test.hpp"
 
 namespace {

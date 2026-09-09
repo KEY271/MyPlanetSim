@@ -22,6 +22,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 12 実装計画](docs/phase-12-plan.md): 既存モデルを参考にした乾燥対流調節・境界層、陰的地表交換、過程別収支と検証順序
 - [Phase 13 実装計画](docs/phase-13-plan.md): 複数 tracer、希薄水蒸気・蒸発・即時降水、SBM 型対流、陸面 bucket と水・潜熱収支の設計
 - [Phase 14 実装計画](docs/phase-14-plan.md): RHS 評価削減、物理の頻度分離、OpenMP、flux 融合、配列・SIMD・tile 最適化の比較と採用基準
+- [Phase 15 実装計画](docs/phase-15-plan.md): shallow-water・対話実行・Chromium テストの廃止、地形と月平均などの期間平均場を閲覧する visualizer への整理（計画）
 - [科学・数値規約](docs/conventions.md): 単位、座標、添字、符号、誤差・保存量の共通定義
 - [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
 - [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果

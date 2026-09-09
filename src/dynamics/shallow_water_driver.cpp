@@ -15,6 +15,7 @@
 #include "myplanetsim/dynamics/shallow_water_initial_edits.hpp"
 #include "myplanetsim/dynamics/shallow_water_rhs.hpp"
 #include "myplanetsim/dynamics/surface_orography.hpp"
+#include "myplanetsim/numerics/diffusion_stability.hpp"
 
 namespace mps {
 namespace {

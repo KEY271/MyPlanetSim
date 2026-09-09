@@ -111,6 +111,7 @@ add_library(
   src/physics/planetary_newtonian.cpp
   src/physics/surface_energy_balance.cpp
   src/numerics/compatible_operators.cpp
+  src/numerics/diffusion_stability.cpp
   src/numerics/gmres.cpp
   src/numerics/helmholtz_solver.cpp
   src/numerics/spherical_operators.cpp
