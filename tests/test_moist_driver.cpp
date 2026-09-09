@@ -3,6 +3,7 @@
 
 #include "myplanetsim/config/experiment_config.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
+#include "myplanetsim/physics/moist_physics_coupling.hpp"
 #include "support/test.hpp"
 
 namespace {
@@ -135,6 +136,33 @@ namespace {
   return total;
 }
 
+// Replace the isothermal start by a warm lapse-rate profile that is humid in the
+// lowest two layers and drier aloft, so the Simple Betts-Miller scheme reaches its
+// deep and shallow branches instead of staying inactive.
+void make_conditionally_unstable(const mps::DryHydrostaticDriver& driver,
+                                 mps::DryHydrostaticState& state) {
+  const auto derived = driver.diagnose(state);
+  const std::size_t volume = derived.cells * derived.levels;
+  for (std::size_t cell = 0; cell < derived.cells; ++cell)
+    for (std::size_t level = 0; level < derived.levels; ++level) {
+      const std::size_t index =
+          mps::dry_hydrostatic_offset(cell, level, derived.levels);
+      const double pressure = derived.pressure_pa[index];
+      const double temperature =
+          300.0 * std::pow(pressure / 100000.0, 0.19) + 0.5 * (level % 2);
+      const double saturation =
+          0.622 * 611.2 *
+          std::exp(17.67 * (temperature - 273.15) /
+                   (temperature - 273.15 + 243.5)) /
+          pressure;
+      const double relative_humidity = level + 2 >= derived.levels ? 0.95 : 0.5;
+      state.potential_temperature_mass_k_kg_m2[index] =
+          derived.air_mass_kg_m2[index] * temperature / derived.exner_full[index];
+      state.tracer_mass_kg_m2[volume + index] =
+          derived.air_mass_kg_m2[index] * relative_humidity * saturation;
+    }
+}
+
 }  // namespace
 
 MPS_TEST_CASE("moist config round trips without changing its schema") {
@@ -216,6 +244,62 @@ MPS_TEST_CASE("process scheduler applies independent accepted intervals") {
     MPS_CHECK_NEAR(water_inventory(driver, state), initial_water,
                    2e-12 * initial_water);
   }
+}
+
+// A reference diagnosed for an earlier state neither dries a deep column by exactly
+// its rain nor conserves a shallow column's water once the column has drifted. Such
+// a reference must be re-diagnosed; applying it would create or destroy water that
+// no precipitation or evaporation accounts for.
+MPS_TEST_CASE("a drifted convection reference is re-diagnosed, not applied") {
+  auto config = moist_config(true);
+  // Two levels cannot resolve a convecting column; use a deeper column instead.
+  config.vertical.levels = 8;
+  config.vertical.a_half_pa = {20000.0, 17500.0, 15000.0, 12500.0, 10000.0,
+                               7500.0,  5000.0,  2500.0,  0.0};
+  config.vertical.b_half = {0.0,   0.125, 0.25,  0.375, 0.5,
+                            0.625, 0.75,  0.875, 1.0};
+  config.semi_implicit->maximum_implicit_modes = 5;
+  config.validate();
+  const mps::DryHydrostaticDriver driver(config);
+  auto state = driver.initial_state();
+  make_conditionally_unstable(driver, state);
+  const mps::AtmosphericHybridCoordinate coordinate(
+      mps::HybridPressureCoefficients{config.vertical.a_half_pa,
+                                      config.vertical.b_half},
+      config.vertical.minimum_surface_pressure_pa,
+      config.vertical.maximum_surface_pressure_pa,
+      config.vertical.minimum_pressure_thickness_pa);
+  const std::size_t cells = driver.grid().cell_count();
+  const std::size_t levels = config.vertical.levels;
+  mps::MoistPhysicsCouplingWorkspace workspace;
+  mps::reset_sbm_reference_cache(workspace, cells);
+  const auto convect = [&](const mps::SbmExecution execution) {
+    const auto derived = driver.diagnose(state);
+    mps::MoistPhysicsStepDiagnostics diagnostics;
+    mps::apply_moist_column_physics(
+        driver.grid(), coordinate, *driver.surface_boundary(), state, derived, 1,
+        config.planet, config.moisture, config.convection, *config.surface, 300.0,
+        diagnostics, workspace, execution);
+    return diagnostics;
+  };
+  const double water_scale = water_inventory(driver, state);
+
+  const auto fresh = convect(mps::SbmExecution::kDiagnoseCacheAndApply);
+  MPS_CHECK_EQ(fresh.sbm_diagnostic_column_count, cells);
+  MPS_CHECK_EQ(fresh.sbm_relaxation_column_count, cells);
+  MPS_CHECK(fresh.deep_column_count + fresh.shallow_column_count > 0U);
+  MPS_CHECK(std::abs(fresh.water_budget_residual_kg) <= 1e-12 * water_scale);
+
+  // Moisten the interior of every column. The bottom level, which the cache keys
+  // on, is untouched, so only the column balance can reveal the stale reference.
+  for (std::size_t cell = 0; cell < cells; ++cell)
+    for (std::size_t level = 1; level + 1 < levels; ++level)
+      state.tracer_mass_kg_m2[cells * levels +
+                              mps::dry_hydrostatic_offset(cell, level, levels)] *= 1.2;
+  const auto drifted = convect(mps::SbmExecution::kApplyCached);
+  MPS_CHECK(drifted.sbm_diagnostic_column_count > 0U);
+  MPS_CHECK_EQ(drifted.sbm_relaxation_column_count, cells);
+  MPS_CHECK(std::abs(drifted.water_budget_residual_kg) <= 1e-12 * water_scale);
 }
 
 MPS_TEST_CASE("moist checkpoint preserves bucket and accepted ledgers") {

@@ -235,7 +235,11 @@ int main(int argc, char** argv) {
           source.vertical.b_half != config.vertical.b_half)
         throw std::invalid_argument(
             "benchmark checkpoint grid/vertical coordinates differ");
-      // Permit only time integration and diagnostic/output controls to differ.
+      // Permit only time integration, physics scheduling and diagnostic/output
+      // controls to differ. The schedule splits the same parameterizations in time
+      // and leaves the checkpoint layout unchanged, so a developed state can be
+      // imported into either schedule; every physical parameter, tracer, surface and
+      // grid setting must still match.
       // This is an explicit comparison fixture import, not production restart.
       auto compatible = config;
       compatible.run = source.run;
@@ -244,6 +248,10 @@ int main(int argc, char** argv) {
       compatible.dry_hydrostatic.time_integrator =
           source.dry_hydrostatic.time_integrator;
       compatible.dry_hydrostatic.advective_cfl = source.dry_hydrostatic.advective_cfl;
+      compatible.physics_schedule = source.physics_schedule;
+      compatible.moisture.maximum_physics_substep_s =
+          source.moisture.maximum_physics_substep_s;
+      compatible.output_directory = source.output_directory;
       if (mps::config_fingerprint(compatible) != mps::config_fingerprint(source))
         throw std::invalid_argument(
             "benchmark checkpoint physical configuration differs");

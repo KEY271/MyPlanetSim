@@ -134,6 +134,8 @@ void apply_moist_column_physics(
           .minimum_temperature_k = 150.0,
           .thermodynamics = thermodynamics};
       const SimpleBettsMillerReference* reference = nullptr;
+      SbmReferenceCache* cache = nullptr;
+      bool reused_reference = false;
       if (sbm_execution == SbmExecution::kDiagnoseAndApply) {
         diagnose_sbm_reference(sbm_input, column_workspace.convection_reference);
         reference = &column_workspace.convection_reference;
@@ -141,27 +143,29 @@ void apply_moist_column_physics(
       } else {
         if (workspace.convection_cache.size() != cells)
           throw std::invalid_argument("SBM cache is not initialized for this grid");
-        auto& cache = workspace.convection_cache[cell];
+        cache = &workspace.convection_cache[cell];
         const Real bottom_temperature = sbm_input.temperature_k.back();
         const Real bottom_vapor = sbm_input.vapor_mixing_ratio.back();
         const bool state_invalidates =
-            cache.valid &&
-            (std::abs(bottom_temperature - cache.bottom_temperature_k) > 0.5 ||
-             std::abs(bottom_vapor - cache.bottom_vapor_mixing_ratio) >
-                 std::max(0.1 * cache.bottom_vapor_mixing_ratio, 1e-5) ||
-             std::abs(state.surface_pressure_pa[cell] - cache.surface_pressure_pa) /
-                     cache.surface_pressure_pa >
+            cache->valid &&
+            (std::abs(bottom_temperature - cache->bottom_temperature_k) > 0.5 ||
+             std::abs(bottom_vapor - cache->bottom_vapor_mixing_ratio) >
+                 std::max(0.1 * cache->bottom_vapor_mixing_ratio, 1e-5) ||
+             std::abs(state.surface_pressure_pa[cell] - cache->surface_pressure_pa) /
+                     cache->surface_pressure_pa >
                  0.01);
         if (sbm_execution == SbmExecution::kDiagnoseCacheAndApply ||
             state_invalidates) {
-          diagnose_sbm_reference(sbm_input, cache.reference);
-          cache.bottom_temperature_k = bottom_temperature;
-          cache.bottom_vapor_mixing_ratio = bottom_vapor;
-          cache.surface_pressure_pa = state.surface_pressure_pa[cell];
-          cache.valid = true;
+          diagnose_sbm_reference(sbm_input, cache->reference);
+          cache->bottom_temperature_k = bottom_temperature;
+          cache->bottom_vapor_mixing_ratio = bottom_vapor;
+          cache->surface_pressure_pa = state.surface_pressure_pa[cell];
+          cache->valid = true;
           ++diagnostics.sbm_diagnostic_column_count;
+        } else {
+          reused_reference = cache->valid;
         }
-        if (cache.valid) reference = &cache.reference;
+        if (cache->valid) reference = &cache->reference;
       }
       if (reference == nullptr) {
         column_workspace.convection = {};
@@ -172,6 +176,28 @@ void apply_moist_column_physics(
       } else {
         apply_sbm_relaxation(sbm_input, *reference, column_workspace.convection);
         ++diagnostics.sbm_relaxation_column_count;
+        // A freshly diagnosed reference balances the column exactly: a deep column
+        // dries by the rain it produces and a shallow column conserves its water.
+        // A reference kept from an earlier state does not, so the column water
+        // residual, not only the bottom-layer change, decides whether the stored
+        // reference is still usable.
+        if (reused_reference) {
+          const auto& applied = column_workspace.convection.diagnostics;
+          Real column_water = 0.0;
+          for (std::size_t level = 0; level < levels; ++level)
+            column_water += state.tracer_mass_kg_m2[vapor_begin + level];
+          const Real residual =
+              applied.column_water_change_kg_m2 + applied.convective_rain_kg_m2;
+          if (std::abs(residual) > 1e-12 * column_water + 1e-12) {
+            diagnose_sbm_reference(sbm_input, cache->reference);
+            cache->bottom_temperature_k = sbm_input.temperature_k.back();
+            cache->bottom_vapor_mixing_ratio = sbm_input.vapor_mixing_ratio.back();
+            cache->surface_pressure_pa = state.surface_pressure_pa[cell];
+            ++diagnostics.sbm_diagnostic_column_count;
+            apply_sbm_relaxation(sbm_input, cache->reference,
+                                 column_workspace.convection);
+          }
+        }
       }
       convective_rain = column_workspace.convection.diagnostics.convective_rain_kg_m2;
       const auto& convective = column_workspace.convection.diagnostics;
