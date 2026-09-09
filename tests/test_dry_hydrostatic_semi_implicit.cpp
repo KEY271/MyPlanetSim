@@ -40,7 +40,6 @@ constexpr mps::SemiImplicitParameters parameters{
       .ode = {},
       .grid = {12},
       .transport = {},
-      .shallow_water = {},
       .vertical = {.levels = 20,
                    .a_half_pa = coefficients.a_half_pa,
                    .b_half = coefficients.b_half,

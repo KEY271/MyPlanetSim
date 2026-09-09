@@ -245,26 +245,6 @@ EdgeTangentBasis edge_tangent_basis(const EdgeGeometry& edge) {
   return {.normal = normal, .tangent = normalize(cross(edge.center, normal))};
 }
 
-std::vector<Real> shallow_water_potential_vorticity(
-    const CubedSphereGrid& grid, const std::span<const Real> depth,
-    const std::span<const Vec3> velocity, const Vec3 rotation_vector_rad_s) {
-  validate_cell_values(grid, depth);
-  validate_cell_vectors(grid, velocity);
-  if (!is_finite(rotation_vector_rad_s)) {
-    throw std::invalid_argument("rotation vector is non-finite");
-  }
-  auto pv = finite_volume_curl(grid, velocity);
-  for (std::size_t cell = 0; cell < pv.size(); ++cell) {
-    if (!(depth[cell] > 0.0)) {
-      throw std::invalid_argument("potential vorticity requires positive depth");
-    }
-    pv[cell] =
-        (pv[cell] + 2.0 * dot(rotation_vector_rad_s, grid.cells()[cell].center)) /
-        depth[cell];
-  }
-  return pv;
-}
-
 std::vector<Vec3> finite_volume_vector_laplacian(
     const CubedSphereGrid& grid, const std::span<const Vec3> cell_vectors) {
   const auto divergence = finite_volume_vector_divergence(grid, cell_vectors);

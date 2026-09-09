@@ -27,27 +27,11 @@ struct OdeParameters {
   Real decay_rate_s_1 = 0.0;
 };
 
-enum class ExperimentKind {
-  kOde,
-  kSphereTransport,
-  kShallowWater,
-  kVerticalColumn,
-  kDryHydrostatic
-};
+enum class ExperimentKind { kOde, kSphereTransport, kVerticalColumn, kDryHydrostatic };
 enum class TransportScheme { kUpwind, kLinear };
 enum class LimiterKind { kNone, kBarthJespersen };
 enum class TransportTestCase { kSolidBody, kDeformational, kDivergent };
-enum class ShallowWaterScheme { kRusanov, kCompatible };
 enum class ReconstructionKind { kPiecewiseConstant, kLinear };
-enum class ShallowWaterTestCase {
-  kRest,
-  kLinearWave,
-  kGeostrophicAdjustment,
-  kWilliamson2,
-  kWilliamson5,
-  kWilliamson6,
-  kGalewsky
-};
 enum class DiffusionKind { kNone, kLaplacian, kBiharmonic };
 enum class PhysicsKind {
   kNone,
@@ -64,14 +48,7 @@ enum class CondensationKind { kNone, kSaturationAdjustment };
 enum class SurfaceMoistureExchange { kNone, kBulk };
 enum class SurfaceHydrologyKind { kNone, kBucket };
 enum class ForcingGeometry { kAxisymmetric, kSubstellar };
-enum class OrographyKind {
-  kFlat,
-  kDcmip200,
-  kWilliamson5,
-  kLinearBell,
-  kJw06,
-  kLatLonCsv
-};
+enum class OrographyKind { kFlat, kDcmip200, kLinearBell, kJw06, kLatLonCsv };
 enum class SurfaceGeography { kUniform, kEarth };
 enum class InitialConditionKind {
   kConstant,
@@ -121,22 +98,6 @@ struct TransportParameters {
   Real rotation_axis_y = 0.0;
   Real rotation_axis_z = 1.0;
   Real angular_speed_rad_s = 0.0;
-};
-
-struct ShallowWaterParameters {
-  ShallowWaterTestCase test_case = ShallowWaterTestCase::kWilliamson2;
-  ShallowWaterScheme scheme = ShallowWaterScheme::kRusanov;
-  ReconstructionKind reconstruction = ReconstructionKind::kLinear;
-  LimiterKind limiter = LimiterKind::kBarthJespersen;
-  Real cfl = 0.5;
-  Real mean_depth_m = 0.0;
-  Real depth_floor_m = 0.0;
-  DiffusionKind diffusion_kind = DiffusionKind::kNone;
-  Real diffusion_coefficient = 0.0;
-  Real flow_axis_x = 0.0;
-  Real flow_axis_y = 0.0;
-  Real flow_axis_z = 1.0;
-  Real maximum_velocity_m_s = 0.0;
 };
 
 struct VerticalColumnParameters {
@@ -295,7 +256,6 @@ struct ExperimentConfig {
   OdeParameters ode{};
   GridParameters grid{};
   TransportParameters transport{};
-  ShallowWaterParameters shallow_water{};
   VerticalColumnParameters vertical{};
   DryHydrostaticParameters dry_hydrostatic{};
   std::vector<TracerDescriptor> tracers{};
@@ -325,12 +285,8 @@ struct ExperimentConfig {
     TransportTestCase test_case) noexcept;
 [[nodiscard]] std::string_view initial_condition_name(
     InitialConditionKind initial_condition) noexcept;
-[[nodiscard]] std::string_view shallow_water_scheme_name(
-    ShallowWaterScheme scheme) noexcept;
 [[nodiscard]] std::string_view reconstruction_name(
     ReconstructionKind reconstruction) noexcept;
-[[nodiscard]] std::string_view shallow_water_test_case_name(
-    ShallowWaterTestCase test_case) noexcept;
 [[nodiscard]] std::string_view diffusion_kind_name(DiffusionKind kind) noexcept;
 [[nodiscard]] std::string_view vertical_test_case_name(
     VerticalTestCase test_case) noexcept;

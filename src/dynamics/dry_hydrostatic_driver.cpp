@@ -843,8 +843,8 @@ void DryHydrostaticDriver::rhs_with_components(
   h.potential_temperature_mass.assign(C * K, 0.0);
   h.tracer_mass.assign(d.tracer_count * C * K, 0.0);
   // Per-cell Courant condition (ADR 0011): dt * sum_f(lambda_f * L_f) / A_cell <= cfl,
-  // the same definition the transport and shallow-water solvers already use. The
-  // previous per-edge form was about four times weaker on a quadrilateral cell.
+  // matching the transport solver. The previous per-edge form was about four times
+  // weaker on a quadrilateral cell.
   if (compute_fast_wave_cfl) workspace.face_fast_wave_speed_length.assign(C * K, 0.0);
   workspace.face_advective_speed_length.assign(C * K, 0.0);
   auto& face_fast_wave_speed_length = workspace.face_fast_wave_speed_length;

@@ -31,8 +31,7 @@ DryHydrostaticDiffusionTendency dry_hydrostatic_diffusion_tendency(
     return tendency;
   }
   require_positive(diffusion_coefficient, "active diffusion coefficient");
-  // Biharmonic is the Laplacian applied twice with the opposite sign, matching the
-  // shallow-water convention so one configured coefficient means the same thing.
+  // Biharmonic is the Laplacian applied twice with the opposite sign.
   const bool biharmonic = kind == DiffusionKind::kBiharmonic;
   const Real signed_coefficient =
       biharmonic ? -diffusion_coefficient : diffusion_coefficient;

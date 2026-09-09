@@ -33,7 +33,6 @@ class SurfaceOrography {
     const OrographyParameters& parameters, const CubedSphereGrid& grid,
     const PlanetParameters& planet, const std::filesystem::path& source_directory = {});
 [[nodiscard]] Real dcmip_2_0_0_surface_height_m(Vec3 position);
-[[nodiscard]] Real williamson5_surface_height_m(Vec3 position);
 [[nodiscard]] Real linear_bell_surface_height_m(Vec3 position,
                                                 Real peak_height_m = 10.0);
 [[nodiscard]] Real jw06_surface_geopotential_m2_s2(

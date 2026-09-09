@@ -64,12 +64,11 @@ MPS_TEST_CASE("checkpoint rejects mismatches corruption and truncation") {
 
 MPS_TEST_CASE("checkpoint version 2 validates named state layout") {
   auto original = sample_checkpoint();
-  original.layout_id = "shallow_water_cell_v1";
+  original.layout_id = "named_cell_layout_v1";
   std::ostringstream output;
   mps::write_checkpoint(output, original);
   MPS_CHECK(output.str().find("version = 2") != std::string::npos);
-  MPS_CHECK(output.str().find("layout_id = shallow_water_cell_v1") !=
-            std::string::npos);
+  MPS_CHECK(output.str().find("layout_id = named_cell_layout_v1") != std::string::npos);
 
   std::istringstream valid(output.str());
   const auto restored = mps::read_checkpoint(valid, original.config_fingerprint,

@@ -51,36 +51,6 @@ transport.angular_speed_rad_s = 0.25
 output.directory = output
 )";
 
-constexpr std::string_view kValidShallowWaterConfig = R"(
-experiment.kind = shallow_water
-planet.radius_m = 2
-planet.rotation_rate_rad_s = 0.1
-planet.gravity_m_s2 = 3
-planet.gas_constant_j_kg_k = 4
-planet.heat_capacity_cp_j_kg_k = 5
-planet.reference_pressure_pa = 6
-run.start_time_s = 0
-run.end_time_s = 10
-run.time_step_s = 1
-run.random_seed = 7
-grid.cells_per_panel = 8
-shallow_water.test_case = williamson2
-shallow_water.scheme = rusanov
-shallow_water.reconstruction = linear
-shallow_water.limiter = barth_jespersen
-shallow_water.cfl = 0.5
-shallow_water.mean_depth_m = 10
-shallow_water.depth_floor_m = 0.1
-shallow_water.diffusion_kind = laplacian
-shallow_water.diffusion_coefficient = 0.25
-shallow_water.flow_axis_x = 1
-shallow_water.flow_axis_y = 2
-shallow_water.flow_axis_z = 3
-shallow_water.maximum_velocity_m_s = 4
-diagnostics.interval_steps = 2
-output.directory = output
-)";
-
 constexpr std::string_view kValidVerticalConfig = R"(
 experiment.kind = vertical_column
 planet.radius_m = 2
@@ -499,60 +469,6 @@ MPS_TEST_CASE("transport configuration rejects invalid numerical choices") {
   MPS_CHECK_THROWS_AS(parse(invalid), std::invalid_argument);
 }
 
-MPS_TEST_CASE("shallow-water configuration has a strict canonical round trip") {
-  const auto first = parse(kValidShallowWaterConfig);
-  MPS_CHECK(first.kind == mps::ExperimentKind::kShallowWater);
-  MPS_CHECK(first.shallow_water.scheme == mps::ShallowWaterScheme::kRusanov);
-  MPS_CHECK_NEAR(first.shallow_water.mean_depth_m, 10.0, 0.0);
-  std::ostringstream output;
-  mps::write_experiment_config(output, first);
-  const auto second = parse(output.str());
-  MPS_CHECK_EQ(second.shallow_water.diffusion_coefficient,
-               first.shallow_water.diffusion_coefficient);
-  MPS_CHECK_EQ(second.diagnostics.interval_steps, 2U);
-  MPS_CHECK_THROWS_AS(
-      parse(std::string(kValidShallowWaterConfig) + "transport.cfl = 0.5\n"),
-      std::runtime_error);
-}
-
-MPS_TEST_CASE("shallow-water configuration rejects invalid numerical choices") {
-  auto replace = [](std::string text, const std::string_view old_value,
-                    const std::string_view new_value) {
-    const auto position = text.find(old_value);
-    text.replace(position, old_value.size(), new_value);
-    return text;
-  };
-  MPS_CHECK_THROWS_AS(
-      parse(replace(std::string(kValidShallowWaterConfig), "shallow_water.cfl = 0.5",
-                    "shallow_water.cfl = 0")),
-      std::invalid_argument);
-  MPS_CHECK_THROWS_AS(parse(replace(std::string(kValidShallowWaterConfig),
-                                    "shallow_water.depth_floor_m = 0.1",
-                                    "shallow_water.depth_floor_m = 10")),
-                      std::invalid_argument);
-  MPS_CHECK_THROWS_AS(parse(replace(std::string(kValidShallowWaterConfig),
-                                    "shallow_water.diffusion_coefficient = 0.25",
-                                    "shallow_water.diffusion_coefficient = 0")),
-                      std::invalid_argument);
-  MPS_CHECK_THROWS_AS(parse(replace(std::string(kValidShallowWaterConfig),
-                                    "diagnostics.interval_steps = 2",
-                                    "diagnostics.interval_steps = 0")),
-                      std::invalid_argument);
-}
-
-MPS_TEST_CASE("Williamson 5 is Rusanov-only and requires its named terrain") {
-  auto text = std::string(kValidShallowWaterConfig);
-  auto position = text.find("williamson2");
-  text.replace(position, std::string("williamson2").size(), "williamson5");
-  const auto valid = parse(text + "orography.kind = williamson5\n");
-  MPS_CHECK(valid.shallow_water.test_case == mps::ShallowWaterTestCase::kWilliamson5);
-  position = text.find("shallow_water.scheme = rusanov");
-  text.replace(position, std::string("shallow_water.scheme = rusanov").size(),
-               "shallow_water.scheme = compatible");
-  MPS_CHECK_THROWS_AS(parse(text + "orography.kind = williamson5\n"),
-                      std::invalid_argument);
-}
-
 MPS_TEST_CASE("vertical-column configuration has a strict canonical round trip") {
   const auto first = parse(kValidVerticalConfig);
   MPS_CHECK(first.kind == mps::ExperimentKind::kVerticalColumn);
@@ -638,7 +554,7 @@ MPS_TEST_CASE("semi-implicit configuration is conditional and canonical") {
   MPS_CHECK_THROWS_AS(parse(std::string(kValidDryHydrostaticConfig) +
                             "semi_implicit.reference_temperature_k = 280\n"),
                       std::runtime_error);
-  MPS_CHECK_THROWS_AS(parse(std::string(kValidShallowWaterConfig) +
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidTransportConfig) +
                             "dry_hydrostatic.time_integrator = semi_implicit\n"),
                       std::runtime_error);
 }
@@ -687,14 +603,6 @@ MPS_TEST_CASE("orography configuration is bounded and conditionally canonical") 
   std::ostringstream flat_output;
   mps::write_experiment_config(flat_output, flat);
   MPS_CHECK(flat_output.str().find("orography.") == std::string::npos);
-
-  const auto analytic =
-      parse(std::string(kValidDryHydrostaticConfig) + "orography.kind = williamson5\n");
-  MPS_CHECK(analytic.orography.kind == mps::OrographyKind::kWilliamson5);
-  std::ostringstream analytic_output;
-  mps::write_experiment_config(analytic_output, analytic);
-  MPS_CHECK(analytic_output.str().find("orography.kind = williamson5\n") !=
-            std::string::npos);
 
   const std::string imported =
       std::string(kValidDryHydrostaticConfig) +

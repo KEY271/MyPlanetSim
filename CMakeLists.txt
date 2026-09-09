@@ -58,12 +58,10 @@ add_library(
   src/diagnostics/reductions.cpp
   src/diagnostics/climate_statistics.cpp
   src/diagnostics/period_mean.cpp
-  src/diagnostics/shallow_water_diagnostics.cpp
   src/diagnostics/vertical_column_diagnostics.cpp
   src/diagnostics/dry_hydrostatic_diagnostics.cpp
   src/diagnostics/moist_diagnostics.cpp
   src/diagnostics/planetary_scales.cpp
-  src/dynamics/shallow_water_state.cpp
   src/dynamics/dry_hydrostatic_state.cpp
   src/dynamics/tracer_registry.cpp
   src/dynamics/dry_hydrostatic_flux.cpp
@@ -80,17 +78,9 @@ add_library(
   src/dynamics/surface_boundary.cpp
   src/dynamics/vertical_column_state.cpp
   src/dynamics/vertical_column_driver.cpp
-  src/dynamics/shallow_water_compatible.cpp
-  src/dynamics/shallow_water_diffusion.cpp
-  src/dynamics/shallow_water_flux.cpp
-  src/dynamics/shallow_water_driver.cpp
-  src/dynamics/shallow_water_benchmarks.cpp
-  src/dynamics/shallow_water_rhs.cpp
-  src/dynamics/shallow_water_reconstruction.cpp
   src/geometry/cubed_sphere.cpp
   src/grid/cubed_sphere_grid.cpp
   src/grid/cubed_sphere_tiles.cpp
-  src/grid/dual_topology.cpp
   src/io/checkpoint.cpp
   src/io/run_metadata.cpp
   src/io/visual_dataset.cpp
@@ -109,7 +99,6 @@ add_library(
   src/physics/gray_radiation_coupling.cpp
   src/physics/planetary_newtonian.cpp
   src/physics/surface_energy_balance.cpp
-  src/numerics/compatible_operators.cpp
   src/numerics/diffusion_stability.cpp
   src/numerics/gmres.cpp
   src/numerics/helmholtz_solver.cpp
@@ -198,10 +187,6 @@ if(BUILD_TESTING)
   add_test(
     NAME smoke.phase1_transport
     COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase1_solid_body.cfg
-  )
-  add_test(
-    NAME smoke.phase2_shallow_water
-    COMMAND my_planet_sim --config ${CMAKE_CURRENT_SOURCE_DIR}/configs/phase2_rest.cfg
   )
   add_test(
     NAME smoke.phase4_vertical_column
@@ -295,10 +280,6 @@ if(BUILD_TESTING)
   )
   set_tests_properties(
     smoke.phase0_ode
-    PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
-  )
-  set_tests_properties(
-    smoke.phase2_shallow_water
     PROPERTIES PASS_REGULAR_EXPRESSION "result.status = complete"
   )
   set_tests_properties(

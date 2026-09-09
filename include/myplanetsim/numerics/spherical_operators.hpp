@@ -48,9 +48,6 @@ void least_squares_vector_gradient(const CubedSphereGrid& grid,
     const CubedSphereGrid& grid, std::size_t cell, Vec3 cell_value, Vec3 face_position,
     Vec3 face_displacement_m, const TangentVectorGradient& gradient);
 [[nodiscard]] EdgeTangentBasis edge_tangent_basis(const EdgeGeometry& edge);
-[[nodiscard]] std::vector<Real> shallow_water_potential_vorticity(
-    const CubedSphereGrid& grid, std::span<const Real> depth,
-    std::span<const Vec3> velocity, Vec3 rotation_vector_rad_s);
 [[nodiscard]] std::vector<Vec3> finite_volume_vector_laplacian(
     const CubedSphereGrid& grid, std::span<const Vec3> cell_vectors);
 void scatter_oriented_edge_flux(const CubedSphereGrid& grid,

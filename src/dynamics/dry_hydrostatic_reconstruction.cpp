@@ -45,7 +45,7 @@ struct ScalarReconstruction {
 }
 
 // Shrinks a velocity increment until the reconstructed face speed stays inside the
-// neighbourhood maximum, matching the shallow-water reconstruction.
+// neighbourhood maximum.
 [[nodiscard]] Real speed_factor(const Vec3 center, const Vec3 increment,
                                 const Real maximum_speed) {
   const Real maximum_squared = maximum_speed * maximum_speed;
@@ -110,7 +110,7 @@ struct VelocityReconstruction {
   return at_cell - (dot(at_cell, face) / (1.0 + dot(center, face))) * (center + face);
 }
 
-// Limits the reconstructed tangent velocity the same way the shallow-water path does:
+// Limits the reconstructed tangent velocity so
 // the face normal and tangent components stay inside the neighbourhood range and the
 // face speed stays inside the neighbourhood maximum. Without this the unlimited
 // least-squares vector gradient overshoots at cubed-sphere seams.

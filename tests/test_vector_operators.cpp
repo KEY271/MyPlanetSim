@@ -1,7 +1,6 @@
 #include <cmath>
 #include <vector>
 
-#include "myplanetsim/dynamics/shallow_water_diffusion.hpp"
 #include "myplanetsim/numerics/spherical_operators.hpp"
 #include "support/test.hpp"
 
@@ -73,33 +72,6 @@ enum class Form { kRotational, kDivergent };
   return std::log(coarse / fine) / std::log(2.0);
 }
 
-[[nodiscard]] mps::ShallowWaterState rotational_state(const mps::CubedSphereGrid& grid,
-                                                      const mps::Real depth_m) {
-  mps::ShallowWaterState state;
-  state.depth.assign(grid.cell_count(), depth_m);
-  state.momentum.resize(grid.cell_count());
-  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
-    state.momentum[cell] =
-        depth_m * harmonic_field(grid.cells()[cell].center, 2, Form::kRotational);
-  }
-  return state;
-}
-
-[[nodiscard]] mps::Real kinetic_energy_rate(const mps::CubedSphereGrid& grid,
-                                            const mps::DiffusionKind kind,
-                                            const mps::Real coefficient) {
-  constexpr mps::Real depth_m = 1000.0;
-  const auto state = rotational_state(grid, depth_m);
-  const auto tendency =
-      mps::shallow_water_diffusion_tendency(grid, state, kind, coefficient);
-  mps::Real rate = 0.0;
-  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
-    rate += grid.cells()[cell].area_m2 *
-            mps::dot(state.velocity(cell), tendency.momentum[cell]);
-  }
-  return rate;
-}
-
 }  // namespace
 
 MPS_TEST_CASE("vector Laplacian reproduces the rigid-rotation eigenvalue") {
@@ -134,12 +106,6 @@ MPS_TEST_CASE("vector Laplacian converges to the analytic harmonic eigenvalues")
       MPS_CHECK(fine < 0.01 * std::abs(exact));
     }
   }
-}
-
-MPS_TEST_CASE("both diffusion kinds remove kinetic energy from a smooth field") {
-  const mps::CubedSphereGrid grid(16, kRadius);
-  MPS_CHECK(kinetic_energy_rate(grid, mps::DiffusionKind::kLaplacian, 1.0e-3) < 0.0);
-  MPS_CHECK(kinetic_energy_rate(grid, mps::DiffusionKind::kBiharmonic, 1.0e-6) < 0.0);
 }
 
 int main() { return mps::test::run_all(); }

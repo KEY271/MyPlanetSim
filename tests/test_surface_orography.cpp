@@ -35,14 +35,6 @@ MPS_TEST_CASE("DCMIP 2-0-0 terrain follows the published Schar profile") {
   }
 }
 
-MPS_TEST_CASE("Williamson 5 terrain is the published isolated cone") {
-  constexpr double pi = std::numbers::pi_v<double>;
-  const mps::Vec3 centre{std::cos(pi / 6) * std::cos(-pi / 2),
-                         std::cos(pi / 6) * std::sin(-pi / 2), std::sin(pi / 6)};
-  MPS_CHECK_NEAR(mps::williamson5_surface_height_m(centre), 2000, 1e-12);
-  MPS_CHECK_EQ(mps::williamson5_surface_height_m({1, 0, 0}), 0.0);
-}
-
 MPS_TEST_CASE("linear bell has fixed support and test-only amplitude scaling") {
   MPS_CHECK_NEAR(mps::linear_bell_surface_height_m({1, 0, 0}), 10, 1e-14);
   MPS_CHECK_NEAR(mps::linear_bell_surface_height_m({1, 0, 0}, 5), 5, 1e-14);

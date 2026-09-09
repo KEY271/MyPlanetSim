@@ -29,8 +29,6 @@
 #include "myplanetsim/diagnostics/vertical_column_diagnostics.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
-#include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
-#include "myplanetsim/dynamics/shallow_water_driver.hpp"
 #include "myplanetsim/dynamics/vertical_column_driver.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
 #include "myplanetsim/io/checkpoint.hpp"
@@ -253,118 +251,6 @@ void write_transport_snapshot(const mps::ExperimentConfig& config,
     const auto cell = grid.cell_id(index);
     output << mps::panel_name(cell.panel) << ',' << cell.i << ',' << cell.j << ','
            << result.state.tracer[index] << '\n';
-  }
-}
-
-void write_shallow_water_result(std::ostream& output,
-                                const mps::ShallowWaterResult& result,
-                                const mps::Real wall_time_s,
-                                const std::size_t cell_count) {
-  const auto& initial = result.initial_diagnostics;
-  const auto& final_state = result.final_diagnostics;
-  const auto drift = [](const mps::Real final_value, const mps::Real initial_value) {
-    return mps::diagnostics::relative_drift(final_value, initial_value, initial_value);
-  };
-  output << std::setprecision(std::numeric_limits<mps::Real>::max_digits10)
-         << "result.integrator = ssprk3\n"
-         << "result.status = " << (result.reached_end_time ? "complete" : "stopped")
-         << '\n'
-         << "result.time_s = " << result.state.time_s << '\n'
-         << "result.step = " << result.state.step << '\n'
-         << "diagnostics.mass = " << result.final_diagnostics.mass << '\n'
-         << "diagnostics.energy = " << result.final_diagnostics.energy << '\n'
-         << "diagnostics.potential_enstrophy = "
-         << result.final_diagnostics.potential_enstrophy << '\n'
-         << "diagnostics.axial_angular_momentum = "
-         << result.final_diagnostics.axial_angular_momentum << '\n'
-         << "diagnostics.minimum_depth = " << result.final_diagnostics.minimum_depth
-         << '\n'
-         << "diagnostics.maximum_depth = " << result.final_diagnostics.maximum_depth
-         << '\n'
-         << "diagnostics.maximum_cfl = " << result.maximum_cfl << '\n'
-         << "diagnostics.mass_drift = " << drift(final_state.mass, initial.mass) << '\n'
-         << "diagnostics.energy_drift = " << drift(final_state.energy, initial.energy)
-         << '\n'
-         << "diagnostics.potential_enstrophy_drift = "
-         << drift(final_state.potential_enstrophy, initial.potential_enstrophy) << '\n'
-         << "diagnostics.axial_angular_momentum_drift = "
-         << drift(final_state.axial_angular_momentum, initial.axial_angular_momentum)
-         << '\n'
-         << "cost.wall_time_s = " << wall_time_s << '\n'
-         << "cost.cell_steps_per_s = "
-         << static_cast<mps::Real>(cell_count) *
-                static_cast<mps::Real>(result.state.step) / wall_time_s
-         << '\n';
-}
-
-// Error norms against the analytic solution, where the benchmark has one.
-void write_shallow_water_errors(std::ostream& output,
-                                const mps::ExperimentConfig& config,
-                                const mps::CubedSphereGrid& grid,
-                                const mps::ShallowWaterResult& result) {
-  if (config.shallow_water.test_case != mps::ShallowWaterTestCase::kWilliamson2) {
-    return;
-  }
-  // Williamson 2 is steady, so its initial state is also the exact final state.
-  const auto exact = mps::make_shallow_water_initial_state(grid, config);
-  std::vector<mps::Real> weights(grid.cell_count());
-  std::vector<mps::Real> velocity_error(grid.cell_count());
-  const std::vector<mps::Real> zero(grid.cell_count());
-  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
-    weights[cell] = grid.cells()[cell].area_m2;
-    velocity_error[cell] =
-        mps::norm(result.state.velocity(cell) - exact.velocity(cell));
-  }
-  const auto depth =
-      mps::diagnostics::weighted_error_norms(result.state.depth, exact.depth, weights);
-  const auto velocity =
-      mps::diagnostics::weighted_error_norms(velocity_error, zero, weights);
-  output << "error.depth_l1 = " << depth.l1 << '\n'
-         << "error.depth_l2 = " << depth.l2 << '\n'
-         << "error.depth_linf = " << depth.linf << '\n'
-         << "error.velocity_l1 = " << velocity.l1 << '\n'
-         << "error.velocity_l2 = " << velocity.l2 << '\n'
-         << "error.velocity_linf = " << velocity.linf << '\n';
-}
-
-void write_shallow_water_diagnostics(const mps::ExperimentConfig& config,
-                                     const mps::ShallowWaterResult& result) {
-  const std::filesystem::path directory(config.output_directory);
-  std::filesystem::create_directories(directory);
-  std::ofstream output(directory / "diagnostics.csv", std::ios::trunc);
-  if (!output) {
-    throw std::runtime_error("unable to open shallow-water diagnostics CSV");
-  }
-  output << "time_s,step,mass,energy,potential_enstrophy,axial_angular_momentum,"
-            "minimum_depth,maximum_depth,minimum_pv,maximum_pv\n";
-  output << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
-  for (const auto& sample : result.samples) {
-    const auto& invariants = sample.invariants;
-    output << sample.time_s << ',' << sample.step << ',' << invariants.mass << ','
-           << invariants.energy << ',' << invariants.potential_enstrophy << ','
-           << invariants.axial_angular_momentum << ',' << invariants.minimum_depth
-           << ',' << invariants.maximum_depth << ',' << invariants.minimum_pv << ','
-           << invariants.maximum_pv << '\n';
-  }
-}
-
-void write_shallow_water_snapshot(const mps::ExperimentConfig& config,
-                                  const mps::ShallowWaterResult& result) {
-  const std::filesystem::path directory(config.output_directory);
-  std::filesystem::create_directories(directory);
-  std::ofstream output(directory / "shallow_water.csv", std::ios::trunc);
-  if (!output) {
-    throw std::runtime_error("unable to open shallow-water CSV snapshot");
-  }
-  output << "panel,i,j,depth_m,momentum_x,momentum_y,momentum_z\n";
-  const mps::CubedSphereGrid grid(config.grid.cells_per_panel, config.planet.radius_m);
-  output << std::setprecision(std::numeric_limits<mps::Real>::max_digits10);
-  for (std::size_t index = 0; index < grid.cell_count(); ++index) {
-    const auto cell = grid.cell_id(index);
-    const auto momentum = result.state.momentum[index];
-    output << mps::panel_name(cell.panel) << ',' << cell.i << ',' << cell.j << ','
-           << result.state.depth[index] << ',' << momentum.x << ',' << momentum.y << ','
-           << momentum.z << '\n';
   }
 }
 
@@ -1838,42 +1724,6 @@ int main(const int argc, const char* const argv[]) {
                 << "\ndiagnostics.total_energy_j = " << diagnostics.total_energy_j
                 << '\n';
       if (was_cancelled) return 130;
-    } else {
-      if (command_line.integrator != mps::IntegratorKind::kSspRk3) {
-        throw std::invalid_argument("shallow water supports only ssprk3");
-      }
-      const mps::CubedSphereGrid grid(config.grid.cells_per_panel,
-                                      config.planet.radius_m);
-      std::optional<mps::ShallowWaterState> initial_state;
-      if (command_line.restart_path.has_value()) {
-        auto checkpoint = mps::read_checkpoint_file(
-            *command_line.restart_path, fingerprint, mps::kShallowWaterCheckpointLayout,
-            4 * grid.cell_count());
-        initial_state = mps::unflatten_shallow_water_state(
-            checkpoint.time_s, checkpoint.step, checkpoint.state, grid.cell_count());
-      }
-      const auto start = std::chrono::steady_clock::now();
-      const auto result = mps::run_shallow_water(
-          config, std::move(initial_state), command_line.stop_after_step);
-      const mps::Real wall_time_s =
-          std::chrono::duration<mps::Real>(std::chrono::steady_clock::now() - start)
-              .count();
-      if (command_line.checkpoint_path.has_value()) {
-        mps::write_checkpoint_file(
-            *command_line.checkpoint_path,
-            mps::Checkpoint{
-                .time_s = result.state.time_s,
-                .step = result.state.step,
-                .state = mps::flatten_shallow_water_state(result.state),
-                .config_fingerprint = fingerprint,
-                .layout_id = std::string(mps::kShallowWaterCheckpointLayout),
-            });
-      }
-      write_shallow_water_snapshot(config, result);
-      write_shallow_water_diagnostics(config, result);
-      mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
-      write_shallow_water_result(std::cout, result, wall_time_s, grid.cell_count());
-      write_shallow_water_errors(std::cout, config, grid, result);
     }
     return 0;
   } catch (const std::exception& error) {

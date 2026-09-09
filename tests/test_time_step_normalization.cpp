@@ -1,10 +1,8 @@
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <vector>
 
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
-#include "myplanetsim/dynamics/shallow_water_driver.hpp"
 #include "myplanetsim/numerics/spherical_operators.hpp"
 #include "support/test.hpp"
 
@@ -93,25 +91,6 @@ MPS_TEST_CASE("the dry core reports a per-cell, not a per-edge, stable step") {
   // The reported step must land on the requested CFL, not roughly four times past it.
   // The per-edge form gave about 4 * kCfl here.
   MPS_CHECK_NEAR(achieved_cell_courant(driver, state, step), kCfl, 0.02 * kCfl);
-}
-
-MPS_TEST_CASE("the shallow-water solver already uses the same per-cell definition") {
-  const mps::CubedSphereGrid grid(4, 6371220.0);
-  mps::ShallowWaterState state;
-  state.depth.assign(grid.cell_count(), 5000.0);
-  state.momentum.assign(grid.cell_count(), {});
-  for (std::size_t cell = 0; cell < grid.cell_count(); ++cell) {
-    state.momentum[cell] =
-        state.depth[cell] * 20.0 *
-        mps::cross(mps::Vec3{0.0, 0.0, 1.0}, grid.cells()[cell].center);
-  }
-  mps::project_shallow_water_momentum(grid, state);
-  const mps::Real step = mps::stable_shallow_water_time_step(
-      grid, state, 9.80616, kCfl, std::numeric_limits<mps::Real>::max());
-  // stable_shallow_water_time_step and shallow_water_cfl_number are inverses of one
-  // per-cell condition; the dry core now shares that condition.
-  MPS_CHECK_NEAR(mps::shallow_water_cfl_number(grid, state, 9.80616, step), kCfl,
-                 1.0e-12 * kCfl);
 }
 
 int main() { return mps::test::run_all(); }
