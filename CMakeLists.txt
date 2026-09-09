@@ -177,6 +177,12 @@ add_executable(benchmark_moist tools/benchmark_moist.cpp)
 target_link_libraries(benchmark_moist PRIVATE myplanetsim_core myplanetsim_warnings myplanetsim_sanitizers)
 set_target_properties(benchmark_moist PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools")
 
+add_executable(benchmark_field_layout tools/benchmark_field_layout.cpp)
+target_compile_features(benchmark_field_layout PRIVATE cxx_std_20)
+target_link_libraries(benchmark_field_layout PRIVATE myplanetsim_warnings myplanetsim_sanitizers)
+target_include_directories(benchmark_field_layout PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+set_target_properties(benchmark_field_layout PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools")
+
 include(CTest)
 if(BUILD_TESTING)
   add_test(NAME smoke.help COMMAND my_planet_sim --help)

@@ -212,3 +212,19 @@ left/right face state を保持せず、各 edge で再構成後すぐ全 tracer
 profile run は `prepared_reconstruction_bytes`、`edge_flux_bytes`、
 `eliminated_face_state_bytes` を出力する。N=48/K=40 の反復 wall 比較は長時間になり得るため
 自動実行せず、P14.07 の foreground runner で測定する。
+
+## P14.09: field view と layout 候補
+
+canonical な `[component][cell][level]` storage を、stride を明示する
+`Field3DView` / `ColumnView` から扱えるようにし、reconstruction の tracer pack に適用した。
+unit test は canonical tracer 順、bounds、stride と lane 4/8/16 の blocked tail を検証する。
+
+blocked layout は、prognostic storage を変更すると column physics と restart I/O の変換費用が
+増えるため workspace 候補に留める。合成 traversal 比較は次を foreground で実行できる。
+
+```console
+cmake --build --preset release --target benchmark_field_layout
+build/release/tools/benchmark_field_layout --cells 55296 --levels 40 --components 4 --repeats 20
+```
+
+本番採否には既存 moist benchmark の model-day wall と RSS も含める。長い比較は自動実行しない。

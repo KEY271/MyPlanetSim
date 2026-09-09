@@ -8,6 +8,7 @@
 #include <omp.h>
 #endif
 
+#include "myplanetsim/core/field_views.hpp"
 #include "myplanetsim/numerics/spherical_operators.hpp"
 
 namespace mps {
@@ -244,6 +245,9 @@ void prepare_dry_hydrostatic_reconstruction(
   result.velocity_gradient.assign(volume, {});
   result.velocity_factor.assign(volume, 1.0);
   result.tracer_is_constant.assign(derived.tracer_count * levels, 1);
+  const auto tracer_view = make_cell_column_field_view<const Real>(
+      std::span<const Real>(derived.tracer_mixing_ratio), derived.tracer_count, cells,
+      levels);
 
   std::uint64_t limiter_activations = 0;
   const int thread_count = reconstruction_thread_count(levels);
@@ -304,9 +308,8 @@ void prepare_dry_hydrostatic_reconstruction(
     }
 
     for (std::size_t tracer = 0; tracer < derived.tracer_count; ++tracer) {
-      const auto component = std::span<const Real>(derived.tracer_mixing_ratio)
-                                 .subspan(tracer * volume, volume);
-      copy_level_scalar(component, cells, levels, level, worker.tracer);
+      for (std::size_t cell = 0; cell < cells; ++cell)
+        worker.tracer[cell] = tracer_view(tracer, cell, level);
       const bool constant = std::ranges::all_of(worker.tracer, [&](const Real value) {
         return value == worker.tracer.front();
       });
