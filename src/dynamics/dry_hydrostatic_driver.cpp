@@ -833,17 +833,42 @@ void DryHydrostaticDriver::rhs_with_components(
   auto& face_fast_wave_speed_length = workspace.face_fast_wave_speed_length;
   auto& face_advective_speed_length = workspace.face_advective_speed_length;
   finish_region(0);
-  reconstruct_dry_hydrostatic_face_states(
+  prepare_dry_hydrostatic_reconstruction(
       grid_, d, config_.dry_hydrostatic.reconstruction, config_.dry_hydrostatic.limiter,
-      workspace.reconstruction, workspace.reconstruction_workspace,
+      workspace.prepared_reconstruction, workspace.reconstruction_workspace,
       compute_fast_wave_cfl);
+  if (profile_enabled_) {
+    const auto scalar_bytes = [](const auto& field) {
+      return field.gradient.size() * sizeof(Vec3) + field.factor.size() * sizeof(Real);
+    };
+    rhs_profile_.prepared_reconstruction_bytes = std::max(
+        rhs_profile_.prepared_reconstruction_bytes,
+        scalar_bytes(workspace.prepared_reconstruction.air_mass) +
+            scalar_bytes(workspace.prepared_reconstruction.potential_temperature) +
+            scalar_bytes(workspace.prepared_reconstruction.temperature) +
+            scalar_bytes(workspace.prepared_reconstruction.tracer) +
+            workspace.prepared_reconstruction.velocity_gradient.size() *
+                sizeof(TangentVectorGradient) +
+            workspace.prepared_reconstruction.velocity_factor.size() * sizeof(Real) +
+            workspace.prepared_reconstruction.tracer_is_constant.size() *
+                sizeof(std::uint8_t));
+    rhs_profile_.eliminated_face_state_bytes =
+        std::max(rhs_profile_.eliminated_face_state_bytes,
+                 grid_.edge_count() * K * sizeof(DryHydrostaticFaceStates) +
+                     2 * d.tracer_count * grid_.edge_count() * K * sizeof(Real));
+  }
   finish_region(1);
-  const auto& reconstructed = workspace.reconstruction;
+  const auto& reconstructed = workspace.prepared_reconstruction;
   const auto edges = grid_.edges();
   const auto edge_count = edges.size();
   workspace.edge_flux.resize(edge_count * K);
   workspace.edge_tracer_flux.resize(d.tracer_count * edge_count * K);
   workspace.edge_flux_failures.resize(edge_count);
+  if (profile_enabled_)
+    rhs_profile_.edge_flux_bytes =
+        std::max(rhs_profile_.edge_flux_bytes,
+                 workspace.edge_flux.size() * sizeof(DryHydrostaticEdgeFlux) +
+                     workspace.edge_tracer_flux.size() * sizeof(Real));
 #if defined(MPS_ENABLE_OPENMP)
 #pragma omp parallel for schedule(static)
 #endif
@@ -856,15 +881,20 @@ void DryHydrostaticDriver::rhs_with_components(
     workspace.edge_flux_failures[edge_id] = nullptr;
     try {
       for (std::size_t k = 0; k < K; ++k) {
-        const auto& face = reconstructed.at(e.id, k);
+        const auto face =
+            reconstruct_dry_hydrostatic_edge(grid_, d, reconstructed, e.id, k);
         workspace.edge_flux[e.id * K + k] = rusanov_dry_hydrostatic_flux(
             face.left, face.right, basis, config_.planet.gas_constant_j_kg_k,
             config_.planet.heat_capacity_cp_j_kg_k, compute_fast_wave_cfl);
         for (std::size_t tracer = 0; tracer < d.tracer_count; ++tracer) {
           const auto q = (tracer * edge_count + e.id) * K + k;
           workspace.edge_tracer_flux[q] = rusanov_dry_hydrostatic_tracer_flux(
-              face.left, face.right, reconstructed.tracer_at(true, tracer, e.id, k),
-              reconstructed.tracer_at(false, tracer, e.id, k), basis);
+              face.left, face.right,
+              reconstruct_dry_hydrostatic_tracer_face(grid_, d, reconstructed, true,
+                                                      tracer, e.id, k),
+              reconstruct_dry_hydrostatic_tracer_face(grid_, d, reconstructed, false,
+                                                      tracer, e.id, k),
+              basis);
         }
       }
     } catch (...) {

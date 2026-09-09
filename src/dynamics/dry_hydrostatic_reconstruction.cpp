@@ -210,6 +210,201 @@ Real DryHydrostaticReconstruction::tracer_at(const bool left, const std::size_t 
   return left ? left_tracer_mixing_ratio[offset] : right_tracer_mixing_ratio[offset];
 }
 
+void prepare_dry_hydrostatic_reconstruction(
+    const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
+    const ReconstructionKind reconstruction, const LimiterKind limiter,
+    DryHydrostaticPreparedReconstruction& result,
+    DryHydrostaticReconstructionWorkspace& workspace,
+    const bool reconstruct_temperature) {
+  const auto cells = grid.cell_count();
+  const auto levels = derived.levels;
+  const auto volume = cells * levels;
+  if (derived.cells != cells || levels == 0 ||
+      derived.air_mass_kg_m2.size() != volume ||
+      derived.velocity_m_s.size() != volume ||
+      derived.potential_temperature_k.size() != volume || derived.tracer_count == 0 ||
+      derived.tracer_mixing_ratio.size() != derived.tracer_count * volume ||
+      derived.temperature_k.size() != volume)
+    throw std::invalid_argument("dry reconstruction shape mismatch");
+
+  result.cells = cells;
+  result.levels = levels;
+  result.tracer_count = derived.tracer_count;
+  result.kind = reconstruction;
+  result.reconstruct_temperature = reconstruct_temperature;
+  const auto initialize_scalar = [](DryHydrostaticPreparedScalarReconstruction& field,
+                                    const std::size_t size) {
+    field.gradient.assign(size, {});
+    field.factor.assign(size, 1.0);
+  };
+  initialize_scalar(result.air_mass, volume);
+  initialize_scalar(result.potential_temperature, volume);
+  initialize_scalar(result.temperature, volume);
+  initialize_scalar(result.tracer, derived.tracer_count * volume);
+  result.velocity_gradient.assign(volume, {});
+  result.velocity_factor.assign(volume, 1.0);
+  result.tracer_is_constant.assign(derived.tracer_count * levels, 1);
+
+  std::uint64_t limiter_activations = 0;
+  const int thread_count = reconstruction_thread_count(levels);
+  if (workspace.workers.size() < static_cast<std::size_t>(thread_count))
+    workspace.workers.resize(static_cast<std::size_t>(thread_count));
+  for (int thread = 0; thread < thread_count; ++thread) {
+    auto& worker = workspace.workers[static_cast<std::size_t>(thread)];
+    worker.mass.resize(cells);
+    worker.velocity.resize(cells);
+    worker.potential_temperature.resize(cells);
+    worker.tracer.resize(cells);
+    worker.temperature.resize(cells);
+    for (auto& gradient : worker.scalar_gradients) gradient.resize(cells);
+    for (auto& factor : worker.limiter_factors) factor.resize(cells);
+    worker.velocity_gradient.resize(cells);
+  }
+#if defined(MPS_ENABLE_OPENMP)
+#pragma omp parallel for schedule(static) num_threads(thread_count) \
+    reduction(+ : limiter_activations)
+#endif
+  for (std::size_t level = 0; level < levels; ++level) {
+    auto& worker =
+        workspace.workers[static_cast<std::size_t>(reconstruction_thread_index())];
+    copy_level_scalar(derived.air_mass_kg_m2, cells, levels, level, worker.mass);
+    copy_level_vector(derived.velocity_m_s, cells, levels, level, worker.velocity);
+    copy_level_scalar(derived.potential_temperature_k, cells, levels, level,
+                      worker.potential_temperature);
+    copy_level_scalar(derived.temperature_k, cells, levels, level, worker.temperature);
+
+    ScalarReconstruction mass{};
+    ScalarReconstruction theta{};
+    ScalarReconstruction temperature{};
+    VelocityReconstruction velocity{};
+    if (reconstruction == ReconstructionKind::kLinear) {
+      mass = prepare_scalar(grid, worker.mass, limiter, worker.scalar_gradients[0],
+                            worker.limiter_factors[0]);
+      theta = prepare_scalar(grid, worker.potential_temperature, limiter,
+                             worker.scalar_gradients[1], worker.limiter_factors[1]);
+      if (reconstruct_temperature)
+        temperature =
+            prepare_scalar(grid, worker.temperature, limiter,
+                           worker.scalar_gradients[3], worker.limiter_factors[3]);
+      velocity = prepare_velocity(grid, worker.velocity, limiter,
+                                  worker.velocity_gradient, worker.limiter_factors[4]);
+      for (std::size_t cell = 0; cell < cells; ++cell) {
+        const auto n = dry_hydrostatic_offset(cell, level, levels);
+        result.air_mass.gradient[n] = mass.gradient[cell];
+        result.air_mass.factor[n] = mass.factor[cell];
+        result.potential_temperature.gradient[n] = theta.gradient[cell];
+        result.potential_temperature.factor[n] = theta.factor[cell];
+        if (reconstruct_temperature) {
+          result.temperature.gradient[n] = temperature.gradient[cell];
+          result.temperature.factor[n] = temperature.factor[cell];
+        }
+        result.velocity_gradient[n] = velocity.gradient[cell];
+        result.velocity_factor[n] = velocity.factor[cell];
+      }
+    }
+
+    for (std::size_t tracer = 0; tracer < derived.tracer_count; ++tracer) {
+      const auto component = std::span<const Real>(derived.tracer_mixing_ratio)
+                                 .subspan(tracer * volume, volume);
+      copy_level_scalar(component, cells, levels, level, worker.tracer);
+      const bool constant = std::ranges::all_of(worker.tracer, [&](const Real value) {
+        return value == worker.tracer.front();
+      });
+      result.tracer_is_constant[tracer * levels + level] =
+          static_cast<std::uint8_t>(constant);
+      ScalarReconstruction prepared{};
+      if (reconstruction == ReconstructionKind::kLinear && !constant) {
+        prepared =
+            prepare_scalar(grid, worker.tracer, limiter, worker.scalar_gradients[2],
+                           worker.limiter_factors[2]);
+        for (std::size_t cell = 0; cell < cells; ++cell) {
+          const auto q =
+              dry_hydrostatic_tracer_offset(tracer, cell, level, cells, levels);
+          result.tracer.gradient[q] = prepared.gradient[cell];
+          result.tracer.factor[q] = prepared.factor[cell];
+          if (tracer > 0 && prepared.factor[cell] < 1.0 - 1.0e-14)
+            ++limiter_activations;
+        }
+      }
+      if (tracer == 0 && reconstruction == ReconstructionKind::kLinear) {
+        for (std::size_t cell = 0; cell < cells; ++cell) {
+          const auto q = dry_hydrostatic_tracer_offset(0, cell, level, cells, levels);
+          if (mass.factor[cell] < 1.0 - 1.0e-14 || theta.factor[cell] < 1.0 - 1.0e-14 ||
+              (!constant && result.tracer.factor[q] < 1.0 - 1.0e-14) ||
+              (reconstruct_temperature && temperature.factor[cell] < 1.0 - 1.0e-14) ||
+              velocity.factor[cell] < 1.0 - 1.0e-14)
+            ++limiter_activations;
+        }
+      }
+    }
+  }
+  result.limiter_activations = limiter_activations;
+}
+
+Real reconstruct_dry_hydrostatic_tracer_face(
+    const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
+    const DryHydrostaticPreparedReconstruction& prepared, const bool left,
+    const std::size_t tracer, const std::size_t edge, const std::size_t level) {
+  if (prepared.cells != grid.cell_count() || prepared.levels != derived.levels ||
+      prepared.tracer_count != derived.tracer_count ||
+      tracer >= prepared.tracer_count || edge >= grid.edge_count() ||
+      level >= prepared.levels)
+    throw std::out_of_range("prepared dry tracer reconstruction index is invalid");
+  const auto& cached = grid.edge_cache()[edge];
+  const auto cell = left ? cached.left_cell : cached.right_cell;
+  const auto slot = left ? cached.left_slot : cached.right_slot;
+  const auto q = dry_hydrostatic_tracer_offset(tracer, cell, level, prepared.cells,
+                                               prepared.levels);
+  if (prepared.kind == ReconstructionKind::kPiecewiseConstant ||
+      prepared.tracer_is_constant[tracer * prepared.levels + level])
+    return derived.tracer_mixing_ratio[q];
+  return derived.tracer_mixing_ratio[q] +
+         prepared.tracer.factor[q] *
+             dot(prepared.tracer.gradient[q],
+                 grid.cell_cache()[cell].edges[slot].face_displacement_m);
+}
+
+DryHydrostaticFaceStates reconstruct_dry_hydrostatic_edge(
+    const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
+    const DryHydrostaticPreparedReconstruction& prepared, const std::size_t edge,
+    const std::size_t level) {
+  if (prepared.cells != grid.cell_count() || prepared.levels != derived.levels ||
+      edge >= grid.edge_count() || level >= prepared.levels)
+    throw std::out_of_range("prepared dry reconstruction index is invalid");
+  const auto& geometry = grid.edges()[edge];
+  const auto& cached = grid.edge_cache()[edge];
+  const auto make_face = [&](const std::size_t cell, const std::size_t slot,
+                             const bool left) {
+    const auto n = dry_hydrostatic_offset(cell, level, prepared.levels);
+    const auto& cell_edge = grid.cell_cache()[cell].edges[slot];
+    const auto scalar = [&](const std::span<const Real> values,
+                            const DryHydrostaticPreparedScalarReconstruction& field) {
+      if (prepared.kind == ReconstructionKind::kPiecewiseConstant) return values[n];
+      return values[n] +
+             field.factor[n] * dot(field.gradient[n], cell_edge.face_displacement_m);
+    };
+    Vec3 velocity = project_tangent(derived.velocity_m_s[n], geometry.center);
+    if (prepared.kind == ReconstructionKind::kLinear) {
+      const Vec3 unlimited = reconstruct_velocity_unchecked(
+          grid, cell, derived.velocity_m_s[n], geometry.center,
+          cell_edge.normalized_face_displacement_m, prepared.velocity_gradient[n]);
+      velocity = velocity + prepared.velocity_factor[n] * (unlimited - velocity);
+    }
+    return DryHydrostaticPrimitive{
+        .air_mass_kg_m2 = scalar(derived.air_mass_kg_m2, prepared.air_mass),
+        .velocity_m_s = velocity,
+        .potential_temperature_k =
+            scalar(derived.potential_temperature_k, prepared.potential_temperature),
+        .tracer_mixing_ratio = reconstruct_dry_hydrostatic_tracer_face(
+            grid, derived, prepared, left, 0, edge, level),
+        .temperature_k = prepared.reconstruct_temperature
+                             ? scalar(derived.temperature_k, prepared.temperature)
+                             : derived.temperature_k[n]};
+  };
+  return {.left = make_face(cached.left_cell, cached.left_slot, true),
+          .right = make_face(cached.right_cell, cached.right_slot, false)};
+}
+
 DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(
     const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
     const ReconstructionKind reconstruction, const LimiterKind limiter) {

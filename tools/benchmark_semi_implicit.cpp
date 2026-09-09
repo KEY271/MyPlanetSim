@@ -163,7 +163,12 @@ int main(const int argc, char** argv) {
     for (std::size_t i = 0; i < 8; ++i)
       std::cout << "rhs_region_" << regions[i]
                 << "_s=" << driver.rhs_profile().seconds[i] << '\n';
-    std::cout << "profiled_rhs_calls=" << driver.rhs_profile().calls << '\n';
+    std::cout << "profiled_rhs_calls=" << driver.rhs_profile().calls << '\n'
+              << "prepared_reconstruction_bytes="
+              << driver.rhs_profile().prepared_reconstruction_bytes << '\n'
+              << "edge_flux_bytes=" << driver.rhs_profile().edge_flux_bytes << '\n'
+              << "eliminated_face_state_bytes="
+              << driver.rhs_profile().eliminated_face_state_bytes << '\n';
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "semi-implicit benchmark error: " << error.what() << '\n';

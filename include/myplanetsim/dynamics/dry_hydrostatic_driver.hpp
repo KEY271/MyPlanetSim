@@ -22,6 +22,9 @@ namespace mps {
 struct DryHydrostaticRhsProfile {
   std::array<Real, 8> seconds{};
   std::size_t calls = 0;
+  std::size_t prepared_reconstruction_bytes = 0;
+  std::size_t edge_flux_bytes = 0;
+  std::size_t eliminated_face_state_bytes = 0;
 };
 struct DryHydrostaticRhs {
   std::vector<Real> surface_pressure_pa_s;

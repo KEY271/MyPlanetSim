@@ -24,7 +24,7 @@ struct DryHydrostaticWorkspace {
   std::vector<std::exception_ptr> edge_flux_failures;
   std::vector<Real> face_fast_wave_speed_length;
   std::vector<Real> face_advective_speed_length;
-  DryHydrostaticReconstruction reconstruction;
+  DryHydrostaticPreparedReconstruction prepared_reconstruction;
   DryHydrostaticReconstructionWorkspace reconstruction_workspace;
   DryHydrostaticCoupling coupling;
   DryHydrostaticCouplingWorkspace coupling_workspace;

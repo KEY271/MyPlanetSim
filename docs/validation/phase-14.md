@@ -199,3 +199,16 @@ cmake --build --preset release-openmp -j 4
 ctest --preset release-openmp --output-on-failure -j 4
 python3 tools/compare_phase14_openmp.py --n 48 --levels 40 --threads 1 2 4
 ```
+
+## P14.08: reconstruction–flux fusion
+
+[fusion ADR 0024](../adr/0024-phase14-flux-fusion.md) に gradient/limiter preparation、
+edge reconstruction/flux、cell gather の境界を固定した。production RHS は global
+left/right face state を保持せず、各 edge で再構成後すぐ全 tracer の flux を一度だけ計算する。
+旧 face-state API は fixture/debug 比較用に残した。piecewise constant と limited linear、
+2 tracer の全 edge/level/side で prepared path と旧 API の値・limiter count が byte 一致する。
+既存 driver、multi-tracer、allocation test は serial/OpenMP 4 threads の両方で成功した。
+
+profile run は `prepared_reconstruction_bytes`、`edge_flux_bytes`、
+`eliminated_face_state_bytes` を出力する。N=48/K=40 の反復 wall 比較は長時間になり得るため
+自動実行せず、P14.07 の foreground runner で測定する。

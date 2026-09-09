@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <tuple>
 #include <vector>
 
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
+#include "myplanetsim/dynamics/dry_hydrostatic_reconstruction.hpp"
 #include "support/test.hpp"
 
 namespace {
@@ -86,6 +88,59 @@ void project(const mps::DryHydrostaticDriver& driver, mps::DryHydrostaticState& 
 }
 
 }  // namespace
+
+MPS_TEST_CASE("prepared reconstruction matches the retained face fixture") {
+  const auto c = held_suarez_config();
+  const mps::DryHydrostaticDriver driver(c);
+  auto state = driver.initial_state();
+  state.surface_pressure_pa[0] *= 1.001;
+  state.potential_temperature_mass_k_kg_m2[0] *= 1.002;
+  auto derived = driver.diagnose(state);
+  const auto volume = derived.cells * derived.levels;
+  const auto first_tracer = derived.tracer_mixing_ratio;
+  derived.tracer_count = 2;
+  derived.tracer_mixing_ratio.resize(2 * volume);
+  for (std::size_t n = 0; n < volume; ++n)
+    derived.tracer_mixing_ratio[volume + n] = first_tracer[n] * (n == 0 ? 0.5 : 2.0);
+
+  for (const auto reconstruction : {mps::ReconstructionKind::kPiecewiseConstant,
+                                    mps::ReconstructionKind::kLinear}) {
+    mps::DryHydrostaticReconstruction retained;
+    mps::DryHydrostaticReconstructionWorkspace retained_workspace;
+    mps::reconstruct_dry_hydrostatic_face_states(driver.grid(), derived, reconstruction,
+                                                 mps::LimiterKind::kBarthJespersen,
+                                                 retained, retained_workspace);
+    mps::DryHydrostaticPreparedReconstruction prepared;
+    mps::DryHydrostaticReconstructionWorkspace prepared_workspace;
+    mps::prepare_dry_hydrostatic_reconstruction(driver.grid(), derived, reconstruction,
+                                                mps::LimiterKind::kBarthJespersen,
+                                                prepared, prepared_workspace);
+    MPS_CHECK_EQ(prepared.limiter_activations, retained.limiter_activations);
+    for (std::size_t edge = 0; edge < driver.grid().edge_count(); ++edge) {
+      for (std::size_t level = 0; level < derived.levels; ++level) {
+        const auto expected = retained.at(edge, level);
+        const auto actual = mps::reconstruct_dry_hydrostatic_edge(
+            driver.grid(), derived, prepared, edge, level);
+        for (const auto& [left, expected_face, actual_face] :
+             {std::tuple{true, expected.left, actual.left},
+              std::tuple{false, expected.right, actual.right}}) {
+          MPS_CHECK_EQ(actual_face.air_mass_kg_m2, expected_face.air_mass_kg_m2);
+          MPS_CHECK_EQ(actual_face.velocity_m_s.x, expected_face.velocity_m_s.x);
+          MPS_CHECK_EQ(actual_face.velocity_m_s.y, expected_face.velocity_m_s.y);
+          MPS_CHECK_EQ(actual_face.velocity_m_s.z, expected_face.velocity_m_s.z);
+          MPS_CHECK_EQ(actual_face.potential_temperature_k,
+                       expected_face.potential_temperature_k);
+          MPS_CHECK_EQ(actual_face.temperature_k, expected_face.temperature_k);
+          for (std::size_t tracer = 0; tracer < derived.tracer_count; ++tracer)
+            MPS_CHECK_EQ(
+                mps::reconstruct_dry_hydrostatic_tracer_face(
+                    driver.grid(), derived, prepared, left, tracer, edge, level),
+                retained.tracer_at(left, tracer, edge, level));
+        }
+      }
+    }
+  }
+}
 
 MPS_TEST_CASE("uniform isothermal rest remains stationary") {
   const auto c = config();

@@ -46,6 +46,42 @@ struct DryHydrostaticReconstructionWorkspace {
   std::vector<DryHydrostaticReconstructionLevelWorkspace> workers;
 };
 
+struct DryHydrostaticPreparedScalarReconstruction {
+  std::vector<Vec3> gradient;
+  std::vector<Real> factor;
+};
+
+struct DryHydrostaticPreparedReconstruction {
+  std::size_t cells = 0;
+  std::size_t levels = 0;
+  std::size_t tracer_count = 0;
+  ReconstructionKind kind = ReconstructionKind::kPiecewiseConstant;
+  bool reconstruct_temperature = true;
+  DryHydrostaticPreparedScalarReconstruction air_mass;
+  DryHydrostaticPreparedScalarReconstruction potential_temperature;
+  DryHydrostaticPreparedScalarReconstruction temperature;
+  DryHydrostaticPreparedScalarReconstruction tracer;
+  std::vector<TangentVectorGradient> velocity_gradient;
+  std::vector<Real> velocity_factor;
+  std::vector<std::uint8_t> tracer_is_constant;
+  std::uint64_t limiter_activations = 0;
+};
+
+void prepare_dry_hydrostatic_reconstruction(
+    const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
+    ReconstructionKind reconstruction, LimiterKind limiter,
+    DryHydrostaticPreparedReconstruction& result,
+    DryHydrostaticReconstructionWorkspace& workspace,
+    bool reconstruct_temperature = true);
+[[nodiscard]] DryHydrostaticFaceStates reconstruct_dry_hydrostatic_edge(
+    const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
+    const DryHydrostaticPreparedReconstruction& prepared, std::size_t edge,
+    std::size_t level);
+[[nodiscard]] Real reconstruct_dry_hydrostatic_tracer_face(
+    const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
+    const DryHydrostaticPreparedReconstruction& prepared, bool left, std::size_t tracer,
+    std::size_t edge, std::size_t level);
+
 [[nodiscard]] DryHydrostaticReconstruction reconstruct_dry_hydrostatic_face_states(
     const CubedSphereGrid& grid, const DryHydrostaticDerived& derived,
     ReconstructionKind reconstruction, LimiterKind limiter);

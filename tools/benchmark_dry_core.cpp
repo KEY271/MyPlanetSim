@@ -184,11 +184,18 @@ int main(int argc, char** argv) {
         << kMinimumCellLevelUpdatesPerSecond << '\n'
         << "registered_max_seconds_per_step = " << kMaximumSecondsPerStep << '\n'
         << "registered_target_met = " << std::boolalpha << target_met << '\n';
-    const char* regions[] = {"diagnose_setup", "reconstruction", "flux_cfl",
-                             "column_coupling", "source", "diffusion", "physics", "result_copy"};
+    const char* regions[] = {"diagnose_setup",  "reconstruction", "flux_cfl",
+                             "column_coupling", "source",         "diffusion",
+                             "physics",         "result_copy"};
     for (std::size_t i = 0; i < 8; ++i)
-      std::cout << "rhs_region_" << regions[i] << "_s=" << driver.rhs_profile().seconds[i] << '\n';
-    std::cout << "profiled_rhs_calls=" << driver.rhs_profile().calls << '\n';
+      std::cout << "rhs_region_" << regions[i]
+                << "_s=" << driver.rhs_profile().seconds[i] << '\n';
+    std::cout << "profiled_rhs_calls=" << driver.rhs_profile().calls << '\n'
+              << "prepared_reconstruction_bytes="
+              << driver.rhs_profile().prepared_reconstruction_bytes << '\n'
+              << "edge_flux_bytes=" << driver.rhs_profile().edge_flux_bytes << '\n'
+              << "eliminated_face_state_bytes="
+              << driver.rhs_profile().eliminated_face_state_bytes << '\n';
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "benchmark error: " << error.what() << '\n';
