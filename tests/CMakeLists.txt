@@ -169,4 +169,6 @@ if(Python3_Interpreter_FOUND)
     ${PROJECT_SOURCE_DIR}/configs/phase13_moist_pilot.cfg)
   add_test(NAME phase14.summary COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/test_phase14_summary.py)
+  add_test(NAME phase14.final_comparison COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_phase14_final.py)
 endif()

@@ -8,6 +8,7 @@
 #include <iostream>
 #include <limits>
 #include <new>
+#include <numbers>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -399,9 +400,12 @@ int main(int argc, char** argv) {
 
     std::ofstream snapshot(argv[9]);
     if (!snapshot) throw std::runtime_error("cannot open moist snapshot");
+    // Latitude and the eastward component let the comparison runner evaluate the
+    // registered zonal-mean gates without recomputing the grid geometry.
     snapshot << "cell,level,area_m2,air_mass_kg_m2,pressure_pa,temperature_k,"
-                "potential_temperature_k,wind_m_s,vapor_mixing_ratio,"
-                "surface_temperature_k,land_fraction,land_water_kg_m2\n"
+                "potential_temperature_k,wind_m_s,zonal_wind_m_s,latitude_deg,"
+                "vapor_mixing_ratio,surface_temperature_k,land_fraction,"
+                "land_water_kg_m2\n"
              << std::setprecision(17);
     const auto land_fraction = driver.surface_boundary()->land_fraction();
     for (std::size_t cell = 0; cell < driver.grid().cell_count(); ++cell)
@@ -413,11 +417,21 @@ int main(int argc, char** argv) {
                       *water_vapor_tracer, cell, level, driver.grid().cell_count(),
                       levels)]
                 : 0.0;
+        const auto center = mps::normalize(driver.grid().cells()[cell].center);
+        const double horizontal = std::hypot(center.x, center.y);
+        const auto velocity = derived.velocity_m_s[scalar];
+        const double zonal_wind =
+            horizontal > 0.0
+                ? (-center.y * velocity.x + center.x * velocity.y) / horizontal
+                : 0.0;
+        const double latitude_deg = std::asin(std::clamp(center.z, -1.0, 1.0)) *
+                                    180.0 / std::numbers::pi_v<double>;
         snapshot << cell << ',' << level << ',' << driver.grid().cells()[cell].area_m2
                  << ',' << derived.air_mass_kg_m2[scalar] << ','
                  << derived.pressure_pa[scalar] << ',' << derived.temperature_k[scalar]
                  << ',' << derived.potential_temperature_k[scalar] << ','
-                 << mps::norm(derived.velocity_m_s[scalar]) << ',' << vapor << ','
+                 << mps::norm(derived.velocity_m_s[scalar]) << ',' << zonal_wind << ','
+                 << latitude_deg << ',' << vapor << ','
                  << state.surface_temperature_k[cell] << ',' << land_fraction[cell]
                  << ','
                  << (state.land_water_kg_m2.empty() ? 0.0
