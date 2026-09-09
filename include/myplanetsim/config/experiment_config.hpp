@@ -209,6 +209,20 @@ struct PhysicsParameters {
   ForcingGeometry geometry = ForcingGeometry::kAxisymmetric;
 };
 
+// Legacy keeps the Phase 13 common substep and arithmetic order. Process intervals
+// enables the Phase 14 event scheduler; its intervals are maxima and are shortened at
+// every accepted dynamics-step boundary.
+enum class PhysicsScheduleKind { kLegacy, kProcessIntervals };
+enum class ConvectionUpdateMode { kIntermittent, kCachedRelaxation };
+
+struct PhysicsScheduleParameters {
+  PhysicsScheduleKind kind = PhysicsScheduleKind::kLegacy;
+  Real boundary_layer_maximum_update_interval_s = 300.0;
+  Real convection_diagnostic_interval_s = 300.0;
+  ConvectionUpdateMode convection_update_mode = ConvectionUpdateMode::kIntermittent;
+  Real radiation_diagnostic_interval_s = 300.0;
+};
+
 struct ConvectionParameters {
   ConvectionKind kind = ConvectionKind::kNone;
   Real stability_tolerance_k = 1e-10;
@@ -281,6 +295,7 @@ struct ExperimentConfig {
   std::optional<SemiImplicitParameters> semi_implicit{};
   OrographyParameters orography{};
   PhysicsParameters physics{};
+  PhysicsScheduleParameters physics_schedule{};
   ConvectionParameters convection{};
   MoistureParameters moisture{};
   BoundaryLayerParameters boundary_layer{};
@@ -321,6 +336,10 @@ struct ExperimentConfig {
     DryHydrostaticTimeIntegrator integrator) noexcept;
 [[nodiscard]] std::string_view orography_kind_name(OrographyKind kind) noexcept;
 [[nodiscard]] std::string_view physics_kind_name(PhysicsKind kind) noexcept;
+[[nodiscard]] std::string_view physics_schedule_kind_name(
+    PhysicsScheduleKind kind) noexcept;
+[[nodiscard]] std::string_view convection_update_mode_name(
+    ConvectionUpdateMode mode) noexcept;
 [[nodiscard]] std::string_view convection_kind_name(ConvectionKind kind) noexcept;
 [[nodiscard]] std::string_view moisture_kind_name(MoistureKind kind) noexcept;
 [[nodiscard]] std::string_view boundary_layer_kind_name(

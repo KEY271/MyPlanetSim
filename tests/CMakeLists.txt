@@ -68,6 +68,7 @@ target_compile_definitions(
   smoke.presets PRIVATE MPS_CONFIG_DIRECTORY="${CMAKE_SOURCE_DIR}/configs"
 )
 mps_add_test(unit.held_suarez test_held_suarez.cpp)
+mps_add_test(unit.physics_schedule test_physics_schedule.cpp)
 mps_add_test(unit.dry_convective_adjustment test_dry_convective_adjustment.cpp)
 mps_add_test(phase13.saturation_adjustment test_saturation_adjustment.cpp)
 set_tests_properties(phase13.saturation_adjustment PROPERTIES LABELS phase13_gate)

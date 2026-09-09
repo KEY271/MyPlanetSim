@@ -298,6 +298,25 @@ radiation.cfl = 0.5
   changed.radiation->shortwave_absorption_m2_kg = 1e-5;
   MPS_CHECK(mps::config_fingerprint(changed) != mps::config_fingerprint(gray));
 
+  const auto scheduled = parse(
+      std::string(kValidDryHydrostaticConfig) + suffix +
+      "physics.schedule = process_intervals\n"
+      "radiation.diagnostic_interval_s = 1800\n");
+  MPS_CHECK(scheduled.physics_schedule.kind ==
+            mps::PhysicsScheduleKind::kProcessIntervals);
+  MPS_CHECK_NEAR(scheduled.physics_schedule.radiation_diagnostic_interval_s,
+                 1800.0, 0.0);
+  std::ostringstream scheduled_text;
+  mps::write_experiment_config(scheduled_text, scheduled);
+  MPS_CHECK_EQ(mps::config_fingerprint(parse(scheduled_text.str())),
+               mps::config_fingerprint(scheduled));
+  MPS_CHECK_THROWS_AS(
+      parse(std::string(kValidDryHydrostaticConfig) + suffix +
+            "physics.schedule = process_intervals\n"
+            "radiation.diagnostic_interval_s = 1800\n"
+            "moisture.maximum_physics_substep_s = 300\n"),
+      std::runtime_error);
+
   const auto convection = parse(std::string(kValidDryHydrostaticConfig) + suffix +
                                 "convection.kind = dry_adjustment\n"
                                 "convection.stability_tolerance_k = 1e-10\n");

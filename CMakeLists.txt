@@ -96,6 +96,7 @@ add_library(
   src/io/run_metadata.cpp
   src/phase0/ode_experiment.cpp
   src/physics/held_suarez.cpp
+  src/physics/physics_schedule.cpp
   src/physics/moist_thermodynamics.cpp
   src/physics/moist_physics_coupling.cpp
   src/physics/saturation_adjustment.cpp

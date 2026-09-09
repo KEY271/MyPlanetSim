@@ -586,6 +586,13 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
           line, "unknown dry_hydrostatic.time_integrator " + std::string(value));
   } else if (key == "dry_hydrostatic.advective_cfl") {
     config.dry_hydrostatic.advective_cfl = parse_real(value, line, key);
+  } else if (key == "physics.schedule") {
+    if (value == "legacy")
+      config.physics_schedule.kind = PhysicsScheduleKind::kLegacy;
+    else if (value == "process_intervals")
+      config.physics_schedule.kind = PhysicsScheduleKind::kProcessIntervals;
+    else
+      throw parse_error(line, "unknown physics.schedule " + std::string(value));
   } else if (key == "tracers.names") {
     config.tracers.clear();
     for (auto& name : parse_name_list(value, line, key))
@@ -740,6 +747,24 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
     config.boundary_layer.turbulent_prandtl = parse_real(value, line, key);
   } else if (key == "boundary_layer.gustiness_m_s") {
     config.boundary_layer.gustiness_m_s = parse_real(value, line, key);
+  } else if (key == "boundary_layer.maximum_update_interval_s") {
+    config.physics_schedule.boundary_layer_maximum_update_interval_s =
+        parse_real(value, line, key);
+  } else if (key == "convection.diagnostic_interval_s") {
+    config.physics_schedule.convection_diagnostic_interval_s =
+        parse_real(value, line, key);
+  } else if (key == "convection.update_mode") {
+    if (value == "intermittent")
+      config.physics_schedule.convection_update_mode =
+          ConvectionUpdateMode::kIntermittent;
+    else if (value == "cached_relaxation")
+      config.physics_schedule.convection_update_mode =
+          ConvectionUpdateMode::kCachedRelaxation;
+    else
+      throw parse_error(line, "unknown convection.update_mode " + std::string(value));
+  } else if (key == "radiation.diagnostic_interval_s") {
+    config.physics_schedule.radiation_diagnostic_interval_s =
+        parse_real(value, line, key);
   } else if (key == "forcing.geometry") {
     if (value == "axisymmetric")
       config.physics.geometry = ForcingGeometry::kAxisymmetric;
@@ -1113,6 +1138,18 @@ void ExperimentConfig::validate() const {
                 surface->hydrology_kind != SurfaceHydrologyKind::kNone)) {
       throw std::invalid_argument("moist physics options require dilute_water");
     }
+    if (physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals) {
+      require_positive(physics_schedule.boundary_layer_maximum_update_interval_s,
+                       "boundary_layer.maximum_update_interval_s");
+      require_positive(physics_schedule.convection_diagnostic_interval_s,
+                       "convection.diagnostic_interval_s");
+      require_positive(physics_schedule.radiation_diagnostic_interval_s,
+                       "radiation.diagnostic_interval_s");
+      if (physics_schedule.convection_update_mode ==
+          ConvectionUpdateMode::kCachedRelaxation)
+        throw std::invalid_argument(
+            "cached_relaxation requires the Phase 14 SBM cache implementation");
+    }
     require_finite(dry_hydrostatic.cfl, "dry_hydrostatic.cfl");
     if (!(dry_hydrostatic.cfl > 0.0 && dry_hydrostatic.cfl <= 1.0))
       throw std::invalid_argument("dry_hydrostatic.cfl must be in (0, 1]");
@@ -1477,6 +1514,44 @@ ExperimentConfig parse_experiment_config(std::istream& input) {
     }
   }
 
+  const bool has_process_schedule = seen_keys.contains("physics.schedule");
+  const bool has_process_interval =
+      seen_keys.contains("boundary_layer.maximum_update_interval_s") ||
+      seen_keys.contains("convection.diagnostic_interval_s") ||
+      seen_keys.contains("convection.update_mode") ||
+      seen_keys.contains("radiation.diagnostic_interval_s");
+  if (config.kind != ExperimentKind::kDryHydrostatic &&
+      (has_process_schedule || has_process_interval))
+    throw std::runtime_error(
+        "physics schedule keys are valid only for dry_hydrostatic");
+  if (has_process_interval && !has_process_schedule)
+    throw std::runtime_error("process intervals require physics.schedule");
+  if (has_process_schedule &&
+      config.physics_schedule.kind == PhysicsScheduleKind::kLegacy &&
+      has_process_interval)
+    throw std::runtime_error("legacy physics schedule does not accept process intervals");
+  if (config.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals) {
+    if (seen_keys.contains("moisture.maximum_physics_substep_s"))
+      throw std::runtime_error(
+          "process intervals conflict with moisture.maximum_physics_substep_s");
+    if (config.boundary_layer.kind != BoundaryLayerKind::kNone &&
+        !seen_keys.contains("boundary_layer.maximum_update_interval_s"))
+      throw std::runtime_error(
+          "process schedule boundary layer requires maximum_update_interval_s");
+    if (config.convection.kind != ConvectionKind::kNone &&
+        !seen_keys.contains("convection.diagnostic_interval_s"))
+      throw std::runtime_error(
+          "process schedule convection requires diagnostic_interval_s");
+    if (config.convection.kind == ConvectionKind::kSimpleBettsMiller &&
+        !seen_keys.contains("convection.update_mode"))
+      throw std::runtime_error(
+          "process schedule SBM requires convection.update_mode");
+    if (config.physics.kind == PhysicsKind::kGrayRadiation &&
+        !seen_keys.contains("radiation.diagnostic_interval_s"))
+      throw std::runtime_error(
+          "process schedule gray radiation requires diagnostic_interval_s");
+  }
+
   const bool has_orography_kind = seen_keys.contains("orography.kind");
   const bool has_input_file = seen_keys.contains("orography.input_file");
   const bool has_input_fingerprint =
@@ -1836,6 +1911,24 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
       }
       if (config.physics.kind != PhysicsKind::kNone)
         output << "physics.kind = " << physics_kind_name(config.physics.kind) << '\n';
+      if (config.physics_schedule.kind == PhysicsScheduleKind::kProcessIntervals) {
+        output << "physics.schedule = process_intervals\n";
+        if (config.boundary_layer.kind != BoundaryLayerKind::kNone)
+          output << "boundary_layer.maximum_update_interval_s = "
+                 << config.physics_schedule.boundary_layer_maximum_update_interval_s
+                 << '\n';
+        if (config.convection.kind != ConvectionKind::kNone)
+          output << "convection.diagnostic_interval_s = "
+                 << config.physics_schedule.convection_diagnostic_interval_s << '\n';
+        if (config.convection.kind == ConvectionKind::kSimpleBettsMiller)
+          output << "convection.update_mode = "
+                 << convection_update_mode_name(
+                        config.physics_schedule.convection_update_mode)
+                 << '\n';
+        if (config.physics.kind == PhysicsKind::kGrayRadiation)
+          output << "radiation.diagnostic_interval_s = "
+                 << config.physics_schedule.radiation_diagnostic_interval_s << '\n';
+      }
       if (config.convection.kind != ConvectionKind::kNone)
         output << "convection.kind = " << convection_kind_name(config.convection.kind)
                << '\n'
@@ -2044,6 +2137,28 @@ std::string_view physics_kind_name(const PhysicsKind kind) noexcept {
       return "surface_energy_balance";
     case PhysicsKind::kGrayRadiation:
       return "gray_radiation";
+  }
+  return "unknown";
+}
+
+std::string_view physics_schedule_kind_name(
+    const PhysicsScheduleKind kind) noexcept {
+  switch (kind) {
+    case PhysicsScheduleKind::kLegacy:
+      return "legacy";
+    case PhysicsScheduleKind::kProcessIntervals:
+      return "process_intervals";
+  }
+  return "unknown";
+}
+
+std::string_view convection_update_mode_name(
+    const ConvectionUpdateMode mode) noexcept {
+  switch (mode) {
+    case ConvectionUpdateMode::kIntermittent:
+      return "intermittent";
+    case ConvectionUpdateMode::kCachedRelaxation:
+      return "cached_relaxation";
   }
   return "unknown";
 }

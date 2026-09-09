@@ -125,3 +125,10 @@ python3 tools/compare_phase14_ici.py --output output/phase14/ici-with-ark2
 最終検査・収支・再利用契約をさらに変更する必要があり、現状は ICI2 より仕事量が多い。
 10%以上高速という事前 gate に対して逆方向であり、係数、許容値、mode数の fine tuning は
 行わない。比較器と runner は将来の方式検証用に残す。
+
+## P14.03: 過程別 scheduler
+
+[ADR 0022](../adr/0022-phase14-physics-scheduler.md) に legacy と過程別 event union、
+力学step末での端数処理、同時刻の順序、旧共通 substep との競合エラーを固定した。
+`make_physics_events` の 1800秒（BL 600 / SBM 900 / radiation 1800）と450秒の
+短縮を unit test で確認した。この段階では driver の legacy 経路は変更していない。
