@@ -11,6 +11,25 @@ html, body, #root { width: 100%; height: 100%; }
 body { margin: 0; overflow: hidden; }
 button, input, select { font: inherit; }
 
+.empty-state {
+  width: min(34rem, calc(100vw - 2rem));
+  margin: 18vh auto 0;
+  padding: 2rem;
+  background: #18232d;
+  border: 1px solid #405663;
+  border-radius: 0.6rem;
+  text-align: center;
+}
+.empty-state h1 { margin-top: 0.5rem; }
+.file-button { display: inline-grid; cursor: pointer; padding: 0.55rem 0.8rem;
+  color: #101820; background: #7bdff2; border-radius: 0.3rem; font-weight: 700; }
+.file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.file-button.compact { padding: 0.38rem 0.65rem; align-self: end; }
+.file-hint { color: #aebdca; font-size: 0.8rem; }
+.readonly-value { min-width: 7rem; padding: 0.36rem 0; color: #e8edf2; }
+.period-status, .color-range { margin: 0; white-space: nowrap; }
+.period-status.partial { color: #ffcf56; }
+
 .app-shell {
   width: 100vw;
   height: 100dvh;

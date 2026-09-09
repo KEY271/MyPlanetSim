@@ -1,25 +1,25 @@
-import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { addShallowWaterDerivedFields, diagnosticEvents, frameV2Field, frameV2Fields, FrameV2FieldId, frameV2LevelDataset, frameV2Sample, panelNames, parseShallowWaterCsv, UnitVector, VisualFrameV2 } from "@myplanetsim/protocol";
-import { DeterministicMockSimulationClient, HttpSimulationClient, PresetDescriptorV1, presetDescriptors, shallowWaterPresetDescriptor } from "@myplanetsim/protocol/client";
+import {
+  DatasetField,
+  DatasetPeriod,
+  fieldRange,
+  panelNames,
+  periodField,
+  periodLevelSlice,
+  PeriodDataset,
+  VisualDatasetReader,
+  VisualDatasetV1,
+} from "@myplanetsim/protocol";
 import { Globe3D } from "./Globe3D";
 import { Map2D } from "./Map2D";
 import { ColumnProfile } from "./ColumnProfile";
-import { appendEdit, clearEdits, createGaussianEdit, DraftRun, toRunRequest, undoEdit } from "./editor";
-import { SimulationController } from "./controller";
+import { browserDatasetFiles } from "./dataset-files";
 import { formatValue } from "./format";
 import "./style.css";
 
-function demoDataset(cellsPerPanel: number) {
-  const rows = ["panel,i,j,depth_m,momentum_x,momentum_y,momentum_z"];
-  for (const panel of ["PX", "PY", "NX", "NY", "PZ", "NZ"]) for (let j = 0; j < cellsPerPanel; j += 1) for (let i = 0; i < cellsPerPanel; i += 1) rows.push(`${panel},${i},${j},3000,0,0,0`);
-  return addShallowWaterDerivedFields(parseShallowWaterCsv(rows.join("\n"), cellsPerPanel));
-}
+type GridMode = "off" | "panel_seams" | "all_cells";
 
-const gridSizes = [2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96];
-
-// Cell order is the ADR 0001 panel-major flat order, so the inspector can name the cell a
-// reader clicked without a second lookup table.
 function cellLabel(cell: number, cellsPerPanel: number) {
   const perPanel = cellsPerPanel * cellsPerPanel;
   const panel = panelNames[Math.floor(cell / perPanel)] ?? "??";
@@ -27,173 +27,178 @@ function cellLabel(cell: number, cellsPerPanel: number) {
   return `${panel} i=${remainder % cellsPerPanel} j=${Math.floor(remainder / cellsPerPanel)}`;
 }
 
-// Injected by vite.config.ts when `just dev` exported a gateway session, so the URL the dev
-// server prints reaches the native engine without a token fragment. Null in a production
-// build and whenever the dev server was started on its own.
-declare const __MPS_DEV_SESSION__: { readonly token: string; readonly gateway: string } | null;
+function label(id: string) {
+  return id.split(/[._]/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
 
-const startupParameters = new URLSearchParams(window.location.hash.slice(1));
-const fragmentToken = startupParameters.get("token");
-const startupToken = fragmentToken ?? __MPS_DEV_SESSION__?.token ?? null;
-const startupGateway = startupParameters.get("gateway") ?? __MPS_DEV_SESSION__?.gateway ?? null;
-if (fragmentToken) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+function renderDataset(reader: VisualDatasetReader, field: DatasetField | null,
+                       period: PeriodDataset | null, terrainField: string | null,
+                       level: number): VisualDatasetV1 {
+  const id = field?.id ?? terrainField!;
+  const unit = field?.unit ??
+    reader.manifest.terrain.fields.find((candidate) => candidate.id === terrainField)!.unit;
+  const values = field && period
+    ? periodLevelSlice(reader.manifest, period, field.id, level)
+    : reader.terrain.fields.get(terrainField!)!;
+  return Object.freeze({
+    schemaVersion: 1,
+    sourceKind: "offline_csv",
+    grid: Object.freeze({ topology: "cubed_sphere", mapping: "equiangular_gnomonic_v1",
+      cellsPerPanel: reader.manifest.cellsPerPanel,
+      flattenOrder: "panel_major_then_j_then_i" }),
+    frame: Object.freeze({ timeSeconds: period?.descriptor.actualEndS ?? null,
+      step: null, configFingerprint: reader.manifest.configFingerprint }),
+    fields: Object.freeze([Object.freeze({ id, label: label(id), unit, kind: "scalar" as const,
+      provenance: "VisualDatasetV1", values })]),
+  });
+}
 
 function App() {
-  const [draft, setDraft] = useState<DraftRun>({ presetId: "rest", cellsPerPanel: 4, endTimeSeconds: 3600, maximumTimeStepSeconds: 60, frameIntervalSteps: 10, edits: [] });
-  const dataset = useMemo(() => demoDataset(draft.cellsPerPanel), [draft.cellsPerPanel]);
-  const controller = useMemo(() => {
-    const client = startupToken
-      ? new HttpSimulationClient(startupGateway ?? window.location.origin, startupToken)
-      : new DeterministicMockSimulationClient();
-    return new SimulationController(client);
-  }, []);
-  const [run, setRun] = useState(controller.value);
-  const [playing, setPlaying] = useState(false);
-  const [presets, setPresets] = useState<readonly PresetDescriptorV1[]>([shallowWaterPresetDescriptor("rest")]);
-  // Swallowing this failure once left the viewer silently stuck on the built-in
-  // shallow-water preset with no way to tell that the gateway was never reached, so the
-  // error is kept and shown next to the preset selector.
-  const [presetError, setPresetError] = useState<string | null>(null);
-  useEffect(() => { const unsubscribe = controller.subscribe(setRun); return () => { unsubscribe(); }; }, [controller]);
-  useEffect(() => {
-    let cancelled = false;
-    void controller.capabilities()
-      .then((capabilities) => { if (!cancelled) { setPresets(presetDescriptors(capabilities)); setPresetError(null); } })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setPresetError(error instanceof Error ? error.message : "the gateway did not return its capabilities");
-      });
-    return () => { cancelled = true; };
-  }, [controller]);
-  useEffect(() => {
-    if (!playing || run.frames.length < 2) return undefined;
-    const timer = window.setInterval(() => {
-      const currentFrame = controller.value.currentFrame;
-      if (currentFrame >= controller.value.frames.length - 1) { setPlaying(false); return; }
-      controller.setCurrentFrame(currentFrame + 1);
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [controller, playing, run.frames.length]);
-  // Shallow-water and dry-hydrostatic field identifiers are disjoint, so each model kind
-  // keeps its own selection instead of being coerced into the other model's field list.
-  const [shallowFieldId, setShallowFieldId] = useState("depth");
-  const [dryFieldId, setDryFieldId] = useState<FrameV2FieldId>("temperature");
+  const loadGeneration = useRef(0);
+  const [reader, setReader] = useState<VisualDatasetReader | null>(null);
+  const [period, setPeriod] = useState<PeriodDataset | null>(null);
+  const [periodIndex, setPeriodIndex] = useState<number | null>(null);
+  const [fieldId, setFieldId] = useState("elevation");
   const [level, setLevel] = useState(0);
   const [selectedCell, setSelectedCell] = useState(0);
-  const [gridMode, setGridMode] = useState<"off" | "panel_seams" | "all_cells">("panel_seams");
-  const [amplitude, setAmplitude] = useState(100);
-  const [sigma, setSigma] = useState(0.2);
-  const [massPolicy, setMassPolicy] = useState<"preserve_global" | "allow_change">("preserve_global");
-  const [message, setMessage] = useState("Choose a cell in either view to create a pending edit.");
-  const editCounter = useRef(1);
-  const preset = presets.find((candidate) => candidate.id === draft.presetId) ?? shallowWaterPresetDescriptor(draft.presetId);
-  const editable = preset.supportedEdits.includes("gaussian_depth");
-  // Which model is on screen follows the decoded frame, not the draft preset: switching the
-  // preset selector must not reinterpret the frames of the run that is already displayed.
-  const currentFrame = run.frames[run.currentFrame];
-  const dryFrame: VisualFrameV2 | null = currentFrame?.schemaVersion === 2 ? currentFrame : null;
-  // The level selector and the profile need a decoded column, so they cannot appear before
-  // the first frame. Announce them from the preset descriptor instead of leaving the panel
-  // unchanged, which read as the feature being absent.
-  const dryPending = preset.levels !== null && dryFrame === null;
-  const dryField = dryFrame ? frameV2Field(dryFieldId) : null;
-  const fieldId = dryFrame ? dryFieldId : shallowFieldId;
-  const activeLevel = dryFrame ? Math.min(level, dryFrame.levels - 1) : 0;
-  const activeCell = dryFrame ? Math.min(selectedCell, 6 * dryFrame.cellsPerPanel ** 2 - 1) : selectedCell;
-  const currentDataset = useMemo(() => {
-    if (dryFrame && dryField) return frameV2LevelDataset(dryFrame, dryField.id, dryField.volume ? activeLevel : 0);
-    return currentFrame?.schemaVersion === 1 ? currentFrame : dataset;
-  }, [activeLevel, currentFrame, dataset, dryField, dryFrame]);
-  const addFromCell = useCallback((cell: number | null, origin?: UnitVector) => {
-    if (cell === null || !origin) return;
-    if (dryFrame) { setSelectedCell(cell); setMessage(`Selected column ${cellLabel(cell, dryFrame.cellsPerPanel)}.`); return; }
-    if (!editable) { setMessage(`${preset.id} does not accept initial-condition edits.`); return; }
-    // The updater must stay pure: React may replay it, so the identifier and the status
-    // message are derived once here instead of inside setDraft.
-    const edit = createGaussianEdit(origin, amplitude, sigma, massPolicy, `edit-${editCounter.current++}`);
-    setDraft((current) => appendEdit(current, edit));
-    setMessage(`${edit.id} added at the clicked location (cell ${cell}); the ring shows sigma.`);
-  }, [amplitude, dryFrame, editable, massPolicy, preset.id, sigma]);
-  const selectPreset = (presetId: string) => {
-    const next = presets.find((candidate) => candidate.id === presetId) ?? shallowWaterPresetDescriptor(presetId);
-    // A preset without a column must carry no levels at all, and one with a column starts
-    // from its own default rather than from whatever the previous preset used.
-    setDraft((current) => ({ ...current, presetId, edits: [],
-      cellsPerPanel: Math.min(current.cellsPerPanel, next.maximumCellsPerPanel),
-      levels: next.levels ?? undefined }));
-    setMessage(next.modelKind === "dry_hydrostatic"
-      ? `${presetId} runs the dry hydrostatic core; clicking a cell selects a column.`
-      : `${presetId} runs the shallow-water core; clicking a cell adds an edit.`);
+  const [gridMode, setGridMode] = useState<GridMode>("panel_seams");
+  const [message, setMessage] = useState("Open a VisualDatasetV1 folder to inspect terrain and period means.");
+
+  const folderInput = (node: HTMLInputElement | null) => {
+    node?.setAttribute("webkitdirectory", "");
   };
-  const requestSummary = () => { try { return JSON.stringify(toRunRequest(draft), null, 2); } catch (error) { return error instanceof Error ? error.message : "invalid request"; } };
-  const start = () => { try { void controller.start(toRunRequest(draft)); } catch (error) { setMessage(error instanceof Error ? error.message : "invalid request"); } };
-  const togglePlayback = () => { if (playing) { setPlaying(false); return; } if (run.currentFrame >= run.frames.length - 1) controller.setCurrentFrame(0); setPlaying(true); };
-  const displayed = run.frames.length > 0 ? currentDataset : dataset;
-  const diagnostics = diagnosticEvents(run.events);
-  const sample = dryFrame && dryField ? frameV2Sample(dryFrame, dryField.id, activeCell, activeLevel) : null;
-  const timeSeconds = dryFrame ? dryFrame.timeSeconds : currentDataset.frame.timeSeconds;
-  const step = dryFrame ? dryFrame.step : currentDataset.frame.step;
-  const downloadBundle = async () => { const bundle = await controller.bundle(); if (!bundle) return; const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" })); link.download = `${bundle.runId}.json`; link.click(); URL.revokeObjectURL(link.href); };
+
+  const atmosphericField = reader?.manifest.fields.find((field) => field.id === fieldId) ?? null;
+  const terrainField = reader?.manifest.terrain.fields.find((field) => field.id === fieldId) ?? null;
+  const activePeriodIndex = periodIndex ?? reader?.manifest.periods[0]?.index ?? null;
+
+  useEffect(() => {
+    if (!reader || !atmosphericField || activePeriodIndex === null) { setPeriod(null); return; }
+    const generation = ++loadGeneration.current;
+    setMessage("Loading selected period…");
+    void reader.period(activePeriodIndex).then((loaded) => {
+      if (generation !== loadGeneration.current) return;
+      setPeriod(loaded);
+      setMessage(loaded.descriptor.complete ? "Complete period loaded." :
+        "Partial period loaded; coverage is shown below.");
+    }).catch((error: unknown) => {
+      if (generation !== loadGeneration.current) return;
+      setPeriod(null);
+      setMessage(error instanceof Error ? error.message : "Unable to load period.");
+    });
+  }, [activePeriodIndex, atmosphericField, reader]);
+
+  const displayed = useMemo(() => {
+    if (!reader || (!terrainField && (!atmosphericField || !period))) return null;
+    return renderDataset(reader, atmosphericField, period, terrainField?.id ?? null,
+      atmosphericField?.location === "atmosphere" ? level : 0);
+  }, [atmosphericField, level, period, reader, terrainField]);
+
+  const openDataset = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const generation = ++loadGeneration.current;
+    try {
+      const opened = await VisualDatasetReader.open(browserDatasetFiles(files));
+      if (generation !== loadGeneration.current) return;
+      setReader(opened); setPeriod(null); setPeriodIndex(opened.manifest.periods[0]?.index ?? null);
+      setFieldId(opened.manifest.periods.length && opened.manifest.fields.some((field) => field.id === "temperature")
+        ? "temperature" : "elevation");
+      setLevel(0); setSelectedCell(0);
+      setMessage(`Opened N=${opened.manifest.cellsPerPanel}, K=${opened.manifest.levelCount} dataset.`);
+    } catch (error) {
+      if (generation !== loadGeneration.current) return;
+      setReader(null); setPeriod(null);
+      setMessage(error instanceof Error ? error.message : "Unable to open dataset.");
+    }
+  };
+
+  if (!reader || !displayed) return <main className="empty-state">
+    <p className="eyebrow">MyPlanetSim · Phase 15</p>
+    <h1>Terrain & period-mean viewer</h1>
+    <p>{message}</p>
+    <label className="file-button">Open dataset folder
+      <input ref={folderInput} type="file" multiple onChange={(event) => void openDataset(event.target.files)} />
+    </label>
+    <p className="file-hint">Select the folder containing manifest.json, terrain.bin, and means/.</p>
+  </main>;
+
+  const selectedField = atmosphericField ??
+    ({ id: terrainField!.id, unit: terrainField!.unit, location: "surface",
+      valueOffset: 0, valueCount: reader.manifest.cellCount } satisfies DatasetField);
+  const activeLevel = selectedField.location === "atmosphere"
+    ? Math.min(level, reader.manifest.levelCount - 1) : 0;
+  const activeCell = Math.min(selectedCell, reader.manifest.cellCount - 1);
+  const shownValues = displayed.fields[0].values;
+  const [minimum, maximum] = fieldRange(displayed.fields[0]);
+  const sample = shownValues[activeCell];
+  const pressureDescriptor = reader.manifest.fields.find((field) => field.id === "pressure");
+  const volumeValues = atmosphericField && period && atmosphericField.location === "atmosphere"
+    ? periodField(reader.manifest, period, atmosphericField.id) : null;
+  const pressureValues = pressureDescriptor && period
+    ? periodField(reader.manifest, period, pressureDescriptor.id) : null;
+  const profileValues = volumeValues
+    ? volumeValues.slice(activeCell * reader.manifest.levelCount,
+      (activeCell + 1) * reader.manifest.levelCount) : null;
+  const profilePressure = pressureValues
+    ? pressureValues.slice(activeCell * reader.manifest.levelCount,
+      (activeCell + 1) * reader.manifest.levelCount) : null;
+  const periodDescriptor: DatasetPeriod | null = period?.descriptor ?? null;
+  const pick = (cell: number | null) => {
+    if (cell === null) return;
+    setSelectedCell(cell);
+    setMessage(`Selected ${cellLabel(cell, reader.manifest.cellsPerPanel)}.`);
+  };
+
   return <main className="app-shell">
     <header className="top-panel">
-      <div className="title-row"><p className="eyebrow">MyPlanetSim · Phase 5</p><h1>Interactive cubed-sphere visualizer</h1><p className="message">{message}</p></div>
-      {/* Opening the plain dev-server URL instead of the tokenised one silently selected
-          the offline demo, which serves only the shallow-water preset. That looked exactly
-          like the dry hydrostatic model being missing, so the fallback is stated up front. */}
-      {startupToken ? null : <p className="demo-banner" role="status">
-        Offline demo — no gateway session token in the URL. Only the shallow-water preset is
-        available; the dry hydrostatic model, model levels, and column profiles need the
-        native gateway. Start it with <code>just dev</code> and open the <code>Live UI</code>
-        link it prints (the one containing <code>#token=</code>), not the plain dev-server URL.
-      </p>}
-      <section className="control-panel" aria-label="Run and view controls">
-        <label>Preset <select value={draft.presetId} onChange={(event) => selectPreset(event.target.value)}>{presets.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.id}</option>)}</select></label>
-        <label>Field <select value={fieldId} onChange={(event) => dryFrame ? setDryFieldId(event.target.value as FrameV2FieldId) : setShallowFieldId(event.target.value)}>
-          {dryFrame
-            ? frameV2Fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)
-            : dataset.fields.map((field) => <option key={field.id} value={field.id}>{field.label}</option>)}
+      <div className="title-row"><p className="eyebrow">MyPlanetSim · Phase 15</p>
+        <h1>Terrain & period-mean viewer</h1><p className="message">{message}</p></div>
+      <section className="control-panel" aria-label="Dataset view controls">
+        <label>Dataset <span className="readonly-value">N={reader.manifest.cellsPerPanel} · K={reader.manifest.levelCount}</span></label>
+        <label>Field <select value={fieldId} onChange={(event) => setFieldId(event.target.value)}>
+          <optgroup label="Terrain">{reader.manifest.terrain.fields
+            .filter((field) => !field.id.startsWith("center_"))
+            .map((field) => <option key={field.id} value={field.id}>{label(field.id)} ({field.unit})</option>)}</optgroup>
+          {reader.manifest.periods.length ? <optgroup label="Period means">{reader.manifest.fields
+            .map((field) => <option key={field.id} value={field.id}>{label(field.id)} ({field.unit})</option>)}</optgroup> : null}
         </select></label>
-        {dryFrame ? <label>Model level (0 = top) <input aria-label="Model level" type="range" min="0" max={dryFrame.levels - 1} step="1" value={activeLevel} disabled={!dryField?.volume} onChange={(event) => setLevel(Number(event.target.value))} /></label> : null}
-        {dryPending ? <label>Model level (0 = top) <input aria-label="Model level" type="range" min="0" max={(draft.levels ?? preset.levels ?? 1) - 1} step="1" value={0} disabled readOnly /></label> : null}
-        <label>Grid <select value={gridMode} onChange={(event) => setGridMode(event.target.value as typeof gridMode)}><option value="off">Off</option><option value="panel_seams">Panel seams</option><option value="all_cells">All cells</option></select></label>
-        <label>N (cells/face) <select value={draft.cellsPerPanel} onChange={(event) => setDraft((current) => ({ ...current, cellsPerPanel: Number(event.target.value) }))}>{gridSizes.filter((value) => value <= preset.maximumCellsPerPanel).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-        {preset.levels === null ? null : <label>K (vertical resolution) <input aria-label="K vertical resolution" type="number" min="1" step="1" max={preset.maximumLevels ?? preset.levels} value={draft.levels ?? preset.levels} onChange={(event) => setDraft((current) => ({ ...current, levels: Number(event.target.value) }))} /></label>}
-        <label>End time (s) <input type="number" min="0.000001" max="31536000" value={draft.endTimeSeconds} onChange={(event) => setDraft((current) => ({ ...current, endTimeSeconds: Number(event.target.value) }))} /></label>
-        <label>Simulation Δt max (s) <input type="number" min="0.000001" max="86400" value={draft.maximumTimeStepSeconds} onChange={(event) => setDraft((current) => ({ ...current, maximumTimeStepSeconds: Number(event.target.value) }))} /></label>
-        <label>Display every (steps) <input type="number" min="1" max="1000000" step="1" value={draft.frameIntervalSteps} onChange={(event) => setDraft((current) => ({ ...current, frameIntervalSteps: Number(event.target.value) }))} /></label>
-        {editable ? <>
-          <label>Amplitude (m) <input type="number" value={amplitude} onChange={(event) => setAmplitude(Number(event.target.value))} /></label>
-          <label>Sigma (rad) <input type="number" min="0.000001" step="0.01" value={sigma} onChange={(event) => setSigma(Number(event.target.value))} /></label>
-          <label>Mass policy <select value={massPolicy} onChange={(event) => setMassPolicy(event.target.value as typeof massPolicy)}><option value="preserve_global">Preserve global</option><option value="allow_change">Allow change</option></select></label>
-          <button type="button" onClick={() => setDraft((current) => undoEdit(current))}>Undo edit</button>
-          <button type="button" onClick={() => setDraft((current) => clearEdits(current))}>Clear edits</button>
-        </> : null}
-        <button type="button" onClick={start} disabled={run.state === "submitting" || run.state === "running" || run.state === "cancelling"}>Run</button><button type="button" onClick={() => void controller.cancel()} disabled={run.state !== "running"}>Cancel</button>
+        <label>Period <select value={activePeriodIndex ?? ""} disabled={!atmosphericField}
+          onChange={(event) => setPeriodIndex(Number(event.target.value))}>
+          {reader.manifest.periods.map((candidate) => <option key={candidate.index} value={candidate.index}>
+            {candidate.index}: {candidate.scheduledStartS}–{candidate.scheduledEndS}s
+            {candidate.complete ? "" : " (partial)"}</option>)}
+        </select></label>
+        <label>Model level (0 = top) <input aria-label="Model level" type="range" min="0"
+          max={reader.manifest.levelCount - 1} step="1" value={activeLevel}
+          disabled={selectedField.location === "surface"} onChange={(event) => setLevel(Number(event.target.value))} /></label>
+        <label>Grid <select value={gridMode} onChange={(event) => setGridMode(event.target.value as GridMode)}>
+          <option value="off">Off</option><option value="panel_seams">Panel seams</option>
+          <option value="all_cells">All cells</option></select></label>
+        <label className="file-button compact">Open another
+          <input type="file" multiple ref={folderInput} onChange={(event) => void openDataset(event.target.files)} /></label>
       </section>
       <div className="run-tools">
-        <p className="engine-status">Engine: {startupToken ? "native C++" : "deterministic demo"} · model: {preset.modelKind} · frame schema: {dryFrame ? 2 : 1}</p>
-        {presetError ? <p className="preset-error" role="alert">Preset list unavailable ({presetError}); showing the built-in shallow-water preset only.</p> : null}
-        {dryPending ? <p className="preset-hint">{preset.id} publishes {draft.levels ?? preset.levels} model levels. Run it to enable the level selector, the column profile, and the cell inspector.</p> : null}
-        <p className="run-status" role="status">Run state: {run.state}{run.error ? ` · ${run.error}` : ""}</p>
-        <p className="edit-status" aria-live="polite">{editable
-          ? `Configured edits: ${draft.edits.length}${run.request ? ` · current run applied: ${run.request.initialCondition.edits.length}` : ""} · rings show center and sigma`
-          : "This preset has no initial-condition edits; clicking a cell selects a column."}</p>
-        <section className="timeline" aria-label="Frame timeline"><button type="button" onClick={() => controller.setCurrentFrame(Math.max(0, run.currentFrame - 1))}>Previous</button><button type="button" onClick={togglePlayback} disabled={run.frames.length < 2}>{playing ? "Pause" : run.currentFrame >= run.frames.length - 1 ? "Replay" : "Play"}</button><input aria-label="Frame" type="range" min="0" max={Math.max(0, run.frames.length - 1)} value={run.currentFrame} onChange={(event) => controller.setCurrentFrame(Number(event.target.value))} /><span>{run.frames.length ? `${run.currentFrame + 1}/${run.frames.length} · t=${timeSeconds ?? "?"}s · step ${step ?? "?"}` : "No frames"}</span></section>
-        {dryFrame && dryField && sample ? <section className="inspector" aria-label="Column inspector">
-          <p>Cell {activeCell} ({cellLabel(activeCell, dryFrame.cellsPerPanel)}){dryField.volume ? ` · level ${activeLevel}/${dryFrame.levels - 1}` : " · surface"}</p>
-          <p>{dryField.label}: {formatValue(sample.value)} {dryField.unit}{sample.pressurePa === null ? "" : ` · pressure ${formatValue(sample.pressurePa)} Pa`}</p>
-          <p>t={dryFrame.timeSeconds}s · step {dryFrame.step} · fingerprint {dryFrame.configFingerprint}</p>
-        </section> : null}
-        <section className="diagnostics" aria-label="Diagnostics"><button type="button" onClick={() => void downloadBundle()} disabled={!run.runId}>Download bundle</button>{diagnostics.slice(-1).map((sampleEvent) => <p key={sampleEvent.sequence}>step {sampleEvent.step} · mass {sampleEvent.mass ?? "n/a"} · energy {sampleEvent.energy ?? "n/a"}</p>)}</section>
-        <details className="request-panel"><summary>Request</summary><pre>{requestSummary()}</pre></details>
+        <p className="engine-status">Read-only local dataset · fingerprint {reader.manifest.configFingerprint}</p>
+        {periodDescriptor ? <p className={periodDescriptor.complete ? "period-status" : "period-status partial"}>
+          {periodDescriptor.actualStartS}–{periodDescriptor.actualEndS}s ·
+          {" "}{(periodDescriptor.coverage * 100).toFixed(1)}% coverage
+        </p> : <p className="period-status">Static terrain</p>}
+        <p className="color-range">{label(selectedField.id)} · {formatValue(minimum)}–{formatValue(maximum)} {selectedField.unit}</p>
+        <section className="inspector" aria-label="Cell inspector">
+          <p>{cellLabel(activeCell, reader.manifest.cellsPerPanel)} ·
+            {selectedField.location === "atmosphere" ? ` level ${activeLevel}` : " surface"} ·
+            {" "}{formatValue(sample)} {selectedField.unit}</p>
+        </section>
       </div>
     </header>
-    <section className={dryFrame && dryField?.volume ? "view-grid with-profile" : "view-grid"}>
-      <article className="view-panel"><h2>2D global map</h2><Map2D dataset={displayed} fieldId={fieldId} gridMode={gridMode} edits={draft.edits} onPick={addFromCell} /></article>
-      <article className="view-panel"><h2>3D globe</h2><Globe3D dataset={displayed} fieldId={fieldId} gridMode={gridMode} edits={draft.edits} onPick={addFromCell} /></article>
-      {dryFrame && dryField?.volume
-        ? <ColumnProfile frame={dryFrame} field={dryField} cell={activeCell} level={activeLevel} onSelectLevel={setLevel} />
-        : null}
+    <section className={profileValues && profilePressure ? "view-grid with-profile" : "view-grid"}>
+      <article className="view-panel"><h2>2D global map</h2>
+        <Map2D dataset={displayed} fieldId={selectedField.id} gridMode={gridMode} edits={[]} onPick={pick} /></article>
+      <article className="view-panel"><h2>3D globe</h2>
+        <Globe3D dataset={displayed} fieldId={selectedField.id} gridMode={gridMode} edits={[]} onPick={pick} /></article>
+      {profileValues && profilePressure ? <ColumnProfile values={profileValues}
+        pressurePa={profilePressure} label={label(selectedField.id)} unit={selectedField.unit}
+        cell={activeCell} level={activeLevel} onSelectLevel={setLevel} /> : null}
     </section>
   </main>;
 }
