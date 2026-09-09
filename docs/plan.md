@@ -407,8 +407,9 @@ explicit 200 s run より 3 倍以上速く、1 本の 1200 日 run が保存量
 ### Phase 14 — RHS 評価削減・物理の頻度分離・CPU 性能改善
 
 Phase 14 は性能改善に集中する。現在の実装に基づく変更箇所、比較行列、採否基準、実装順は
-[Phase 14 実装計画](phase-14-plan.md) に定める（P14.01 の計測基盤、P14.02 の固定反復比較と
-独立 ARK2 IMEX 比較器を実装中）。
+[Phase 14 実装計画](phase-14-plan.md) に定める（P14.01--P14.12 実装済み。統合候補
+`configs/phase14_moist_candidate.cfg` の1日比較で旧 serial 比 1.86--1.89倍。
+30日・1200日の実行は foreground 作業として残る）。
 
 - semi-implicit の固定2反復と predictor-corrector / IMEX を比較し、full RHS の実評価回数を減らす
 - BL/surface、SBM、放射の診断・更新間隔を分離し、SBM 900--1800秒、BL 600--900秒を検証する

@@ -381,3 +381,22 @@ python3 tools/compare_phase14_final.py --output output/phase14/final-1200day --d
 
 CAPE 分布・降水 p95/p99・top到達面積、地形と有限陸 fraction のケース、N=24/48 の統合速度、
 30日・1200日の実行は未了である。1日の測定だけで Phase 14 全体の採否を確定しない。
+
+## 採否のまとめ
+
+| 項目 | 採否 | 根拠 |
+|---|---|---|
+| ICI 2反復 (P14.02) | 適用範囲限定 | 湿潤1日 gate は通るが線形波では反復誤差が時間離散誤差を上回る。preset は3反復のまま、比較 CLI で選択可能 |
+| ARK2 IMEX (P14.02) | 不採用 | 同条件で ICI2 より 4.8% 遅く、線形反復と fast operator が増える |
+| 過程別 scheduler・放射分離 (P14.03) | 採用 | full RHS 5→4回/step、legacy 経路と byte 一致する互換モードを保持 |
+| SBM 900秒・intermittent (P14.04) | 採用 | 重い診断 3.0倍削減、水・enthalpy 収支と対流降水比を維持 |
+| SBM cached_relaxation (P14.04) | 適用範囲限定 | 保存則の再診断規則を追加して正しくなったが、同条件で intermittent より遅い。config で選択可能 |
+| BL 600秒・factorization 再利用 (P14.05) | 採用 | 柱呼出し半減、独立 column の収支・制約を維持 |
+| BL Newton solve (P14.05) | 不採用（比較器として保持） | 二分法と同じ解・反復数で、置換の利点が測れていない |
+| column workspace と OpenMP (P14.06/07) | 採用 | serial と同じ加算順、OFF/ON・1/4 thread で全 test 成功 |
+| reconstruction–flux 融合 (P14.08) | 採用 | 旧 API と byte 一致、global face state を production 経路から除去 |
+| Field3DView (P14.09) | 採用 | canonical 順序を保ったまま stride を明示 |
+| blocked/AoSoA storage (P14.09) | 不採用（workspace 候補） | prognostic 配置の変更は column physics と restart の変換費用が増える |
+| modal batch/SIMD (P14.10) | 採用 | 加算順・selected mode 規約を保ち、scalar と一致 |
+| 水平 tile (P14.11) | 採用 | RHS の値は不変。global buffer の縮小は測定前なので行わない |
+| 統合候補 preset (P14.12) | 採用（1日まで） | 初期場1.889倍・発達後1.855倍。30日・1200日は未実行 |
