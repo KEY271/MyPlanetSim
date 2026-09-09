@@ -1,4 +1,4 @@
-import { ProtocolError } from "./index";
+import { ProtocolError } from "./errors";
 
 export const panelNames = ["PX", "PY", "NX", "NY", "PZ", "NZ"] as const;
 export type PanelName = (typeof panelNames)[number];

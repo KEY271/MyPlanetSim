@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { GaussianDepthEditV1, UnitVector, VisualDatasetV1 } from "@myplanetsim/protocol";
+import { UnitVector, VisualDatasetV1 } from "@myplanetsim/protocol";
 import { createGlobeGeometry, createGridGeometry, globeTrianglesPerCell, pickedCellFromFace, updateGlobeColors } from "./globe";
 
 interface Globe3DProps {
@@ -8,16 +8,14 @@ interface Globe3DProps {
   readonly fieldId: string;
   readonly gridMode: "off" | "panel_seams" | "all_cells";
   readonly onPick?: (cell: number | null, origin?: UnitVector) => void;
-  readonly edits: readonly GaussianDepthEditV1[];
 }
 
 interface GlobeRuntime {
   readonly surface: THREE.Mesh;
   readonly grid: THREE.LineSegments;
-  readonly editGroup: THREE.Group;
 }
 
-export function Globe3D({ dataset, fieldId, gridMode, onPick, edits }: Globe3DProps) {
+export function Globe3D({ dataset, fieldId, gridMode, onPick }: Globe3DProps) {
   const host = useRef<HTMLDivElement>(null);
   const runtime = useRef<GlobeRuntime | null>(null);
   const datasetRef = useRef(dataset); datasetRef.current = dataset;
@@ -37,8 +35,8 @@ export function Globe3D({ dataset, fieldId, gridMode, onPick, edits }: Globe3DPr
 
     const surface = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
     const grid = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.55 })); grid.scale.setScalar(1.002);
-    const editGroup = new THREE.Group(); const globe = new THREE.Group(); globe.add(surface, grid, editGroup); scene.add(globe);
-    runtime.current = { surface, grid, editGroup };
+    const globe = new THREE.Group(); globe.add(surface, grid); scene.add(globe);
+    runtime.current = { surface, grid };
 
     const raycaster = new THREE.Raycaster(); const pointer = new THREE.Vector2();
     let pointerActive = false; let dragging = false; let previousX = 0; let previousY = 0;
@@ -77,7 +75,7 @@ export function Globe3D({ dataset, fieldId, gridMode, onPick, edits }: Globe3DPr
       cancelAnimationFrame(animationFrame); observer.disconnect();
       element.removeEventListener("pointerdown", pointerDown); element.removeEventListener("pointermove", pointerMove);
       element.removeEventListener("pointerup", pointerUp); element.removeEventListener("pointercancel", pointerCancel); element.removeEventListener("wheel", wheel);
-      disposeObject(editGroup); surface.geometry.dispose(); (surface.material as THREE.Material).dispose(); grid.geometry.dispose(); (grid.material as THREE.Material).dispose();
+      surface.geometry.dispose(); (surface.material as THREE.Material).dispose(); grid.geometry.dispose(); (grid.material as THREE.Material).dispose();
       runtime.current = null; renderer.dispose(); renderer.domElement.remove();
     };
   }, []);
@@ -94,36 +92,5 @@ export function Globe3D({ dataset, fieldId, gridMode, onPick, edits }: Globe3DPr
     const previous = runtime.current.grid.geometry; runtime.current.grid.geometry = createGridGeometry(dataset.grid.cellsPerPanel, gridMode); previous.dispose();
   }, [dataset.grid.cellsPerPanel, gridMode]);
 
-  useEffect(() => {
-    if (!runtime.current) return;
-    const group = runtime.current.editGroup; disposeObject(group); group.clear();
-    for (const edit of edits) {
-      const color = edit.amplitudeMeters >= 0 ? "#ffcf56" : "#ff6fae";
-      const marker = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 8), new THREE.MeshBasicMaterial({ color })); marker.position.set(...edit.centerUnit).multiplyScalar(1.035);
-      const ring = new THREE.LineLoop(editRingGeometry(edit.centerUnit, edit.sigmaRadians), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 }));
-      group.add(marker, ring);
-    }
-  }, [edits]);
-
   return <div aria-label="3D globe" className="globe-3d"><div ref={host} className="globe-canvas" />{renderError ? <p className="render-error">3D view unavailable: {renderError}</p> : null}</div>;
-}
-
-function disposeObject(group: THREE.Group) {
-  for (const child of group.children) {
-    const renderable = child as THREE.Mesh | THREE.Line;
-    renderable.geometry?.dispose();
-    const materials = Array.isArray(renderable.material) ? renderable.material : [renderable.material];
-    for (const material of materials) material?.dispose();
-  }
-}
-
-function editRingGeometry(origin: UnitVector, sigma: number): THREE.BufferGeometry {
-  const normal = new THREE.Vector3(...origin).normalize();
-  const reference = Math.abs(normal.z) < 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
-  const firstTangent = reference.cross(normal).normalize(); const secondTangent = new THREE.Vector3().crossVectors(normal, firstTangent).normalize();
-  const points = Array.from({ length: 96 }, (_, index) => {
-    const angle = 2 * Math.PI * index / 96;
-    return normal.clone().multiplyScalar(Math.cos(sigma)).addScaledVector(firstTangent, Math.sin(sigma) * Math.cos(angle)).addScaledVector(secondTangent, Math.sin(sigma) * Math.sin(angle)).multiplyScalar(1.035);
-  });
-  return new THREE.BufferGeometry().setFromPoints(points);
 }

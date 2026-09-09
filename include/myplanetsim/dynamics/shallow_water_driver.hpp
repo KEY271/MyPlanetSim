@@ -2,11 +2,9 @@
 
 #include <cstdint>
 #include <optional>
-#include <span>
 #include <vector>
 
 #include "myplanetsim/config/experiment_config.hpp"
-#include "myplanetsim/control/control_request.hpp"
 #include "myplanetsim/diagnostics/shallow_water_diagnostics.hpp"
 
 namespace mps {
@@ -27,16 +25,6 @@ struct ShallowWaterResult {
   std::vector<ShallowWaterSample> samples;
 };
 
-struct ShallowWaterRunHooks {
-  using FrameObserver = void (*)(const ShallowWaterState&, void* context);
-  using CancellationPredicate = bool (*)(void* context);
-
-  FrameObserver on_frame = nullptr;
-  void* observer_context = nullptr;
-  CancellationPredicate is_cancelled = nullptr;
-  void* cancellation_context = nullptr;
-};
-
 [[nodiscard]] Real stable_shallow_water_time_step(const CubedSphereGrid& grid,
                                                   const ShallowWaterState& state,
                                                   Real gravity_m_s2, Real cfl,
@@ -47,8 +35,6 @@ struct ShallowWaterRunHooks {
 [[nodiscard]] ShallowWaterResult run_shallow_water(
     const ExperimentConfig& config,
     std::optional<ShallowWaterState> initial_state = std::nullopt,
-    std::optional<std::uint64_t> stop_after_step = std::nullopt,
-    std::span<const InitialConditionEditV1> initial_edits = {},
-    ShallowWaterRunHooks hooks = {});
+    std::optional<std::uint64_t> stop_after_step = std::nullopt);
 
 }  // namespace mps

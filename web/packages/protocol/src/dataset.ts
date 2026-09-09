@@ -1,4 +1,4 @@
-import { ProtocolError } from "./index";
+import { ProtocolError } from "./errors";
 
 export type DatasetFieldLocation = "surface" | "atmosphere";
 

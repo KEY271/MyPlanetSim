@@ -42,7 +42,7 @@ function renderDataset(reader: VisualDatasetReader, field: DatasetField | null,
     : reader.terrain.fields.get(terrainField!)!;
   return Object.freeze({
     schemaVersion: 1,
-    sourceKind: "offline_csv",
+    sourceKind: "visual_dataset",
     grid: Object.freeze({ topology: "cubed_sphere", mapping: "equiangular_gnomonic_v1",
       cellsPerPanel: reader.manifest.cellsPerPanel,
       flattenOrder: "panel_major_then_j_then_i" }),
@@ -193,9 +193,9 @@ function App() {
     </header>
     <section className={profileValues && profilePressure ? "view-grid with-profile" : "view-grid"}>
       <article className="view-panel"><h2>2D global map</h2>
-        <Map2D dataset={displayed} fieldId={selectedField.id} gridMode={gridMode} edits={[]} onPick={pick} /></article>
+        <Map2D dataset={displayed} fieldId={selectedField.id} gridMode={gridMode} onPick={pick} /></article>
       <article className="view-panel"><h2>3D globe</h2>
-        <Globe3D dataset={displayed} fieldId={selectedField.id} gridMode={gridMode} edits={[]} onPick={pick} /></article>
+        <Globe3D dataset={displayed} fieldId={selectedField.id} gridMode={gridMode} onPick={pick} /></article>
       {profileValues && profilePressure ? <ColumnProfile values={profileValues}
         pressurePa={profilePressure} label={label(selectedField.id)} unit={selectedField.unit}
         cell={activeCell} level={activeLevel} onSelectLevel={setLevel} /> : null}

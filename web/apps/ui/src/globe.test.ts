@@ -1,15 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { createGlobeGeometry, createGridGeometry, globeSubdivisionsPerCell, globeTrianglesPerCell, pickedCellFromFace, updateGlobeColors } from "./globe";
-import { parseShallowWaterCsv } from "@myplanetsim/protocol";
+import { VisualDatasetV1 } from "@myplanetsim/protocol";
 
-const csv = ["panel,i,j,depth_m,momentum_x,momentum_y,momentum_z",
-  ...["PX", "PY", "NX", "NY", "PZ", "NZ"].flatMap((panel) =>
-    [0, 1].flatMap((j) => [0, 1].map((i) => `${panel},${i},${j},2,0,0,0`)))].join("\n");
+function dataset(cellsPerPanel: number, firstValue = 2): VisualDatasetV1 {
+  const values = new Float64Array(6 * cellsPerPanel ** 2).fill(2);
+  values[0] = firstValue;
+  return {
+    schemaVersion: 1,
+    sourceKind: "visual_dataset",
+    grid: { topology: "cubed_sphere", mapping: "equiangular_gnomonic_v1",
+      cellsPerPanel, flattenOrder: "panel_major_then_j_then_i" },
+    frame: { timeSeconds: null, step: null, configFingerprint: "fixture" },
+    fields: [{ id: "depth", label: "Depth", unit: "m", kind: "scalar",
+      provenance: "fixture", values }],
+  };
+}
 
 describe("3D globe buffers", () => {
   it("creates finite one-geometry cell buffers and batched grid lines", () => {
-    const dataset = parseShallowWaterCsv(csv, 2);
-    const geometry = createGlobeGeometry(dataset, "depth");
+    const fixture = dataset(2);
+    const geometry = createGlobeGeometry(fixture, "depth");
     const subdivisions = globeSubdivisionsPerCell(2);
     expect(geometry.getAttribute("position").count).toBe(24 * (subdivisions + 1) ** 2);
     expect([...geometry.getAttribute("position").array].every(Number.isFinite)).toBe(true);
@@ -18,21 +28,18 @@ describe("3D globe buffers", () => {
   });
 
   it("recolours an existing geometry in place when the grid is unchanged", () => {
-    const geometry = createGlobeGeometry(parseShallowWaterCsv(csv, 2), "depth");
+    const geometry = createGlobeGeometry(dataset(2), "depth");
     const positions = geometry.getAttribute("position");
-    const varied = parseShallowWaterCsv(csv.replace("PX,0,0,2", "PX,0,0,9"), 2);
+    const varied = dataset(2, 9);
     expect(updateGlobeColors(geometry, varied, "depth")).toBe(true);
     expect(geometry.getAttribute("position")).toBe(positions);
     const colors = geometry.getAttribute("color").array;
     expect([...colors.slice(0, 3)]).not.toEqual([...colors.slice(colors.length - 3)]);
-    const coarse = ["panel,i,j,depth_m,momentum_x,momentum_y,momentum_z",
-      ...["PX", "PY", "NX", "NY", "PZ", "NZ"].map((panel) => `${panel},0,0,2,0,0,0`)].join("\n");
-    expect(updateGlobeColors(geometry, parseShallowWaterCsv(coarse, 1), "depth")).toBe(false);
+    expect(updateGlobeColors(geometry, dataset(1), "depth")).toBe(false);
   });
 
   it("tessellates sparse panel cells onto the unit sphere", () => {
-    const dataset = parseShallowWaterCsv(csv, 2);
-    const positions = createGlobeGeometry(dataset, "depth").getAttribute("position").array;
+    const positions = createGlobeGeometry(dataset(2), "depth").getAttribute("position").array;
     for (let offset = 0; offset < positions.length; offset += 3) {
       expect(Math.hypot(positions[offset], positions[offset + 1], positions[offset + 2])).toBeCloseTo(1, 6);
     }

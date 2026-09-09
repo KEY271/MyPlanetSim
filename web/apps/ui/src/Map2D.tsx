@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { geoCircle, geoPath } from "d3-geo";
-import { fieldRange, GaussianDepthEditV1, hitTest, UnitVector, VisualDatasetV1, gridEdges, panelNames } from "@myplanetsim/protocol";
-import { equirectangularProjection, inverseProject, isPointInsideProjectedMap, projectUnit, unitToCellIndex, unitToLongitudeLatitude } from "./projection";
+import { geoPath } from "d3-geo";
+import { fieldRange, hitTest, UnitVector, VisualDatasetV1, gridEdges, panelNames } from "@myplanetsim/protocol";
+import { equirectangularProjection, inverseProject, isPointInsideProjectedMap, unitToCellIndex, unitToLongitudeLatitude } from "./projection";
 
 interface MapView { readonly zoom: number; readonly pan: readonly [number, number] }
 
@@ -10,36 +10,33 @@ interface Map2DProps {
   readonly fieldId: string;
   readonly gridMode: "off" | "panel_seams" | "all_cells";
   readonly onPick?: (cell: number | null, origin?: UnitVector) => void;
-  readonly edits: readonly GaussianDepthEditV1[];
 }
 
-export function Map2D({ dataset, fieldId, gridMode, onPick, edits }: Map2DProps) {
+export function Map2D({ dataset, fieldId, gridMode, onPick }: Map2DProps) {
   const host = useRef<HTMLDivElement>(null);
   const base = useRef<HTMLCanvasElement>(null);
   const grid = useRef<HTMLCanvasElement>(null);
-  const overlay = useRef<HTMLCanvasElement>(null);
   const [view, setView] = useState<MapView>({ zoom: 1, pan: [0, 0] });
   // Draw inputs live in refs so a pan or a new frame schedules one coalesced repaint
   // instead of tearing down the effect and repainting synchronously per pointer event.
-  const scene = useRef({ dataset, fieldId, gridMode, edits, view, quality: 1 });
-  scene.current = { ...scene.current, dataset, fieldId, gridMode, edits, view };
+  const scene = useRef({ dataset, fieldId, gridMode, view, quality: 1 });
+  scene.current = { ...scene.current, dataset, fieldId, gridMode, view };
   const onPickRef = useRef(onPick); onPickRef.current = onPick;
   const frameRequest = useRef(0);
   const size = useRef<readonly [number, number]>([0, 0]);
   const requestDraw = useRef(() => {});
   useEffect(() => {
-    if (!host.current || !base.current || !grid.current || !overlay.current) return undefined;
-    const canvases = [base.current, grid.current, overlay.current];
+    if (!host.current || !base.current || !grid.current) return undefined;
+    const canvases = [base.current, grid.current];
     const draw = () => {
       const [width, height] = size.current;
-      const { dataset, fieldId, gridMode, edits, view, quality } = scene.current;
+      const { dataset, fieldId, gridMode, view, quality } = scene.current;
       if (width <= 0 || height <= 0) return;
       const field = dataset.fields.find((candidate) => candidate.id === fieldId);
       if (!field) return;
-      const baseContext = base.current?.getContext("2d"); const gridContext = grid.current?.getContext("2d"); const overlayContext = overlay.current?.getContext("2d");
-      if (!baseContext || !gridContext || !overlayContext) return;
+      const baseContext = base.current?.getContext("2d"); const gridContext = grid.current?.getContext("2d");
+      if (!baseContext || !gridContext) return;
       baseContext.clearRect(0, 0, width, height); gridContext.clearRect(0, 0, width, height);
-      overlayContext.clearRect(0, 0, width, height);
       const [minimum, maximum] = fieldRange(field); const range = maximum - minimum || 1;
       drawRasterField(baseContext, width, height, dataset, field.values, minimum, range, view.zoom, view.pan, quality);
       if (gridMode !== "off") {
@@ -51,21 +48,6 @@ export function Map2D({ dataset, fieldId, gridMode, onPick, edits }: Map2DProps)
         }
         gridContext.stroke();
       }
-      const editPath = geoPath(equirectangularProjection(width, height, view.zoom, view.pan), overlayContext);
-      edits.forEach((edit, index) => {
-        const marker = projectUnit(edit.centerUnit, width, height, view.zoom, view.pan);
-        overlayContext.beginPath();
-        editPath(geoCircle().center(unitToLongitudeLatitude(edit.centerUnit)).radius(edit.sigmaRadians * 180 / Math.PI)());
-        overlayContext.fillStyle = edit.amplitudeMeters >= 0 ? "rgba(255,207,86,.16)" : "rgba(255,111,174,.16)";
-        overlayContext.strokeStyle = edit.amplitudeMeters >= 0 ? "#ffcf56" : "#ff6fae";
-        overlayContext.lineWidth = 2;
-        overlayContext.fill(); overlayContext.stroke();
-        overlayContext.beginPath(); overlayContext.arc(marker[0], marker[1], 6, 0, 2 * Math.PI);
-        overlayContext.fillStyle = overlayContext.strokeStyle; overlayContext.fill();
-        overlayContext.fillStyle = "#071018"; overlayContext.font = "bold 10px system-ui";
-        overlayContext.textAlign = "center"; overlayContext.textBaseline = "middle";
-        overlayContext.fillText(String(index + 1), marker[0], marker[1]);
-      });
     };
     const schedule = () => {
       if (frameRequest.current !== 0) return;
@@ -81,7 +63,7 @@ export function Map2D({ dataset, fieldId, gridMode, onPick, edits }: Map2DProps)
     const observer = new ResizeObserver(resize); observer.observe(host.current); resize();
     return () => { observer.disconnect(); if (frameRequest.current !== 0) cancelAnimationFrame(frameRequest.current); frameRequest.current = 0; requestDraw.current = () => {}; };
   }, []);
-  useEffect(() => { requestDraw.current(); }, [dataset, edits, fieldId, gridMode, view]);
+  useEffect(() => { requestDraw.current(); }, [dataset, fieldId, gridMode, view]);
   useEffect(() => {
     const element = host.current; if (!element) return undefined;
     let dragging = false; let moved = false; let last: [number, number] = [0, 0]; let settle = 0;
@@ -112,7 +94,7 @@ export function Map2D({ dataset, fieldId, gridMode, onPick, edits }: Map2DProps)
     element.addEventListener("pointerdown", down); element.addEventListener("pointermove", move); element.addEventListener("pointerup", up); element.addEventListener("pointercancel", cancel); element.addEventListener("wheel", wheel, { passive: true });
     return () => { window.clearTimeout(settle); element.removeEventListener("pointerdown", down); element.removeEventListener("pointermove", move); element.removeEventListener("pointerup", up); element.removeEventListener("pointercancel", cancel); element.removeEventListener("wheel", wheel); };
   }, []);
-  return <div ref={host} className="map-2d" aria-label="2D global map"><canvas ref={base} /><canvas ref={grid} /><canvas ref={overlay} /><button type="button" onClick={() => setView({ zoom: 1, pan: [0, 0] })}>Reset map</button></div>;
+  return <div ref={host} className="map-2d" aria-label="2D global map"><canvas ref={base} /><canvas ref={grid} /><button type="button" onClick={() => setView({ zoom: 1, pan: [0, 0] })}>Reset map</button></div>;
 }
 
 let rasterScratch: HTMLCanvasElement | null = null;

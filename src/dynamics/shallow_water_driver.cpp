@@ -12,7 +12,6 @@
 #include "myplanetsim/dynamics/shallow_water_benchmarks.hpp"
 #include "myplanetsim/dynamics/shallow_water_compatible.hpp"
 #include "myplanetsim/dynamics/shallow_water_diffusion.hpp"
-#include "myplanetsim/dynamics/shallow_water_initial_edits.hpp"
 #include "myplanetsim/dynamics/shallow_water_rhs.hpp"
 #include "myplanetsim/dynamics/surface_orography.hpp"
 #include "myplanetsim/numerics/diffusion_stability.hpp"
@@ -152,9 +151,7 @@ Real shallow_water_cfl_number(const CubedSphereGrid& grid,
 
 ShallowWaterResult run_shallow_water(
     const ExperimentConfig& config, std::optional<ShallowWaterState> initial_state,
-    const std::optional<std::uint64_t> stop_after_step,
-    const std::span<const InitialConditionEditV1> initial_edits,
-    const ShallowWaterRunHooks hooks) {
+    const std::optional<std::uint64_t> stop_after_step) {
   config.validate();
   if (config.kind != ExperimentKind::kShallowWater) {
     throw std::invalid_argument("shallow-water driver requires shallow_water config");
@@ -170,18 +167,9 @@ ShallowWaterResult run_shallow_water(
   const ShallowWaterState reference = make_shallow_water_initial_state(grid, config);
   ShallowWaterState state =
       initial_state.has_value() ? std::move(*initial_state) : reference;
-  if (!initial_edits.empty()) {
-    if (initial_state.has_value()) {
-      throw std::invalid_argument("initial edits cannot be applied to a restart state");
-    }
-    const auto edit_diagnostics = apply_initial_condition_edits(
-        grid, state, initial_edits, config.shallow_water.depth_floor_m);
-    (void)edit_diagnostics;
-  }
   validate_shallow_water_state(grid, state, config.shallow_water.depth_floor_m);
   const auto initial_diagnostics = diagnostics::diagnose_shallow_water(
-      grid, initial_edits.empty() ? reference : state, config.planet.gravity_m_s2,
-      omega);
+      grid, reference, config.planet.gravity_m_s2, omega);
   if (state.time_s < config.run.start_time_s || state.time_s > config.run.end_time_s) {
     throw std::invalid_argument("shallow-water restart time is outside configured run");
   }
@@ -193,21 +181,9 @@ ShallowWaterResult run_shallow_water(
                        .invariants = diagnostics::diagnose_shallow_water(
                            grid, sampled, config.planet.gravity_m_s2, omega)});
   };
-  std::uint64_t last_notified_frame_step = std::numeric_limits<std::uint64_t>::max();
-  const auto notify_frame = [&](const ShallowWaterState& sampled) {
-    if (hooks.on_frame != nullptr) {
-      hooks.on_frame(sampled, hooks.observer_context);
-      last_notified_frame_step = sampled.step;
-    }
-  };
   sample(state);
-  notify_frame(state);
   while (state.time_s < config.run.end_time_s &&
          (!stop_after_step.has_value() || state.step < *stop_after_step)) {
-    if (hooks.is_cancelled != nullptr &&
-        hooks.is_cancelled(hooks.cancellation_context)) {
-      break;
-    }
     Real time_step = stable_shallow_water_time_step(
         grid, state, config.planet.gravity_m_s2, config.shallow_water.cfl,
         config.run.time_step_s);
@@ -225,16 +201,10 @@ ShallowWaterResult run_shallow_water(
     ++state.step;
     if (state.step % config.diagnostics.interval_steps == 0) {
       sample(state);
-      notify_frame(state);
     }
   }
   if (samples.back().step != state.step) {
     sample(state);
-  }
-  if (hooks.on_frame != nullptr) {
-    if (last_notified_frame_step != state.step) {
-      notify_frame(state);
-    }
   }
   const auto final_diagnostics = diagnostics::diagnose_shallow_water(
       grid, state, config.planet.gravity_m_s2, omega);

@@ -2,7 +2,7 @@
   "name": "@myplanetsim/protocol",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./client": "./src/client.ts" },
+  "exports": { ".": "./src/index.ts" },
   "scripts": { "build": "tsc --noEmit", "lint": "tsc --noEmit", "test": "vitest run", "typecheck": "tsc --noEmit" },
   "devDependencies": { "vitest": "^3.2.4" }
 }

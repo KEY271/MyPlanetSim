@@ -11,7 +11,6 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
-#include <memory>
 #include <numbers>
 #include <optional>
 #include <span>
@@ -22,7 +21,6 @@
 #include <vector>
 
 #include "myplanetsim/config/experiment_config.hpp"
-#include "myplanetsim/control/control_request.hpp"
 #include "myplanetsim/diagnostics/climate_statistics.hpp"
 #include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
 #include "myplanetsim/diagnostics/moist_diagnostics.hpp"
@@ -36,7 +34,6 @@
 #include "myplanetsim/dynamics/vertical_column_driver.hpp"
 #include "myplanetsim/grid/cubed_sphere_grid.hpp"
 #include "myplanetsim/io/checkpoint.hpp"
-#include "myplanetsim/io/frame.hpp"
 #include "myplanetsim/io/run_metadata.hpp"
 #include "myplanetsim/io/visual_dataset.hpp"
 #include "myplanetsim/phase0/ode_experiment.hpp"
@@ -51,10 +48,7 @@ struct CommandLine {
   std::optional<std::filesystem::path> checkpoint_path;
   std::optional<std::filesystem::path> restart_path;
   std::optional<std::uint64_t> stop_after_step;
-  std::optional<std::filesystem::path> control_request_path;
   double progress_interval_s = 10.0;
-  bool event_stream_ndjson = false;
-  bool describe_control = false;
 };
 
 void print_usage(std::ostream& output) {
@@ -66,9 +60,6 @@ void print_usage(std::ostream& output) {
          << "  --stop-after-step N        Stop after absolute step N\n"
          << "  --progress-interval-s SEC  Dry-core progress interval; 0 disables "
             "(default: 10)\n"
-         << "  --control-request PATH     Run a validated machine control request\n"
-         << "  --event-stream ndjson      Emit machine-readable lifecycle events\n"
-         << "  --describe-control         Describe the machine control protocol\n"
          << "  --help                     Show this help\n";
 }
 
@@ -99,10 +90,6 @@ void print_usage(std::ostream& output) {
       print_usage(std::cout);
       throw std::runtime_error("help requested");
     }
-    if (argument == "--describe-control") {
-      command_line.describe_control = true;
-      continue;
-    }
     if (index + 1 >= argc) {
       throw std::invalid_argument("missing value after " + std::string(argument));
     }
@@ -119,19 +106,9 @@ void print_usage(std::ostream& output) {
       command_line.stop_after_step = parse_step(value);
     } else if (argument == "--progress-interval-s") {
       command_line.progress_interval_s = parse_progress_interval(value);
-    } else if (argument == "--control-request") {
-      command_line.control_request_path = value;
-    } else if (argument == "--event-stream") {
-      if (value != "ndjson") {
-        throw std::invalid_argument("unsupported --event-stream format");
-      }
-      command_line.event_stream_ndjson = true;
     } else {
       throw std::invalid_argument("unknown option: " + std::string(argument));
     }
-  }
-  if (command_line.describe_control) {
-    return command_line;
   }
   if (command_line.config_path.empty()) {
     throw std::invalid_argument("--config is required");
@@ -142,8 +119,6 @@ void print_usage(std::ostream& output) {
 std::atomic_bool g_cancel_requested = false;
 
 void request_cancellation(const int) noexcept { g_cancel_requested.store(true); }
-
-bool cancellation_requested(void*) noexcept { return g_cancel_requested.load(); }
 
 class ProgressReporter {
  public:
@@ -221,116 +196,6 @@ class ProgressReporter {
   std::chrono::steady_clock::time_point last_report_;
   bool reported_ = false;
 };
-
-[[nodiscard]] std::string json_escape(const std::string_view value) {
-  std::string escaped;
-  escaped.reserve(value.size());
-  for (const char character : value) {
-    if (character == '\\' || character == '"') {
-      escaped += '\\';
-      escaped += character;
-    } else if (character == '\n') {
-      escaped += "\\n";
-    } else if (character == '\r') {
-      escaped += "\\r";
-    } else {
-      escaped += character;
-    }
-  }
-  return escaped;
-}
-
-struct MachineEventWriter {
-  std::string run_id;
-  std::uint64_t sequence = 0;
-
-  void emit(const std::string_view type, const std::string_view fields = {}) {
-    std::cout << "{\"protocolVersion\":1,\"runId\":\"" << json_escape(run_id)
-              << "\",\"sequence\":" << sequence++ << ",\"type\":\"" << type << '"';
-    if (!fields.empty()) {
-      std::cout << ',' << fields;
-    }
-    std::cout << "}\n" << std::flush;
-    if (!std::cout) {
-      throw std::runtime_error("failed while writing machine event stream");
-    }
-  }
-};
-
-struct MachineFrameContext {
-  std::filesystem::path directory;
-  std::string config_fingerprint;
-  mps::Index cells_per_panel = 0;
-  MachineEventWriter* events = nullptr;
-  std::uint64_t frame_sequence = 0;
-};
-
-void write_machine_frame(const mps::ShallowWaterState& state, void* context) {
-  auto& frame = *static_cast<MachineFrameContext*>(context);
-  const auto sequence = frame.frame_sequence++;
-  const std::string filename = "frame_" + std::to_string(sequence) + ".bin";
-  const auto path = frame.directory / filename;
-  mps::write_frame_file(path,
-                        {.cells_per_panel = frame.cells_per_panel,
-                         .time_s = state.time_s,
-                         .step = state.step,
-                         .config_fingerprint = frame.config_fingerprint},
-                        state);
-  frame.events->emit(
-      "frame.ready",
-      "\"frameSequence\":" + std::to_string(sequence) + ",\"timeSeconds\":" +
-          std::to_string(state.time_s) + ",\"step\":" + std::to_string(state.step) +
-          ",\"relativePath\":\"" + json_escape(filename) +
-          "\",\"byteLength\":" + std::to_string(std::filesystem::file_size(path)));
-}
-
-// Dry hydrostatic runs publish a FrameV2 snapshot instead of the shallow-water FrameV1
-// payload, so the context carries the level count and the frame interval the control
-// request asked for. The driver observes every accepted step; only the requested
-// interval and the final step are published.
-struct MachineFrameV2Context {
-  std::filesystem::path directory;
-  std::string config_fingerprint;
-  mps::Index cells_per_panel = 0;
-  mps::Index levels = 0;
-  std::uint64_t frame_interval_steps = 1;
-  MachineEventWriter* events = nullptr;
-  std::uint64_t frame_sequence = 0;
-  std::uint64_t last_published_step = std::numeric_limits<std::uint64_t>::max();
-};
-
-void write_machine_frame_v2(MachineFrameV2Context& frame,
-                            const mps::DryHydrostaticState& state,
-                            const mps::DryHydrostaticDerived& derived) {
-  const auto sequence = frame.frame_sequence++;
-  const std::string filename = "frame_" + std::to_string(sequence) + ".bin";
-  const auto path = frame.directory / filename;
-  mps::write_frame_v2_file(path,
-                           {.cells_per_panel = frame.cells_per_panel,
-                            .levels = frame.levels,
-                            .time_s = state.time_s,
-                            .step = state.step,
-                            .config_fingerprint = frame.config_fingerprint},
-                           state.surface_pressure_pa, derived);
-  frame.last_published_step = state.step;
-  frame.events->emit(
-      "frame.ready",
-      "\"frameSequence\":" + std::to_string(sequence) + ",\"timeSeconds\":" +
-          std::to_string(state.time_s) + ",\"step\":" + std::to_string(state.step) +
-          ",\"relativePath\":\"" + json_escape(filename) +
-          "\",\"byteLength\":" + std::to_string(std::filesystem::file_size(path)) +
-          ",\"frameSchemaVersion\":2");
-}
-
-void print_control_description() {
-  std::cout << "{\"protocolVersion\":1,\"supportedEdits\":[\"gaussian_depth\"],"
-               "\"maxEditCount\":64,\"maxEndTimeSeconds\":31536000,"
-               "\"maxTimeStepSeconds\":86400,\"maxFrameIntervalSteps\":1000000,"
-               "\"modelKinds\":[\"shallow_water\",\"dry_hydrostatic\"],"
-               "\"frameSchemaVersions\":[1,2],"
-               "\"dryHydrostatic\":{\"maxCellsPerPanel\":24,\"maxLevels\":30,"
-               "\"supportedEdits\":[]}}\n";
-}
 
 void write_result(std::ostream& output, const mps::OdeResult& result,
                   const mps::IntegratorKind integrator) {
@@ -1533,17 +1398,8 @@ int main(const int argc, const char* const argv[]) {
     return 0;
   }
 
-  std::unique_ptr<MachineEventWriter> machine_events;
   try {
     const auto command_line = parse_command_line(argc, argv);
-    if (command_line.describe_control) {
-      print_control_description();
-      return 0;
-    }
-    if (command_line.event_stream_ndjson &&
-        !command_line.control_request_path.has_value()) {
-      throw std::invalid_argument("--event-stream requires --control-request");
-    }
     const auto config = mps::load_experiment_config(command_line.config_path);
     const auto fingerprint = mps::config_fingerprint(config);
 
@@ -1593,12 +1449,8 @@ int main(const int argc, const char* const argv[]) {
       mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
       write_transport_result(std::cout, result);
     } else if (config.kind == mps::ExperimentKind::kVerticalColumn) {
-      if (command_line.integrator != mps::IntegratorKind::kSspRk3 ||
-          command_line.control_request_path.has_value() ||
-          command_line.event_stream_ndjson) {
-        throw std::invalid_argument(
-            "vertical column supports only standalone ssprk3 runs");
-      }
+      if (command_line.integrator != mps::IntegratorKind::kSspRk3)
+        throw std::invalid_argument("vertical column supports only ssprk3");
       const auto coordinate = mps::make_vertical_coordinate(config);
       std::optional<mps::VerticalColumnState> initial_state;
       if (command_line.restart_path.has_value()) {
@@ -1628,91 +1480,6 @@ int main(const int argc, const char* const argv[]) {
     } else if (config.kind == mps::ExperimentKind::kDryHydrostatic) {
       if (command_line.integrator != mps::IntegratorKind::kSspRk3) {
         throw std::invalid_argument("dry hydrostatic supports only ssprk3");
-      }
-      if (command_line.control_request_path.has_value()) {
-        if (config.physics.kind == mps::PhysicsKind::kSurfaceEnergyBalance ||
-            config.physics.kind == mps::PhysicsKind::kGrayRadiation) {
-          throw std::invalid_argument(
-              "machine control mode does not support surface energy balance");
-        }
-        if (command_line.restart_path.has_value() ||
-            command_line.checkpoint_path.has_value()) {
-          throw std::invalid_argument(
-              "machine control mode does not accept checkpoint or restart options");
-        }
-        const auto control_request =
-            mps::load_control_request(*command_line.control_request_path);
-        if (!control_request.initial_edits.empty()) {
-          throw std::invalid_argument(
-              "dry hydrostatic runs do not accept initial condition edits");
-        }
-        const auto run_config = mps::apply_control_request(config, control_request);
-        machine_events = std::make_unique<MachineEventWriter>();
-        machine_events->run_id = control_request.run_id;
-        machine_events->emit("run.accepted");
-        const mps::DryHydrostaticDriver driver(run_config);
-        auto state = driver.initial_state();
-        std::vector<SemiImplicitDiagnosticsRow> semi_implicit_diagnostics;
-        MachineFrameV2Context frame_context{
-            .directory = run_config.output_directory,
-            .config_fingerprint = mps::config_fingerprint(run_config),
-            .cells_per_panel = run_config.grid.cells_per_panel,
-            .levels = run_config.vertical.levels,
-            .frame_interval_steps = run_config.diagnostics.interval_steps,
-            .events = machine_events.get()};
-        machine_events->emit("run.started");
-        std::signal(SIGINT, request_cancellation);
-        std::signal(SIGTERM, request_cancellation);
-        driver.advance(
-            state, run_config.run.end_time_s,
-            [&frame_context, &semi_implicit_diagnostics](
-                const mps::DryHydrostaticState& sampled,
-                const mps::DryHydrostaticDerived* derived,
-                const mps::DryHydrostaticStepDiagnostics& step) {
-              if (derived != nullptr) {
-                write_machine_frame_v2(frame_context, sampled, *derived);
-                semi_implicit_diagnostics.push_back({.time_s = sampled.time_s,
-                                                     .step = sampled.step,
-                                                     .diagnostics = step});
-              }
-            },
-            [] { return g_cancel_requested.load(); });
-        const auto derived = driver.diagnose(state);
-        if (frame_context.last_published_step != state.step) {
-          write_machine_frame_v2(frame_context, state, derived);
-        }
-        std::ofstream metadata(
-            std::filesystem::path(run_config.output_directory) / "run-metadata.txt",
-            std::ios::trunc);
-        if (!metadata) {
-          throw std::runtime_error("unable to open machine run metadata");
-        }
-        mps::write_run_metadata(metadata, mps::make_run_metadata(run_config),
-                                run_config);
-        if (driver.semi_implicit_vertical_modes().has_value()) {
-          mps::write_dry_hydrostatic_vertical_mode_metadata(
-              metadata, *driver.semi_implicit_vertical_modes());
-          write_semi_implicit_diagnostics(run_config, semi_implicit_diagnostics);
-        }
-        if (run_config.orography.kind != mps::OrographyKind::kFlat) {
-          const auto sources = driver.diagnose_sources(derived);
-          const auto terrain = mps::diagnose_terrain_budgets(
-              driver.grid(), state, derived, sources,
-              driver.orography().surface_geopotential_m2_s2(), run_config.planet);
-          mps::write_terrain_diagnostics(metadata, terrain);
-        }
-        const auto diagnostics = mps::diagnose_dry_hydrostatic_budgets(
-            driver.grid(), state, derived, run_config.planet);
-        machine_events->emit(
-            "diagnostics.sample",
-            "\"timeSeconds\":" + std::to_string(state.time_s) +
-                ",\"step\":" + std::to_string(state.step) +
-                ",\"mass\":" + std::to_string(diagnostics.dry_mass_kg) +
-                ",\"energy\":" + std::to_string(diagnostics.total_energy_j));
-        machine_events->emit(state.time_s < run_config.run.end_time_s
-                                 ? "run.cancelled"
-                                 : "run.completed");
-        return 0;
       }
       mps::DryHydrostaticDriver driver(config);
       auto state = driver.initial_state();
@@ -2085,41 +1852,9 @@ int main(const int argc, const char* const argv[]) {
         initial_state = mps::unflatten_shallow_water_state(
             checkpoint.time_s, checkpoint.step, checkpoint.state, grid.cell_count());
       }
-      mps::ExperimentConfig run_config = config;
-      std::optional<mps::ControlRequestV1> control_request;
-      if (command_line.control_request_path.has_value()) {
-        if (command_line.restart_path.has_value() ||
-            command_line.checkpoint_path.has_value()) {
-          throw std::invalid_argument(
-              "machine control mode does not accept checkpoint or restart options");
-        }
-        control_request = mps::load_control_request(*command_line.control_request_path);
-        run_config = mps::apply_control_request(config, *control_request);
-        machine_events = std::make_unique<MachineEventWriter>();
-        machine_events->run_id = control_request->run_id;
-        machine_events->emit("run.accepted");
-      }
-      MachineFrameContext frame_context;
-      mps::ShallowWaterRunHooks hooks;
-      if (machine_events != nullptr) {
-        machine_events->emit("run.started");
-        frame_context = {.directory = run_config.output_directory,
-                         .config_fingerprint = mps::config_fingerprint(run_config),
-                         .cells_per_panel = run_config.grid.cells_per_panel,
-                         .events = machine_events.get()};
-        hooks = {.on_frame = write_machine_frame,
-                 .observer_context = &frame_context,
-                 .is_cancelled = cancellation_requested};
-        std::signal(SIGINT, request_cancellation);
-        std::signal(SIGTERM, request_cancellation);
-      }
       const auto start = std::chrono::steady_clock::now();
       const auto result = mps::run_shallow_water(
-          run_config, std::move(initial_state), command_line.stop_after_step,
-          control_request.has_value() ? std::span<const mps::InitialConditionEditV1>(
-                                            control_request->initial_edits)
-                                      : std::span<const mps::InitialConditionEditV1>{},
-          hooks);
+          config, std::move(initial_state), command_line.stop_after_step);
       const mps::Real wall_time_s =
           std::chrono::duration<mps::Real>(std::chrono::steady_clock::now() - start)
               .count();
@@ -2134,46 +1869,14 @@ int main(const int argc, const char* const argv[]) {
                 .layout_id = std::string(mps::kShallowWaterCheckpointLayout),
             });
       }
-      write_shallow_water_snapshot(run_config, result);
-      write_shallow_water_diagnostics(run_config, result);
-      if (machine_events != nullptr) {
-        std::ofstream metadata(
-            std::filesystem::path(run_config.output_directory) / "run-metadata.txt",
-            std::ios::trunc);
-        if (!metadata) {
-          throw std::runtime_error("unable to open machine run metadata");
-        }
-        mps::write_run_metadata(metadata, mps::make_run_metadata(run_config),
-                                run_config);
-        const auto& diagnostics = result.final_diagnostics;
-        machine_events->emit("diagnostics.sample",
-                             "\"timeSeconds\":" + std::to_string(result.state.time_s) +
-                                 ",\"step\":" + std::to_string(result.state.step) +
-                                 ",\"mass\":" + std::to_string(diagnostics.mass) +
-                                 ",\"energy\":" + std::to_string(diagnostics.energy));
-        if (g_cancel_requested.load() && !result.reached_end_time) {
-          machine_events->emit("run.cancelled");
-        } else if (result.reached_end_time) {
-          machine_events->emit("run.completed");
-        } else {
-          machine_events->emit("run.cancelled");
-        }
-      } else {
-        mps::write_run_metadata(std::cout, mps::make_run_metadata(run_config),
-                                run_config);
-        write_shallow_water_result(std::cout, result, wall_time_s, grid.cell_count());
-        write_shallow_water_errors(std::cout, run_config, grid, result);
-      }
+      write_shallow_water_snapshot(config, result);
+      write_shallow_water_diagnostics(config, result);
+      mps::write_run_metadata(std::cout, mps::make_run_metadata(config), config);
+      write_shallow_water_result(std::cout, result, wall_time_s, grid.cell_count());
+      write_shallow_water_errors(std::cout, config, grid, result);
     }
     return 0;
   } catch (const std::exception& error) {
-    if (machine_events != nullptr) {
-      try {
-        machine_events->emit("run.failed", "\"code\":\"native_error\",\"message\":\"" +
-                                               json_escape(error.what()) + "\"");
-      } catch (...) {
-      }
-    }
     std::cerr << "error: " << error.what() << '\n';
     return 1;
   }

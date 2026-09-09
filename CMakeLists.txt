@@ -51,7 +51,6 @@ configure_file(
 add_library(
   myplanetsim_core
   src/config/experiment_config.cpp
-  src/control/control_request.cpp
   src/core/planet_parameters.cpp
   src/core/orbit_parameters.cpp
   src/core/validation.cpp
@@ -83,7 +82,6 @@ add_library(
   src/dynamics/vertical_column_driver.cpp
   src/dynamics/shallow_water_compatible.cpp
   src/dynamics/shallow_water_diffusion.cpp
-  src/dynamics/shallow_water_initial_edits.cpp
   src/dynamics/shallow_water_flux.cpp
   src/dynamics/shallow_water_driver.cpp
   src/dynamics/shallow_water_benchmarks.cpp
@@ -94,7 +92,6 @@ add_library(
   src/grid/cubed_sphere_tiles.cpp
   src/grid/dual_topology.cpp
   src/io/checkpoint.cpp
-  src/io/frame.cpp
   src/io/run_metadata.cpp
   src/io/visual_dataset.cpp
   src/phase0/ode_experiment.cpp

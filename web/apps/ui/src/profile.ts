@@ -1,4 +1,7 @@
-import { FrameV2Column } from "@myplanetsim/protocol";
+export interface ProfileColumn {
+  readonly pressurePa: Float64Array;
+  readonly values: Float64Array;
+}
 
 export const profileSize = { width: 300, height: 320 } as const;
 export const profilePlot = { left: 62, right: 286, top: 20, bottom: 272 } as const;
@@ -32,7 +35,7 @@ export function pressureToY(pressurePa: number, topPa: number, bottomPa: number)
   return profilePlot.top + fraction * (profilePlot.bottom - profilePlot.top);
 }
 
-export function profileGeometry(column: FrameV2Column, maximumTicks = 6): ProfileGeometry {
+export function profileGeometry(column: ProfileColumn, maximumTicks = 6): ProfileGeometry {
   const levels = column.values.length;
   if (levels === 0) throw new Error("a column profile needs at least one level");
   const minimum = column.values.reduce((low, value) => Math.min(low, value), Infinity);
