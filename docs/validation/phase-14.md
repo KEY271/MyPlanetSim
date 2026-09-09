@@ -157,3 +157,10 @@ step開始時に無効化し、失敗eventではstate/台帳と一緒に復元�
 増やさない。600秒の小規模結合試験（radiation 200 / SBM診断 300 / BL 600）では
 各cellあたり重い診断2回、relaxation 3回となり、explicit/semi-implicit とも retry 0、
 水保存を満たした。benchmark は両 call 数を別々に出力する。
+
+## P14.05: BL 時間刻みと solve
+
+係数とdtが同じ三重対角行列を一度 factorizeし、運動量3成分、tracerの通常解と
+surface response、熱の通常解と潜熱 response でそれぞれ再利用する。運動量・tracer・熱の
+異なる係数行列は共有しない。既存の解析値、最大原理、熱・運動量・tracer収支、moist coupling
+試験は同じ許容差で通過した。

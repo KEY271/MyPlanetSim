@@ -139,6 +139,12 @@ struct BoundaryLayerColumnResult {
   BoundaryLayerColumnDiagnostics diagnostics;
 };
 
+struct TridiagonalFactorization {
+  std::vector<Real> lower_multipliers;
+  std::vector<Real> diagonal;
+  std::vector<Real> upper;
+};
+
 struct BoundaryLayerColumnWorkspace {
   std::vector<Real> lower;
   std::vector<Real> diagonal;
@@ -155,6 +161,9 @@ struct BoundaryLayerColumnWorkspace {
   std::vector<Real> heat_increment;
   std::vector<Real> tracer_surface_response;
   std::vector<Real> heat_surface_response;
+  TridiagonalFactorization momentum_factorization;
+  TridiagonalFactorization tracer_factorization;
+  TridiagonalFactorization heat_factorization;
 };
 
 void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,

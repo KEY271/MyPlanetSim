@@ -128,7 +128,9 @@ struct BulkStorage {
 
 MPS_TEST_CASE("fixed K backward Euler diffuses heat and tracer conservatively") {
   const auto column = two_layer_column();
-  const auto result = mps::implicit_boundary_layer_column(column.input(0.25));
+  mps::BoundaryLayerColumnResult result;
+  mps::BoundaryLayerColumnWorkspace workspace;
+  mps::implicit_boundary_layer_column(column.input(0.25), result, workspace);
   MPS_CHECK_NEAR(result.potential_temperature_k[0], 11.0 / 6.0, 1e-13);
   MPS_CHECK_NEAR(result.potential_temperature_k[1], 7.0 / 6.0, 1e-13);
   MPS_CHECK_NEAR(result.tracer_mixing_ratio[0], 5.0 / 6.0, 1e-13);
@@ -136,6 +138,9 @@ MPS_TEST_CASE("fixed K backward Euler diffuses heat and tracer conservatively") 
   MPS_CHECK_NEAR(result.diagnostics.heat_budget_residual_j_m2, 0.0, 1e-13);
   MPS_CHECK_NEAR(result.diagnostics.tracer_mass_change_kg_m2, 0.0, 1e-13);
   MPS_CHECK_NEAR(result.heat_flux_w_m2[1], -2.0 / 3.0, 1e-13);
+  MPS_CHECK_EQ(workspace.momentum_factorization.diagonal.size(), 2U);
+  MPS_CHECK_EQ(workspace.tracer_factorization.diagonal.size(), 2U);
+  MPS_CHECK_EQ(workspace.heat_factorization.diagonal.size(), 3U);
 }
 
 MPS_TEST_CASE("surface and atmosphere use one implicit sensible heat flux") {

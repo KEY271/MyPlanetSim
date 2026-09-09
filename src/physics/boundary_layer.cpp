@@ -59,26 +59,43 @@ struct TileTransfer {
           .friction_velocity_m_s = std::sqrt(drag) * effective_speed_m_s};
 }
 
-void solve_tridiagonal(std::vector<Real>& lower, std::vector<Real>& diagonal,
-                       std::vector<Real>& upper, std::vector<Real>& rhs,
-                       std::vector<Real>& solution) {
+void factor_tridiagonal(const std::vector<Real>& lower,
+                        const std::vector<Real>& diagonal,
+                        const std::vector<Real>& upper,
+                        TridiagonalFactorization& factorization) {
   const std::size_t size = diagonal.size();
-  if (size == 0 || lower.size() != size || upper.size() != size || rhs.size() != size)
-    throw std::invalid_argument("tridiagonal solve shape mismatch");
+  if (size == 0 || lower.size() != size || upper.size() != size)
+    throw std::invalid_argument("tridiagonal factorization shape mismatch");
+  factorization.lower_multipliers.assign(size, 0.0);
+  factorization.diagonal = diagonal;
+  factorization.upper = upper;
   for (std::size_t row = 1; row < size; ++row) {
-    if (!(diagonal[row - 1] > 0.0) || !std::isfinite(diagonal[row - 1]))
+    if (!(factorization.diagonal[row - 1] > 0.0) ||
+        !std::isfinite(factorization.diagonal[row - 1]))
       throw std::runtime_error("boundary-layer matrix pivot is invalid");
-    const Real factor = lower[row] / diagonal[row - 1];
-    diagonal[row] -= factor * upper[row - 1];
-    rhs[row] -= factor * rhs[row - 1];
+    const Real factor = lower[row] / factorization.diagonal[row - 1];
+    factorization.lower_multipliers[row] = factor;
+    factorization.diagonal[row] -= factor * factorization.upper[row - 1];
   }
-  if (!(diagonal.back() > 0.0) || !std::isfinite(diagonal.back()))
+  if (!(factorization.diagonal.back() > 0.0) ||
+      !std::isfinite(factorization.diagonal.back()))
     throw std::runtime_error("boundary-layer matrix pivot is invalid");
+}
+
+void solve_factorized(const TridiagonalFactorization& factorization,
+                      std::vector<Real>& rhs, std::vector<Real>& solution) {
+  const std::size_t size = factorization.diagonal.size();
+  if (size == 0 || factorization.lower_multipliers.size() != size ||
+      factorization.upper.size() != size || rhs.size() != size)
+    throw std::invalid_argument("factorized tridiagonal solve shape mismatch");
+  for (std::size_t row = 1; row < size; ++row)
+    rhs[row] -= factorization.lower_multipliers[row] * rhs[row - 1];
   solution.resize(size);
-  solution.back() = rhs.back() / diagonal.back();
+  solution.back() = rhs.back() / factorization.diagonal.back();
   for (std::size_t reverse = size - 1; reverse > 0; --reverse) {
     const std::size_t row = reverse - 1;
-    solution[row] = (rhs[row] - upper[row] * solution[row + 1]) / diagonal[row];
+    solution[row] = (rhs[row] - factorization.upper[row] * solution[row + 1]) /
+                    factorization.diagonal[row];
   }
   if (!std::ranges::all_of(solution,
                            [](const Real value) { return std::isfinite(value); }))
@@ -390,16 +407,18 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
   result.velocity_m_s.assign(input.velocity_m_s.begin(), input.velocity_m_s.end());
   workspace.closed_momentum_conductance = workspace.momentum_conductance;
   workspace.closed_momentum_conductance.back() = input.surface_drag_conductance_kg_m2_s;
+  build_closed_matrix(workspace.momentum_capacity,
+                      workspace.closed_momentum_conductance, input.time_step_s,
+                      workspace.lower, workspace.diagonal, workspace.upper);
+  factor_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper,
+                     workspace.momentum_factorization);
   for (std::size_t axis = 0; axis < 3; ++axis) {
-    build_closed_matrix(workspace.momentum_capacity,
-                        workspace.closed_momentum_conductance, input.time_step_s,
-                        workspace.lower, workspace.diagonal, workspace.upper);
     workspace.rhs.resize(levels);
     for (std::size_t level = 0; level < levels; ++level)
       workspace.rhs[level] = workspace.momentum_capacity[level] *
                              component(input.velocity_m_s[level], axis);
-    solve_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper,
-                      workspace.rhs, workspace.solution);
+    solve_factorized(workspace.momentum_factorization, workspace.rhs,
+                     workspace.solution);
     for (std::size_t level = 0; level < levels; ++level)
       set_component(result.velocity_m_s[level], axis, workspace.solution[level]);
   }
@@ -444,12 +463,13 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
   build_closed_matrix(workspace.tracer_capacity, workspace.tracer_conductance,
                       input.time_step_s, workspace.lower, workspace.diagonal,
                       workspace.upper);
+  factor_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper,
+                     workspace.tracer_factorization);
   workspace.rhs.resize(levels);
   for (std::size_t level = 0; level < levels; ++level)
     workspace.rhs[level] =
         workspace.tracer_capacity[level] * input.tracer_mixing_ratio[level];
-  solve_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper, workspace.rhs,
-                    workspace.solution);
+  solve_factorized(workspace.tracer_factorization, workspace.rhs, workspace.solution);
   result.tracer_mixing_ratio = workspace.solution;
   Real initial_tracer_mass = 0.0;
   Real solved_tracer_mass = 0.0;
@@ -473,6 +493,8 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
   build_closed_matrix(workspace.heat_capacity, workspace.heat_conductance,
                       input.time_step_s, workspace.lower, workspace.diagonal,
                       workspace.upper);
+  factor_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper,
+                     workspace.heat_factorization);
   workspace.rhs.resize(levels + 1);
   const Real old_surface_theta = input.surface_temperature_k / input.surface_exner;
   for (std::size_t level = 0; level < levels; ++level) {
@@ -494,8 +516,7 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
   }
   workspace.rhs.back() = input.time_step_s * workspace.heat_conductance[levels] *
                          (input.potential_temperature_k.back() - old_surface_theta);
-  solve_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper, workspace.rhs,
-                    workspace.solution);
+  solve_factorized(workspace.heat_factorization, workspace.rhs, workspace.solution);
   workspace.heat_increment = workspace.solution;
   result.potential_temperature_k.resize(levels);
   for (std::size_t level = 0; level < levels; ++level)
@@ -508,23 +529,17 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
   std::size_t surface_water_iterations = 0;
   if (input.enable_surface_water_exchange) {
     workspace.tracer_surface_response.resize(levels);
-    build_closed_matrix(workspace.tracer_capacity, workspace.tracer_conductance,
-                        input.time_step_s, workspace.lower, workspace.diagonal,
-                        workspace.upper);
     workspace.rhs.assign(levels, 0.0);
     workspace.rhs.back() = input.time_step_s;
-    solve_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper,
-                      workspace.rhs, workspace.tracer_surface_response);
+    solve_factorized(workspace.tracer_factorization, workspace.rhs,
+                     workspace.tracer_surface_response);
 
     workspace.heat_surface_response.resize(levels + 1);
-    build_closed_matrix(workspace.heat_capacity, workspace.heat_conductance,
-                        input.time_step_s, workspace.lower, workspace.diagonal,
-                        workspace.upper);
     workspace.rhs.assign(levels + 1, 0.0);
     workspace.rhs.back() =
         -input.time_step_s * input.moist_thermodynamics.latent_heat_vaporization_j_kg;
-    solve_tridiagonal(workspace.lower, workspace.diagonal, workspace.upper,
-                      workspace.rhs, workspace.heat_surface_response);
+    solve_factorized(workspace.heat_factorization, workspace.rhs,
+                     workspace.heat_surface_response);
 
     const auto partition = [&](const Real cell_flux) {
       const Real surface_temperature =
