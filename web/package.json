@@ -2,6 +2,9 @@
   "name": "myplanetsim-web",
   "private": true,
   "workspaces": ["apps/*", "packages/*"],
+  "devDependencies": {
+    "@types/node": "^22.10.1"
+  },
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",

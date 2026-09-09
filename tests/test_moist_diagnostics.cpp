@@ -45,7 +45,7 @@ struct Fixture {
         derived.pressure_pa[scalar] = level == 0 ? 40000.0 : 80000.0;
         derived.air_mass_kg_m2[scalar] = mass;
         derived.temperature_k[scalar] = 270.0 + 5.0 * level;
-        for (const auto [tracer, mixing] :
+        for (const auto& [tracer, mixing] :
              {std::pair{0U, dust}, std::pair{1U, vapor}}) {
           const std::size_t offset =
               mps::dry_hydrostatic_tracer_offset(tracer, cell, level, cells, levels);
