@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "P14.01 in progress; P14.02 fixed-iteration matrix measured",
+  "status": "P14.01-P14.11 implemented; P14.12 integrated candidate measured for one model day from the initial and the 1200-day developed state. 30- and 1200-day runs are foreground work for the operator.",
   "initial_state_baseline": {
     "schema_version": 1,
     "time_utc": "2026-09-08T18:09:17.226033+00:00",
@@ -618,5 +618,499 @@
     "seconds": 86400000.0,
     "block_count": 10
   },
-  "fixed_iteration_comparison": "phase-14-ici-results.json"
+  "fixed_iteration_comparison": "phase-14-ici-results.json",
+  "integrated_candidate": {
+    "preset": "configs/phase14_moist_candidate.cfg",
+    "baseline": "configs/phase13_moist_pilot.cfg",
+    "initial_state_one_day": {
+      "applied_gate": "one_day",
+      "mode": "5 repetitions",
+      "days": 1.0,
+      "grid": {
+        "cells_per_panel": 6,
+        "levels": 20,
+        "dt_s": 1800.0,
+        "iterations": 3
+      },
+      "candidate": "configs/phase14_moist_candidate.cfg",
+      "manifest_sha256": "71441a26e8746f35898b8509d9a5135ca3bb1a66ccb4217264e04830f6259808",
+      "points": {
+        "baseline": {
+          "seconds_per_model_day": 2.484311375,
+          "full_rhs_per_step": 5.0,
+          "boundary_layer_column_calls": 62208.0,
+          "convection_column_calls": 62208.0,
+          "sbm_diagnostic_column_calls": 62208.0,
+          "sbm_relaxation_column_calls": 62208.0,
+          "physics_substeps": 288.0,
+          "linear_iterations": 163.0,
+          "retries": 0.0,
+          "physics_retries": 0.0,
+          "precipitable_water_kg_m2": 60.54223103970835,
+          "evaporation_kg_m2_s": 7.038856629990009e-06,
+          "precipitation_kg_m2_s": 1.08806479388254e-05,
+          "toa_net_upward_w_m2": 95.61509516321954,
+          "convective_precipitation_fraction": 0.0,
+          "water_budget_residual_ratio": 4.0706054738127697e-14,
+          "dry_mass_relative_drift": 0.0,
+          "maximum_passive_tracer_relative_drift": 4.2052514516430205e-15,
+          "minimum_vapor_mixing_ratio": 0.003870122062449871,
+          "peak_rss_bytes": 10485760.0
+        },
+        "candidate": {
+          "seconds_per_model_day": 1.315108709,
+          "full_rhs_per_step": 4.0,
+          "boundary_layer_column_calls": 31104.0,
+          "convection_column_calls": 41472.0,
+          "sbm_diagnostic_column_calls": 20736.0,
+          "sbm_relaxation_column_calls": 20736.0,
+          "physics_substeps": 192.0,
+          "linear_iterations": 159.0,
+          "retries": 0.0,
+          "physics_retries": 0.0,
+          "precipitable_water_kg_m2": 60.532188531138395,
+          "evaporation_kg_m2_s": 7.029112930764824e-06,
+          "precipitation_kg_m2_s": 1.0987136977674791e-05,
+          "toa_net_upward_w_m2": 95.92016780345881,
+          "convective_precipitation_fraction": 0.0,
+          "water_budget_residual_ratio": 4.019078822245519e-14,
+          "dry_mass_relative_drift": 0.0,
+          "maximum_passive_tracer_relative_drift": 1.4418004977061784e-15,
+          "minimum_vapor_mixing_ratio": 0.0038701220768646593,
+          "peak_rss_bytes": 10452992.0
+        },
+        "candidate-ici2": {
+          "seconds_per_model_day": 1.200564792,
+          "full_rhs_per_step": 3.0,
+          "boundary_layer_column_calls": 31104.0,
+          "convection_column_calls": 41472.0,
+          "sbm_diagnostic_column_calls": 20736.0,
+          "sbm_relaxation_column_calls": 20736.0,
+          "physics_substeps": 192.0,
+          "linear_iterations": 123.0,
+          "retries": 0.0,
+          "physics_retries": 0.0,
+          "precipitable_water_kg_m2": 60.53218854422624,
+          "evaporation_kg_m2_s": 7.02911300423508e-06,
+          "precipitation_kg_m2_s": 1.0987136899667778e-05,
+          "toa_net_upward_w_m2": 95.92016781704012,
+          "convective_precipitation_fraction": 0.0,
+          "water_budget_residual_ratio": 6.724228029526158e-14,
+          "dry_mass_relative_drift": 0.0,
+          "maximum_passive_tracer_relative_drift": 6.4881022396778034e-15,
+          "minimum_vapor_mixing_ratio": 0.0038701219793448533,
+          "peak_rss_bytes": 10469376.0
+        }
+      },
+      "comparisons": {
+        "baseline": {
+          "temperature_rms_k": 0.0,
+          "mean_temperature_difference_k": 0.0,
+          "zonal_temperature_rms_k": 0.0,
+          "zonal_wind_rms_m_s": 0.0,
+          "toa_difference_w_m2": 0.0,
+          "convective_fraction_difference": 0.0,
+          "speedup_over_baseline": 1.0,
+          "precipitable_water_kg_m2_relative_difference": 0.0,
+          "evaporation_kg_m2_s_relative_difference": 0.0,
+          "precipitation_kg_m2_s_relative_difference": 0.0,
+          "boundary_layer_column_calls_ratio": 1.0,
+          "convection_column_calls_ratio": 1.0,
+          "sbm_diagnostic_column_calls_ratio": 1.0,
+          "full_rhs_per_step_ratio": 1.0,
+          "conservation_pass": true,
+          "gate_checks": {
+            "pw_relative": true,
+            "evaporation_precipitation": true,
+            "toa": true,
+            "convective_fraction": true,
+            "conservation": true,
+            "temperature_rms": true
+          },
+          "measured_gates_pass": true
+        },
+        "candidate": {
+          "temperature_rms_k": 0.004007487735647151,
+          "mean_temperature_difference_k": 0.0010853546705220651,
+          "zonal_temperature_rms_k": 0.0036861404395961677,
+          "zonal_wind_rms_m_s": 7.759706814558989e-05,
+          "toa_difference_w_m2": 0.30507264023927405,
+          "convective_fraction_difference": 0.0,
+          "speedup_over_baseline": 1.8890540059529024,
+          "precipitable_water_kg_m2_relative_difference": 0.0001658760900860432,
+          "evaporation_kg_m2_s_relative_difference": 0.0013842730058844165,
+          "precipitation_kg_m2_s_relative_difference": 0.009787012634551515,
+          "boundary_layer_column_calls_ratio": 2.0,
+          "convection_column_calls_ratio": 1.5,
+          "sbm_diagnostic_column_calls_ratio": 3.0,
+          "full_rhs_per_step_ratio": 1.25,
+          "conservation_pass": true,
+          "gate_checks": {
+            "pw_relative": true,
+            "evaporation_precipitation": true,
+            "toa": true,
+            "convective_fraction": true,
+            "conservation": true,
+            "temperature_rms": true
+          },
+          "measured_gates_pass": true
+        },
+        "candidate-ici2": {
+          "temperature_rms_k": 0.004007707017056593,
+          "mean_temperature_difference_k": 0.0010853547023543797,
+          "zonal_temperature_rms_k": 0.0036858811628764825,
+          "zonal_wind_rms_m_s": 6.9770100737274e-05,
+          "toa_difference_w_m2": 0.3050726538205879,
+          "convective_fraction_difference": 0.0,
+          "speedup_over_baseline": 2.069285549230066,
+          "precipitable_water_kg_m2_relative_difference": 0.00016587587390897641,
+          "evaporation_kg_m2_s_relative_difference": 0.0013842625680732497,
+          "precipitation_kg_m2_s_relative_difference": 0.00978700546521624,
+          "boundary_layer_column_calls_ratio": 2.0,
+          "convection_column_calls_ratio": 1.5,
+          "sbm_diagnostic_column_calls_ratio": 3.0,
+          "full_rhs_per_step_ratio": 1.6666666666666667,
+          "conservation_pass": true,
+          "gate_checks": {
+            "pw_relative": true,
+            "evaporation_precipitation": true,
+            "toa": true,
+            "convective_fraction": true,
+            "conservation": true,
+            "temperature_rms": true
+          },
+          "measured_gates_pass": true
+        }
+      },
+      "provenance": {
+        "baseline": {
+          "commit": "dfb1983665d53ef5d91ab7041069e8fe9ab45181",
+          "dirty": true,
+          "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+          "cpu_model": "Apple M1",
+          "conditions": "power/CPU affinity not controlled",
+          "snapshot_sha256": "d3f59207d784e7aa3996a2db09302fb0538fcd7d75dc878958bf8a2f4259d5c5"
+        },
+        "candidate": {
+          "commit": "dfb1983665d53ef5d91ab7041069e8fe9ab45181",
+          "dirty": true,
+          "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+          "cpu_model": "Apple M1",
+          "conditions": "power/CPU affinity not controlled",
+          "snapshot_sha256": "ff2ddae44bca8b883e40f5da23f0e1708481ee9a7220aab36a839f4cdffe1530"
+        },
+        "candidate-ici2": {
+          "commit": "dfb1983665d53ef5d91ab7041069e8fe9ab45181",
+          "dirty": true,
+          "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+          "cpu_model": "Apple M1",
+          "conditions": "power/CPU affinity not controlled",
+          "snapshot_sha256": "2ab1a18ce38c3cd538d69de2350c02dba8e5e012c603a5a75b34edd5505cfd23"
+        }
+      }
+    },
+    "developed_state_one_day": {
+      "applied_gate": "one_day",
+      "mode": "5 repetitions",
+      "days": 1.0,
+      "grid": {
+        "cells_per_panel": 6,
+        "levels": 20,
+        "dt_s": 1800.0,
+        "iterations": 3
+      },
+      "candidate": "configs/phase14_moist_candidate.cfg",
+      "manifest_sha256": "71441a26e8746f35898b8509d9a5135ca3bb1a66ccb4217264e04830f6259808",
+      "points": {
+        "baseline": {
+          "seconds_per_model_day": 2.619880792,
+          "full_rhs_per_step": 5.0,
+          "boundary_layer_column_calls": 62208.0,
+          "convection_column_calls": 62208.0,
+          "sbm_diagnostic_column_calls": 62208.0,
+          "sbm_relaxation_column_calls": 62208.0,
+          "physics_substeps": 288.0,
+          "linear_iterations": 412.0,
+          "retries": 0.0,
+          "physics_retries": 0.0,
+          "precipitable_water_kg_m2": 60.1422714287613,
+          "evaporation_kg_m2_s": 6.408767898986569e-05,
+          "precipitation_kg_m2_s": 5.791333890406984e-05,
+          "toa_net_upward_w_m2": -0.12238623312411462,
+          "convective_precipitation_fraction": 0.9814078847653673,
+          "water_budget_residual_ratio": 9.274797282096952e-15,
+          "dry_mass_relative_drift": 1.2303364247092758e-16,
+          "maximum_passive_tracer_relative_drift": 2.0425507050837584e-15,
+          "minimum_vapor_mixing_ratio": 1.9122126494944294e-05,
+          "peak_rss_bytes": 10649600.0
+        },
+        "candidate": {
+          "seconds_per_model_day": 1.4122265,
+          "full_rhs_per_step": 4.0,
+          "boundary_layer_column_calls": 31104.0,
+          "convection_column_calls": 41472.0,
+          "sbm_diagnostic_column_calls": 20736.0,
+          "sbm_relaxation_column_calls": 20736.0,
+          "physics_substeps": 192.0,
+          "linear_iterations": 405.0,
+          "retries": 0.0,
+          "physics_retries": 0.0,
+          "precipitable_water_kg_m2": 60.19481181508412,
+          "evaporation_kg_m2_s": 6.398120902710472e-05,
+          "precipitation_kg_m2_s": 5.719876261797153e-05,
+          "toa_net_upward_w_m2": -0.06618336960455651,
+          "convective_precipitation_fraction": 0.9794359371421429,
+          "water_budget_residual_ratio": 6.41506812011706e-14,
+          "dry_mass_relative_drift": 1.2303364247092758e-16,
+          "maximum_passive_tracer_relative_drift": 2.6433009124613344e-15,
+          "minimum_vapor_mixing_ratio": 1.9203839123057225e-05,
+          "peak_rss_bytes": 10502144.0
+        },
+        "candidate-ici2": {
+          "seconds_per_model_day": 1.288829167,
+          "full_rhs_per_step": 3.0,
+          "boundary_layer_column_calls": 31104.0,
+          "convection_column_calls": 41472.0,
+          "sbm_diagnostic_column_calls": 20736.0,
+          "sbm_relaxation_column_calls": 20736.0,
+          "physics_substeps": 192.0,
+          "linear_iterations": 312.0,
+          "retries": 0.0,
+          "physics_retries": 0.0,
+          "precipitable_water_kg_m2": 60.19593390995927,
+          "evaporation_kg_m2_s": 6.40011596341012e-05,
+          "precipitation_kg_m2_s": 5.720572601589737e-05,
+          "toa_net_upward_w_m2": -0.06585719176050957,
+          "convective_precipitation_fraction": 0.97934043303582,
+          "water_budget_residual_ratio": 3.735682238622384e-14,
+          "dry_mass_relative_drift": 0.0,
+          "maximum_passive_tracer_relative_drift": 2.7634509539368496e-15,
+          "minimum_vapor_mixing_ratio": 1.9196618409925574e-05,
+          "peak_rss_bytes": 10534912.0
+        }
+      },
+      "comparisons": {
+        "baseline": {
+          "temperature_rms_k": 0.0,
+          "mean_temperature_difference_k": 0.0,
+          "zonal_temperature_rms_k": 0.0,
+          "zonal_wind_rms_m_s": 0.0,
+          "toa_difference_w_m2": 0.0,
+          "convective_fraction_difference": 0.0,
+          "speedup_over_baseline": 1.0,
+          "precipitable_water_kg_m2_relative_difference": 0.0,
+          "evaporation_kg_m2_s_relative_difference": 0.0,
+          "precipitation_kg_m2_s_relative_difference": 0.0,
+          "boundary_layer_column_calls_ratio": 1.0,
+          "convection_column_calls_ratio": 1.0,
+          "sbm_diagnostic_column_calls_ratio": 1.0,
+          "full_rhs_per_step_ratio": 1.0,
+          "conservation_pass": true,
+          "gate_checks": {
+            "pw_relative": true,
+            "evaporation_precipitation": true,
+            "toa": true,
+            "convective_fraction": true,
+            "conservation": true,
+            "temperature_rms": true
+          },
+          "measured_gates_pass": true
+        },
+        "candidate": {
+          "temperature_rms_k": 0.11333623755510129,
+          "mean_temperature_difference_k": 0.023667152325344887,
+          "zonal_temperature_rms_k": 0.03553333684888035,
+          "zonal_wind_rms_m_s": 0.027458445123496027,
+          "toa_difference_w_m2": 0.05620286351955811,
+          "convective_fraction_difference": 0.0019719476232243904,
+          "speedup_over_baseline": 1.8551420696325978,
+          "precipitable_water_kg_m2_relative_difference": 0.0008736016295137625,
+          "evaporation_kg_m2_s_relative_difference": 0.0016613171898112633,
+          "precipitation_kg_m2_s_relative_difference": 0.012338716772693157,
+          "boundary_layer_column_calls_ratio": 2.0,
+          "convection_column_calls_ratio": 1.5,
+          "sbm_diagnostic_column_calls_ratio": 3.0,
+          "full_rhs_per_step_ratio": 1.25,
+          "conservation_pass": true,
+          "gate_checks": {
+            "pw_relative": true,
+            "evaporation_precipitation": true,
+            "toa": true,
+            "convective_fraction": true,
+            "conservation": true,
+            "temperature_rms": false
+          },
+          "measured_gates_pass": false
+        },
+        "candidate-ici2": {
+          "temperature_rms_k": 0.11352896461014461,
+          "mean_temperature_difference_k": 0.023507964446423557,
+          "zonal_temperature_rms_k": 0.03593322381839327,
+          "zonal_wind_rms_m_s": 0.027123903911333347,
+          "toa_difference_w_m2": 0.05652904136360505,
+          "convective_fraction_difference": 0.002067451729547365,
+          "speedup_over_baseline": 2.032760321601257,
+          "precipitable_water_kg_m2_relative_difference": 0.000892258970656575,
+          "evaporation_kg_m2_s_relative_difference": 0.0013500154339833427,
+          "precipitation_kg_m2_s_relative_difference": 0.012218478532978215,
+          "boundary_layer_column_calls_ratio": 2.0,
+          "convection_column_calls_ratio": 1.5,
+          "sbm_diagnostic_column_calls_ratio": 3.0,
+          "full_rhs_per_step_ratio": 1.6666666666666667,
+          "conservation_pass": true,
+          "gate_checks": {
+            "pw_relative": true,
+            "evaporation_precipitation": true,
+            "toa": true,
+            "convective_fraction": true,
+            "conservation": true,
+            "temperature_rms": false
+          },
+          "measured_gates_pass": false
+        }
+      },
+      "provenance": {
+        "baseline": {
+          "commit": "dfb1983665d53ef5d91ab7041069e8fe9ab45181",
+          "dirty": true,
+          "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+          "cpu_model": "Apple M1",
+          "conditions": "power/CPU affinity not controlled",
+          "snapshot_sha256": "7ae49b8a574b0029988f12603ee5810f6d4ccda8b7fd2984eea065ddb2d6deea"
+        },
+        "candidate": {
+          "commit": "dfb1983665d53ef5d91ab7041069e8fe9ab45181",
+          "dirty": true,
+          "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+          "cpu_model": "Apple M1",
+          "conditions": "power/CPU affinity not controlled",
+          "snapshot_sha256": "d83efa45965d2a9e4cb7e7a343db51ce8c21022bfed93d0eabcf54a20ed07de7"
+        },
+        "candidate-ici2": {
+          "commit": "dfb1983665d53ef5d91ab7041069e8fe9ab45181",
+          "dirty": true,
+          "platform": "macOS-26.3-arm64-arm-64bit-Mach-O",
+          "cpu_model": "Apple M1",
+          "conditions": "power/CPU affinity not controlled",
+          "snapshot_sha256": "643a08c77cc227f357919d583882e5f1006da4d88adca0c140e9bf3a47972a0a"
+        }
+      }
+    },
+    "convection_update_mode_comparison": {
+      "note": "same 600/900/1800 s intervals, developed state, one model day, five repetitions each",
+      "intermittent": {
+        "seconds_per_model_day": 1.4122265,
+        "sbm_diagnostic_column_calls": 20736.0,
+        "sbm_relaxation_column_calls": 20736.0,
+        "temperature_rms_k": 0.11333623755510129,
+        "toa_difference_w_m2": 0.05620286351955811
+      },
+      "cached_relaxation": {
+        "seconds_per_model_day": 1.438007625,
+        "sbm_diagnostic_column_calls": 21978.0,
+        "sbm_relaxation_column_calls": 31104.0,
+        "temperature_rms_k": 0.1341287071001188,
+        "toa_difference_w_m2": 0.17255429408611148
+      },
+      "selected": "intermittent"
+    },
+    "interval_ladder_developed_state_one_day": {
+      "bl600-sbm900-rad1800": {
+        "temperature_rms_k": 0.1341287071001188,
+        "mean_temperature_difference_k": 0.006566955700975541,
+        "toa_difference_w_m2": 0.17255429408611148,
+        "precipitable_water_kg_m2_relative_difference": 0.0017440880996741277,
+        "precipitation_kg_m2_s_relative_difference": 0.022702851838114532,
+        "speedup_over_baseline": 1.8700642140302353,
+        "measured_gates_pass": false
+      },
+      "bl300-sbm900-rad1800": {
+        "temperature_rms_k": 0.09966985751576268,
+        "mean_temperature_difference_k": 0.026027493183391925,
+        "toa_difference_w_m2": 0.25921010830618946,
+        "precipitable_water_kg_m2_relative_difference": 0.0035494770171103016,
+        "precipitation_kg_m2_s_relative_difference": 0.04317461830533514,
+        "speedup_over_baseline": 1.4419152272336833,
+        "measured_gates_pass": true
+      },
+      "bl600-sbm300-rad1800": {
+        "temperature_rms_k": 0.05972146912508536,
+        "mean_temperature_difference_k": 0.015793451166587147,
+        "toa_difference_w_m2": 0.1250890825677896,
+        "precipitable_water_kg_m2_relative_difference": 0.000637392595215233,
+        "precipitation_kg_m2_s_relative_difference": 0.00703696825050157,
+        "speedup_over_baseline": 1.2014344504433985,
+        "measured_gates_pass": true
+      },
+      "bl600-sbm900-rad900": {
+        "temperature_rms_k": 0.10136996557422345,
+        "mean_temperature_difference_k": 0.015606284903867618,
+        "toa_difference_w_m2": 0.04801829768392496,
+        "precipitable_water_kg_m2_relative_difference": 0.0019662679896929967,
+        "precipitation_kg_m2_s_relative_difference": 0.027591523608820313,
+        "speedup_over_baseline": 1.8161992101621194,
+        "measured_gates_pass": false
+      },
+      "bl300-sbm300-rad1800": {
+        "temperature_rms_k": 0.05885764690221819,
+        "mean_temperature_difference_k": 0.01707196084930729,
+        "toa_difference_w_m2": 0.12573809071338038,
+        "precipitable_water_kg_m2_relative_difference": 0.00040047961125290433,
+        "precipitation_kg_m2_s_relative_difference": 0.007663106489016256,
+        "speedup_over_baseline": 1.0658874838468613,
+        "measured_gates_pass": true
+      },
+      "bl300-sbm300-rad300": {
+        "temperature_rms_k": 0.11285987199055388,
+        "mean_temperature_difference_k": 0.013673848896644358,
+        "toa_difference_w_m2": 0.19911722820918543,
+        "precipitable_water_kg_m2_relative_difference": 0.0003186363250236761,
+        "precipitation_kg_m2_s_relative_difference": 0.006880453835902134,
+        "speedup_over_baseline": 1.0074504743676134,
+        "measured_gates_pass": false
+      }
+    },
+    "difference_growth_developed_state": {
+      "candidate-0.125day": {
+        "temperature_rms_k": 0.04485870401099581,
+        "mean_temperature_difference_k": 0.01358341073569136,
+        "toa_difference_w_m2": 0.32056407239446827
+      },
+      "candidate-0.25day": {
+        "temperature_rms_k": 0.047459642735580426,
+        "mean_temperature_difference_k": 0.016746909503751795,
+        "toa_difference_w_m2": 0.18731434011640152
+      },
+      "candidate-0.5day": {
+        "temperature_rms_k": 0.09485856454560644,
+        "mean_temperature_difference_k": 0.013889280275520832,
+        "toa_difference_w_m2": 0.1896289103803253
+      },
+      "candidate-1day": {
+        "temperature_rms_k": 0.1341287071001188,
+        "mean_temperature_difference_k": 0.006566955700975541,
+        "toa_difference_w_m2": 0.17255429408611148
+      },
+      "legacy-intervals-0.125day": {
+        "temperature_rms_k": 0.03276536290108317,
+        "mean_temperature_difference_k": 0.005572888756887551,
+        "toa_difference_w_m2": 0.13259414670279102
+      },
+      "legacy-intervals-0.25day": {
+        "temperature_rms_k": 0.019600347160035232,
+        "mean_temperature_difference_k": 0.0065774854573987795,
+        "toa_difference_w_m2": 0.16813669493844197
+      },
+      "legacy-intervals-0.5day": {
+        "temperature_rms_k": 0.07664278739244519,
+        "mean_temperature_difference_k": 0.007631326994271603,
+        "toa_difference_w_m2": 0.1792692814847988
+      },
+      "legacy-intervals-1day": {
+        "temperature_rms_k": 0.11285987199055388,
+        "mean_temperature_difference_k": 0.013673848896644358,
+        "toa_difference_w_m2": 0.19911722820918543
+      }
+    }
+  }
 }

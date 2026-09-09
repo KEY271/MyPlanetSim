@@ -1,8 +1,9 @@
 # Phase 14 検証記録
 
-状態: P14.01 を実装・検証中。P14.02 の固定反復比較を実装。
-predictor/IMEX の独立 ARK2 比較器とモデル結合まで実装。ARK2 は自然な構成の
-短時間 screening で不採用。P14.03 以後は未着手。
+状態: P14.01–P14.12 を実装。P14.02 の ARK2 IMEX は自然な構成で ICI2 より高コストのため不採用。
+P14.03–P14.11 の scheduler、SBM/BL、OpenMP、fusion、view、modal batch、tile を実装。
+P14.12 で統合候補 preset を登録し、初期場と発達後 checkpoint の1日比較を測定した。
+30日・1200日は利用者が foreground で実行する。
 速度の数値目標を満たすための diffusion、残差許容値、物理パラメータの調整は行わない。
 
 ## P14.01: 計測基盤
@@ -266,3 +267,117 @@ build/release/tools/benchmark_tiles configs/phase13_moist_pilot.cfg --rhs-count 
 ```
 
 N=24/48/96 の反復比較は長時間になり得るため、自動実行しない。
+
+## P14.12: 統合候補と最終評価
+
+`configs/phase14_moist_candidate.cfg` に統合候補を登録した。Phase 13 pilot と同じ格子・
+鉛直座標・tracer・物理定数で、physics schedule だけを過程別（BL/surface 600 s、SBM 診断・
+緩和 900 s、gray radiation 1800 s、力学 1800 s / ICI 3反復）に変更する。
+`moisture.maximum_physics_substep_s` は過程別 schedule と競合するため、dilute_water の必須
+key から外し、canonical writer からも省いた。旧 legacy schedule では従来どおり必須である。
+
+### 発見した保存則の不具合と修正
+
+発達後 checkpoint での統合比較で、`cached_relaxation` が水を保存しないことが分かった。
+1日で `water_budget_residual_ratio = 8.0e-5`、step 最大の水残差 `6.6e10 kg` である。
+新規に診断した参照場は deep 柱を降水と同量だけ乾かし、shallow 柱の水を保存するが、状態が
+変化した後の参照場ではどちらも成立しない。柱の水残差（水変化＋降水）が
+`1e-12 * 柱の水 + 1e-12 kg/m2` を超える柱を無効とみなして再診断・再適用するようにした。
+修正後の残差比は `8.4e-15` で、重い診断は 20736 回/日から 21978 回/日（6%増）に留まる。
+`unit.moist_driver` に、最下層を変えずに柱内部を加湿した場合に再診断が起き水収支が
+保たれる回帰試験を追加した（修正前は両方の検査が失敗する）。
+
+### SBM 更新モードの比較
+
+発達後・1日・同じ 600/900/1800 s、各5回測定。
+
+| mode | s/model-day | 重い診断/日 | 緩和/日 | T RMS [K] | TOA差 [W/m2] |
+|---|---:|---:|---:|---:|---:|
+| intermittent | 1.4122 | 20736 | 20736 | 0.1133 | 0.056 |
+| cached_relaxation | 1.4380 | 21978 | 31104 | 0.1341 | 0.173 |
+
+`cached_relaxation` は緩和の適用回数が増える分だけ遅く、精度も良くならないため、登録 preset は
+`intermittent` とした。`cached_relaxation` は config で選択可能なまま残す。
+
+### 1日比較（N=6/K=20、dt=1800 s、各5回）
+
+baseline は `configs/phase13_moist_pilot.cfg`（legacy 300 s）である。
+
+| 開始状態 | 候補 | s/model-day | speedup | full RHS/step | BL柱呼出/日 | SBM重い診断/日 |
+|---|---|---:|---:|---:|---:|---:|
+| 初期場 | baseline | 2.4843 | 1.000 | 5 | 62208 | 62208 |
+| 初期場 | 候補 | 1.3151 | 1.889 | 4 | 31104 | 20736 |
+| 初期場 | 候補＋ICI2 | 1.2006 | 2.069 | 3 | 31104 | 20736 |
+| 1200日checkpoint | baseline | 2.6199 | 1.000 | 5 | 62208 | 62208 |
+| 1200日checkpoint | 候補 | 1.4122 | 1.855 | 4 | 31104 | 20736 |
+| 1200日checkpoint | 候補＋ICI2 | 1.2888 | 2.033 | 3 | 31104 | 20736 |
+
+放射を RHS から出したため、ICI 3反復のままでも full RHS は 5→4回/step になる。
+登録 gate の判定は次のとおり。初期場では候補・ICI2 とも全て合格した。
+
+| 指標 | 初期場 候補 | 発達後 候補 | 1日gate |
+|---|---:|---:|---:|
+| 質量重み付き T RMS [K] | 0.0040 | 0.1133 | 0.1 |
+| 全球平均T差 [K] | 0.0011 | 0.0237 | (30日 0.2) |
+| PW 相対差 | 0.00017 | 0.00087 | 0.01 |
+| 降水 相対差 | 0.0098 | 0.0123 | 0.05 |
+| TOA差 [W/m2] | 0.305 | 0.056 | 0.5 |
+| 対流降水比の差 | 0.0 | 0.0005 | 0.05 |
+| retry / 水収支 / 質量drift | 0 / 4e-14 / 0 | 0 / 1e-14 / 0 | 合格 |
+
+発達後の瞬時 T RMS だけが 0.1 K を超える。これは interval を伸ばしたためではない。
+同じ過程別経路で BL/SBM/放射をすべて 300 s にしても 0.1129 K であり、時間とともに増える。
+
+| 経過 | 候補 600/900/1800 | 過程別 300/300/300 |
+|---|---:|---:|
+| 0.125日 | 0.0449 | 0.0328 |
+| 0.25日 | 0.0475 | 0.0196 |
+| 0.5日 | 0.0949 | 0.0766 |
+| 1日 | 0.1341 | 0.1129 |
+
+全球平均T差は同じ区間で 0.014 K 以下に留まる。したがって発達後の瞬時場の差は、放射を RHS
+から分離した splitting 変更が与える小さな摂動が対流場で成長したものであり、系統誤差ではない。
+計画どおり、カオス的な瞬時場にこの閾値は使わず、30日の平均・帯状平均 gate で判定する。
+閾値を満たすための係数・許容値・interval の調整は行っていない。
+
+interval 梯子（発達後・1日・単発測定）も記録する。
+
+| BL / SBM / 放射 [s] | T RMS [K] | TOA差 [W/m2] | speedup |
+|---|---:|---:|---:|
+| 600 / 900 / 1800 | 0.1341 | 0.173 | 1.870 |
+| 300 / 900 / 1800 | 0.0997 | 0.259 | 1.442 |
+| 600 / 300 / 1800 | 0.0597 | 0.125 | 1.201 |
+| 600 / 900 / 900 | 0.1014 | 0.048 | 1.816 |
+| 300 / 300 / 1800 | 0.0589 | 0.126 | 1.066 |
+| 300 / 300 / 300 | 0.1129 | 0.199 | 1.007 |
+
+（この梯子は `cached_relaxation` 時点の測定で、単発なので速度差には実行毎のばらつきを含む。）
+
+### 再現コマンド
+
+短い比較は次で再現できる。
+
+```console
+cmake --build --preset release
+ctest --preset release --output-on-failure -j 4
+python3 tools/compare_phase14_final.py --output output/phase14/final-1day --days 1 --with-ici2
+python3 tools/compare_phase14_final.py --output output/phase14/final-developed --days 1 \
+  --with-ici2 --checkpoint output/phase13_moist_pilot/pilot.chk \
+  --source-config configs/phase13_moist_pilot.cfg
+```
+
+30日・1200日は長時間になるため自動実行しない。利用者が foreground で次を実行する。
+
+```console
+python3 tools/compare_phase14_final.py --output output/phase14/final-30day --days 30 --single
+python3 tools/compare_phase14_final.py --output output/phase14/final-1200day --days 1200 --single
+```
+
+30日は manifest の30日 gate（全球平均T 0.2 K、PW 2%、E/P 5%、TOA 0.5 W/m2、
+帯状平均T RMS 1 K、東西風 RMS 2 m/s）で自動判定される。1200日は同じ runner で実行できるが、
+100日 block 比較は `tools/summarize_moist_pilot.py` の集計と併せて別途行う。
+
+### 未了
+
+CAPE 分布・降水 p95/p99・top到達面積、地形と有限陸 fraction のケース、N=24/48 の統合速度、
+30日・1200日の実行は未了である。1日の測定だけで Phase 14 全体の採否を確定しない。
