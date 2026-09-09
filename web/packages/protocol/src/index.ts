@@ -198,3 +198,4 @@ export function diagnosticEvents(events: readonly EventV1[]) {
 
 export * from "./visual";
 export * from "./geometry";
+export * from "./dataset";
