@@ -35,16 +35,19 @@ void apply_moist_column_physics(
       .gas_constant_dry_air_j_kg_k = planet.gas_constant_j_kg_k,
       .heat_capacity_cp_j_kg_k = planet.heat_capacity_cp_j_kg_k};
   diagnostics = {};
+  auto& column_workspace = workspace.column;
+  column_workspace.vapor_mixing_ratio.resize(levels);
   for (std::size_t cell = 0; cell < cells; ++cell) {
     const std::size_t begin = cell * levels;
     const std::size_t vapor_begin =
         dry_hydrostatic_tracer_offset(water_vapor_tracer, cell, 0, cells, levels);
     coordinate.geometry(state.surface_pressure_pa[cell], planet.gravity_m_s2,
                         planet.gas_constant_j_kg_k, planet.heat_capacity_cp_j_kg_k,
-                        planet.reference_pressure_pa, workspace.vertical_geometry);
-    const auto& mass = workspace.vertical_geometry.air_mass_kg_m2;
-    const auto& pressure = workspace.vertical_geometry.pressure_full_pa;
-    const auto& exner = workspace.vertical_geometry.exner_full;
+                        planet.reference_pressure_pa,
+                        column_workspace.vertical_geometry);
+    const auto& mass = column_workspace.vertical_geometry.air_mass_kg_m2;
+    const auto& pressure = column_workspace.vertical_geometry.pressure_full_pa;
+    const auto& exner = column_workspace.vertical_geometry.exner_full;
     const Real area = grid.cells()[cell].area_m2;
     Real initial_atmospheric_water = 0.0;
     for (std::size_t level = 0; level < levels; ++level)
@@ -52,16 +55,16 @@ void apply_moist_column_physics(
     Real convective_rain = 0.0;
     if (convection.kind == ConvectionKind::kSimpleBettsMiller &&
         sbm_execution != SbmExecution::kSkip) {
-      std::vector<Real> vapor(levels);
       for (std::size_t level = 0; level < levels; ++level)
-        vapor[level] = state.tracer_mass_kg_m2[vapor_begin + level] / mass[level];
+        column_workspace.vapor_mixing_ratio[level] =
+            state.tracer_mass_kg_m2[vapor_begin + level] / mass[level];
       const SimpleBettsMillerInput sbm_input{
           .temperature_k =
               std::span<const Real>(derived.temperature_k).subspan(begin, levels),
-          .vapor_mixing_ratio = vapor,
+          .vapor_mixing_ratio = column_workspace.vapor_mixing_ratio,
           .air_mass_kg_m2 = mass,
           .pressure_full_pa = pressure,
-          .pressure_half_pa = workspace.vertical_geometry.pressure_half_pa,
+          .pressure_half_pa = column_workspace.vertical_geometry.pressure_half_pa,
           .gravity_m_s2 = planet.gravity_m_s2,
           .relative_humidity_reference = convection.reference_relative_humidity,
           .relaxation_time_s = convection.relaxation_time_s,
@@ -70,8 +73,8 @@ void apply_moist_column_physics(
           .thermodynamics = thermodynamics};
       const SimpleBettsMillerReference* reference = nullptr;
       if (sbm_execution == SbmExecution::kDiagnoseAndApply) {
-        diagnose_sbm_reference(sbm_input, workspace.convection_reference);
-        reference = &workspace.convection_reference;
+        diagnose_sbm_reference(sbm_input, column_workspace.convection_reference);
+        reference = &column_workspace.convection_reference;
         ++diagnostics.sbm_diagnostic_column_count;
       } else {
         if (workspace.convection_cache.size() != cells)
@@ -99,17 +102,17 @@ void apply_moist_column_physics(
         if (cache.valid) reference = &cache.reference;
       }
       if (reference == nullptr) {
-        workspace.convection = {};
-        workspace.convection.temperature_k.assign(sbm_input.temperature_k.begin(),
-                                                  sbm_input.temperature_k.end());
-        workspace.convection.vapor_mixing_ratio.assign(
+        column_workspace.convection = {};
+        column_workspace.convection.temperature_k.assign(
+            sbm_input.temperature_k.begin(), sbm_input.temperature_k.end());
+        column_workspace.convection.vapor_mixing_ratio.assign(
             sbm_input.vapor_mixing_ratio.begin(), sbm_input.vapor_mixing_ratio.end());
       } else {
-        apply_sbm_relaxation(sbm_input, *reference, workspace.convection);
+        apply_sbm_relaxation(sbm_input, *reference, column_workspace.convection);
         ++diagnostics.sbm_relaxation_column_count;
       }
-      convective_rain = workspace.convection.diagnostics.convective_rain_kg_m2;
-      const auto& convective = workspace.convection.diagnostics;
+      convective_rain = column_workspace.convection.diagnostics.convective_rain_kg_m2;
+      const auto& convective = column_workspace.convection.diagnostics;
       diagnostics.cape_area_time_integral_j_m2_s_kg +=
           area * time_step_s * convective.cape_j_kg;
       diagnostics.cin_area_time_integral_j_m2_s_kg +=
@@ -121,9 +124,10 @@ void apply_moist_column_physics(
       for (std::size_t level = 0; level < levels; ++level) {
         const Real initial_vapor =
             state.tracer_mass_kg_m2[vapor_begin + level] / mass[level];
-        maximum_vapor_increment = std::max(
-            maximum_vapor_increment,
-            std::abs(workspace.convection.vapor_mixing_ratio[level] - initial_vapor));
+        maximum_vapor_increment =
+            std::max(maximum_vapor_increment,
+                     std::abs(column_workspace.convection.vapor_mixing_ratio[level] -
+                              initial_vapor));
       }
       diagnostics.maximum_vapor_increment =
           std::max(diagnostics.maximum_vapor_increment, maximum_vapor_increment);
@@ -150,9 +154,10 @@ void apply_moist_column_physics(
           area * convective.moist_enthalpy_change_j_m2;
       for (std::size_t level = 0; level < levels; ++level) {
         state.potential_temperature_mass_k_kg_m2[begin + level] =
-            mass[level] * workspace.convection.temperature_k[level] / exner[level];
+            mass[level] * column_workspace.convection.temperature_k[level] /
+            exner[level];
         state.tracer_mass_kg_m2[vapor_begin + level] =
-            mass[level] * workspace.convection.vapor_mixing_ratio[level];
+            mass[level] * column_workspace.convection.vapor_mixing_ratio[level];
       }
     }
 

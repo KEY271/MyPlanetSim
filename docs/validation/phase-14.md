@@ -170,3 +170,9 @@ surface response、熱の通常解と潜熱 response でそれぞれ再利用す
 追加し、蒸発、供給制限 bucket、露の 900 秒ケースで二分法と同じ解・収支、かつ反復数が増えない
 ことを確認した。長期・全球の性能計測前なので既定値は二分法のままとし、Newton への本番切替や
 係数 predictor/Picard の追加は行わない。
+
+## P14.06: column workspace
+
+SBM reference/result、鉛直 geometry と水蒸気 profile を一つの column workspace にまとめた。
+水蒸気 profile は cell loop の外で一度だけ確保して再利用するため、cell ごとの一時 vector allocation は
+発生しない。serial の cell 順、SBM cache の寿命、state と台帳の算術順は変更していない。

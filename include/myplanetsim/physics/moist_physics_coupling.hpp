@@ -51,11 +51,16 @@ struct SbmReferenceCache {
   bool valid = false;
 };
 
-struct MoistPhysicsCouplingWorkspace {
+struct MoistPhysicsColumnWorkspace {
   SimpleBettsMillerReference convection_reference;
-  std::vector<SbmReferenceCache> convection_cache;
   SimpleBettsMillerResult convection;
   HybridPressureGeometry vertical_geometry;
+  std::vector<Real> vapor_mixing_ratio;
+};
+
+struct MoistPhysicsCouplingWorkspace {
+  MoistPhysicsColumnWorkspace column;
+  std::vector<SbmReferenceCache> convection_cache;
 };
 
 void reset_sbm_reference_cache(MoistPhysicsCouplingWorkspace& workspace,
