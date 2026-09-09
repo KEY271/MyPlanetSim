@@ -111,6 +111,7 @@ set_tests_properties(
   PROPERTIES LABELS phase8_gate
 )
 mps_add_test(unit.climate_statistics test_climate_statistics.cpp)
+mps_add_test(unit.period_mean test_period_mean.cpp)
 set_tests_properties(unit.held_suarez unit.climate_statistics PROPERTIES LABELS phase7_gate)
 mps_add_test(phase7.forced_dry_core test_forced_dry_core.cpp)
 set_tests_properties(phase7.forced_dry_core PROPERTIES LABELS phase7_gate)

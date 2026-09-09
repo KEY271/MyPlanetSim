@@ -373,6 +373,26 @@ MPS_TEST_CASE("observer intervals only reduce derived diagnostic samples") {
     MPS_CHECK_EQ(interval.sampled_steps[index] % 3, 0U);
 }
 
+MPS_TEST_CASE("accepted-step observer is independent of diagnostic sampling") {
+  auto parameters = config();
+  parameters.diagnostics.interval_steps = 1000;
+  const mps::DryHydrostaticDriver driver(parameters);
+  auto state = driver.initial_state();
+  std::vector<std::array<mps::Real, 2>> intervals;
+  driver.advance(
+      state, 0.05, {}, {},
+      [&intervals](const mps::DryHydrostaticState& accepted,
+                   const mps::Real start_s, const mps::Real end_s) {
+        MPS_CHECK_EQ(accepted.time_s, end_s);
+        intervals.push_back({start_s, end_s});
+      });
+  MPS_CHECK_EQ(intervals.size(), state.step);
+  MPS_CHECK_EQ(intervals.front()[0], 0.0);
+  MPS_CHECK_EQ(intervals.back()[1], state.time_s);
+  for (std::size_t i = 1; i < intervals.size(); ++i)
+    MPS_CHECK_EQ(intervals[i - 1][1], intervals[i][0]);
+}
+
 MPS_TEST_CASE("none physics leaves the dry RHS exactly unchanged") {
   auto unforced_parameters = held_suarez_config();
   unforced_parameters.physics.kind = mps::PhysicsKind::kNone;

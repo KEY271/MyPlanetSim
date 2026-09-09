@@ -140,6 +140,11 @@ using DryHydrostaticObserver =
     std::function<void(const DryHydrostaticState&, const DryHydrostaticDerived*,
                        const DryHydrostaticStepDiagnostics&)>;
 using DryHydrostaticCancel = std::function<bool()>;
+// Called exactly once after each accepted step, including steps later followed by
+// cancellation. Unlike the diagnostic observer it never represents an initial or
+// repeated state and does not depend on diagnostics.interval_steps.
+using DryHydrostaticAcceptedStepObserver =
+    std::function<void(const DryHydrostaticState&, Real, Real)>;
 class DryHydrostaticDriver {
  public:
   explicit DryHydrostaticDriver(
@@ -161,7 +166,8 @@ class DryHydrostaticDriver {
       const DryHydrostaticState&) const;
   void advance(DryHydrostaticState&, Real end_time_s,
                const DryHydrostaticObserver& observer = {},
-               const DryHydrostaticCancel& cancel = {}) const;
+               const DryHydrostaticCancel& cancel = {},
+               const DryHydrostaticAcceptedStepObserver& accepted_step = {}) const;
   [[nodiscard]] const CubedSphereGrid& grid() const noexcept { return grid_; }
   [[nodiscard]] const SurfaceOrography& orography() const noexcept {
     return orography_;

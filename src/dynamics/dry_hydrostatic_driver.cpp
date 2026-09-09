@@ -1195,7 +1195,8 @@ void DryHydrostaticDriver::rhs_with_components(
 }
 void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
                                    const DryHydrostaticObserver& obs,
-                                   const DryHydrostaticCancel& cancel) const {
+                                   const DryHydrostaticCancel& cancel,
+                                   const DryHydrostaticAcceptedStepObserver& accepted_step) const {
   const std::uint64_t initial_observer_step = s.step;
   std::uint64_t last_sampled_step = initial_observer_step;
   const auto observe = [&](const DryHydrostaticState& state,
@@ -1993,6 +1994,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       step.wall_seconds_total = std::chrono::duration<Real>(
                                     std::chrono::steady_clock::now() - step_wall_start)
                                     .count();
+      if (accepted_step) accepted_step(s, initial.time_s, s.time_s);
       const bool cancelled = cancel && cancel();
       observe(s, step, cancelled);
       if (cancelled) return;
@@ -2167,6 +2169,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
             s.surface_temperature_k, dt, rhs1.surface_diagnostics,
             rhs2.surface_diagnostics, rhs3.surface_diagnostics);
       }
+      if (accepted_step) accepted_step(s, initial.time_s, s.time_s);
       const bool cancelled = cancel && cancel();
       observe(s, step, cancelled);
       if (cancelled) return;
