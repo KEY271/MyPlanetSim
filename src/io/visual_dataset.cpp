@@ -195,7 +195,7 @@ void VisualDatasetWriter::write_terrain() const {
   for (const char value : kTerrainMagic) bytes.push_back(static_cast<std::byte>(value));
   append_u32(bytes, kSchemaVersion);
   append_u32(bytes, field_count);
-  append_u64(bytes, cells);
+  append_u64(bytes, static_cast<std::uint64_t>(field_count) * cells);
   for (const auto& cell : grid_.cells()) append_real(bytes, cell.center.x);
   for (const auto& cell : grid_.cells()) append_real(bytes, cell.center.y);
   for (const auto& cell : grid_.cells()) append_real(bytes, cell.center.z);

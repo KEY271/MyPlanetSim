@@ -1,6 +1,10 @@
 # ADR 0003: horizontal shallow-water discretization
 
-**Status:** accepted for Phase 4 and Phase 5
+**Status:** retired in Phase 15
+
+Both shallow-water implementations and their dedicated compatible/dual-grid operators
+were removed in P15.07. The measurements and decision below remain historical evidence,
+not a description of current executable options.
 
 ## Context
 

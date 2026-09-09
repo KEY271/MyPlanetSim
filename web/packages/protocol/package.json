@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
-  "scripts": { "build": "tsc --noEmit", "lint": "tsc --noEmit", "test": "vitest run", "typecheck": "tsc --noEmit" },
+  "scripts": { "build": "tsc --noEmit", "lint": "tsc --noEmit", "test": "vitest run", "test:cli-dataset": "vitest run src/cli-dataset.test.ts", "typecheck": "tsc --noEmit" },
   "devDependencies": { "vitest": "^3.2.4" }
 }

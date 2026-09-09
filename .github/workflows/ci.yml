@@ -25,8 +25,8 @@ jobs:
       - name: Check Web workspace
         run: npm run lint --prefix web && npm run typecheck --prefix web && npm test --prefix web && npm run build --prefix web
 
-  live:
-    name: Native gateway live path
+  dataset-contract:
+    name: C++ to TypeScript dataset contract
     runs-on: ubuntu-24.04
     steps:
       - name: Check out source
@@ -43,16 +43,12 @@ jobs:
         run: cmake --preset dev && cmake --build --preset dev
       - name: Install Web dependencies
         run: npm ci --prefix web
-      # Exercises the FrameV1 shallow-water run and the FrameV2 dry hydrostatic run against
-      # the binary that was just built, including preset restrictions and cancellation.
-      - name: Run the live gateway gate
-        run: npm run test:live --prefix web --workspace @myplanetsim/gateway
-      - name: Install Chromium
-        run: npx --prefix web playwright install --with-deps chromium
-      # Node accepts API shapes a browser rejects and never renders, so the viewer is also
-      # opened in a real browser against the gateway that was just started.
-      - name: Run the browser gate
-        run: npm run test:browser --prefix web --workspace @myplanetsim/ui
+      - name: Generate the Phase 15 fixture
+        run: ./build/dev/my_planet_sim --config configs/phase15_viewer_rest_n4.cfg --progress-interval-s 0
+      - name: Decode the C++ dataset in TypeScript
+        env:
+          MPS_VISUAL_DATASET: ${{ github.workspace }}/output/phase15-viewer-rest-n4/viewer
+        run: npm run test:cli-dataset --prefix web --workspace @myplanetsim/protocol
 
   build-and-test:
     runs-on: ubuntu-24.04

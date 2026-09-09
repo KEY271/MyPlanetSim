@@ -1,6 +1,10 @@
 # ADR 0007: interactive vertical resolution override
 
-**Status:** accepted for Phase 5
+**Status:** superseded by ADR 0028 in Phase 15
+
+P15.06 removed interactive runs and their `N`/`K` overrides. Dataset dimensions now come
+from the immutable saved manifest, so this control-path decision is retained only as a
+record of the former Phase 5 interface.
 
 ## Context
 

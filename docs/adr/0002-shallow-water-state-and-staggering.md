@@ -1,6 +1,10 @@
 # ADR 0002: shallow-water state and staggering
 
-**Status:** accepted for the Phase 2 reference scheme
+**Status:** retired in Phase 15
+
+The implementation, dedicated configuration, and tests described here were removed in
+P15.07. This ADR is retained only as the Phase 2 design record; it does not describe a
+currently selectable model.
 
 ## Context
 

@@ -1,6 +1,10 @@
 # ADR 0004: interactive simulator control boundary
 
-**Status:** accepted for Phase 3
+**Status:** superseded by ADR 0028 in Phase 15
+
+P15.06 removed the gateway, native control protocol, instantaneous frames, and browser
+run controls. The current viewer reads precomputed period-mean datasets as specified by
+[ADR 0028](0028-period-mean-visual-dataset.md); the design below is historical only.
 
 ## Context
 

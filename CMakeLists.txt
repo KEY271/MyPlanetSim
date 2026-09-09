@@ -320,6 +320,15 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase8_csv.cmake
   )
   set_tests_properties(phase8.csv_output PROPERTIES LABELS phase8_gate)
+  add_test(
+    NAME phase15.visual_dataset_cli
+    COMMAND
+      ${CMAKE_COMMAND} -DMPS_EXECUTABLE=$<TARGET_FILE:my_planet_sim>
+      -DMPS_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/configs/phase15_viewer_rest_n4.cfg
+      -DMPS_WORKING_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR} -P
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_phase15_dataset.cmake
+  )
+  set_tests_properties(phase15.visual_dataset_cli PROPERTIES LABELS phase15_gate)
   add_test(NAME smoke.invalid_cli COMMAND my_planet_sim --unknown value)
   set_tests_properties(smoke.invalid_cli PROPERTIES WILL_FAIL TRUE)
   add_test(

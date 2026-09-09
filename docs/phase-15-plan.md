@@ -1,8 +1,8 @@
 # Phase 15 — shallow-water・対話実行の廃止と地形・期間平均の可視化
 
-状態: 実装中（2026-09-09）。P15.01 完了。
+状態: 完了（2026-09-10）。P15.01--P15.08 実装・検証済み。
 調査基準: `742f11f`。knowledge MCP を `MyPlanetSim` で検索したが該当記録はなかった。
-以下のファイル名・設定名・データ形式は、既存と明記したものを除き実装予定である。
+実装結果と再現コマンドは `docs/validation/phase-15.md` に記録する。
 
 ## 1. 目的とスコープ
 
@@ -204,9 +204,9 @@ Web のテストが shallow-water のダミーデータに依存する場合は�
 | P15.03 | 通常 CLI の集計出力・地形出力・継続（完了） | `io/visual_dataset.*`、CLI、config、集計 sidecar | 地形だけで出力可能。乾燥/湿潤とも期間平均を出力し、restart 前後で一致 |
 | P15.04 | TypeScript の保存データ読込（完了） | protocol の dataset/mean API、loader、fixtures | C++ 出力と値・shape・セル順・期間情報が一致し、破損を検出 |
 | P15.05 | viewer を地形・期間平均へ移行（完了） | main、Map2D、Globe3D、ColumnProfile、閲覧状態 | 地形だけ/平均場の両方を開け、期間・層・セルの選択が連動 |
-| P15.06 | 対話実行と旧 frame を除去 | gateway、control、editor、clients、frame I/O、設定 | viewer と通常 CLI の置換経路が成立し、旧制御・瞬時 frame 参照が消える |
-| P15.07 | shallow-water を除去 | dynamics、diagnostics、config、専用設定・テスト、CMake | 対象本体と専用基盤を削除し、残るモデル・共通演算の回帰が通る |
-| P15.08 | テスト・CI・起動・文書の最終整理 | CI、package/lock、Justfile、README、旧 ADR、検証報告 | Chromium 不要で全 gate が通り、新しい利用手順を再現できる |
+| P15.06 | 対話実行と旧 frame を除去（完了） | gateway、control、editor、clients、frame I/O、設定 | viewer と通常 CLI の置換経路が成立し、旧制御・瞬時 frame 参照が消える |
+| P15.07 | shallow-water を除去（完了） | dynamics、diagnostics、config、専用設定・テスト、CMake | 対象本体と専用基盤を削除し、残るモデル・共通演算の回帰が通る |
+| P15.08 | テスト・CI・起動・文書の最終整理（完了） | CI、package/lock、Justfile、README、旧 ADR、検証報告 | Chromium 不要で全 gate が通り、新しい利用手順を再現できる |
 
 実装はこの順に一項目ずつ進める。置換出力・reader の準備前に現行の表示経路だけを削除しない。
 新しい API・CLI option・config は実装時に最終名を揃え、この計画と利用例も更新する。

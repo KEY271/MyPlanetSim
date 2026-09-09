@@ -4,10 +4,6 @@ root := justfile_directory()
 web_dir := root + "/web"
 simulator := root + "/build/dev/my_planet_sim"
 
-# The viewer's dry presets come from configs/interactive_dry_presets.txt so the shipped list
-# and the gated list cannot drift apart.
-dry_presets := shell("grep -v '^#' " + root + "/configs/interactive_dry_presets.txt | grep . | sed 's|^|" + root + "/configs/|' | paste -sd, -")
-
 # 利用可能なタスクを表示する
 default:
 	@just --list
@@ -18,85 +14,23 @@ setup:
 	cmake --build --preset dev
 	cd "{{web_dir}}" && npm ci
 
-# offline/mock UI だけを起動する
-ui ui_port="5173":
+# 保存済み dataset を読む viewer を起動する
+dev ui_port="5173":
 	cd "{{web_dir}}" && npm run dev --workspace @myplanetsim/ui -- --host 127.0.0.1 --port "{{ui_port}}"
 
-# native gateway だけを起動する（token は標準出力の JSON に表示される）
-gateway gateway_port="8787":
+# 小格子の地形・期間平均 dataset を生成する
+dataset:
 	#!/usr/bin/env bash
 	if [[ ! -x "{{simulator}}" ]]; then
 	  cmake --preset dev
 	  cmake --build --preset dev
 	fi
-	if [[ ! -d "{{web_dir}}/node_modules" ]]; then
-	  cd "{{web_dir}}"
-	  npm ci
-	fi
-	cd "{{web_dir}}"
-	MPS_SIMULATOR_BINARY="{{simulator}}" \
-	MPS_REST_PRESET="{{root}}/configs/phase3_rest_n4.cfg" \
-	MPS_DRY_PRESETS="{{dry_presets}}" \
-	MPS_RUN_ROOT="{{root}}/.runs" \
-	MPS_GATEWAY_PORT="{{gateway_port}}" \
-	npm run start --workspace @myplanetsim/gateway
+	"{{simulator}}" --config "{{root}}/configs/phase15_viewer_rest_n4.cfg" --progress-interval-s 0
 
-# native gateway と live UI を同じ session token で起動する
-[no-exit-message]
-dev gateway_port="8787" ui_port="5173":
-	#!/usr/bin/env bash
-	if [[ ! -x "{{simulator}}" ]]; then
-	  cmake --preset dev
-	  cmake --build --preset dev
-	fi
-	if [[ ! -d "{{web_dir}}/node_modules" ]]; then
-	  cd "{{web_dir}}"
-	  npm ci
-	fi
-	cd "{{web_dir}}"
-	token="$(node --input-type=module -e 'import { randomBytes } from "node:crypto"; process.stdout.write(randomBytes(32).toString("hex"))')"
-	export MPS_SIMULATOR_BINARY="{{simulator}}"
-	export MPS_REST_PRESET="{{root}}/configs/phase3_rest_n4.cfg"
-	export MPS_DRY_PRESETS="{{dry_presets}}"
-	export MPS_RUN_ROOT="{{root}}/.runs"
-	export MPS_GATEWAY_PORT="{{gateway_port}}"
-	export MPS_SESSION_TOKEN="$token"
-	npm run start --workspace @myplanetsim/gateway &
-	gateway_pid=$!
-	cleanup() {
-	  kill "$gateway_pid" 2>/dev/null || true
-	  wait "$gateway_pid" 2>/dev/null || true
-	}
-	on_signal() { exit 0; }
-	trap cleanup EXIT
-	trap on_signal INT TERM
-	ready=false
-	for _ in $(seq 1 50); do
-	  if ! kill -0 "$gateway_pid" 2>/dev/null; then
-	    wait "$gateway_pid"
-	  fi
-	  if TOKEN="$token" PORT="{{gateway_port}}" node --input-type=module -e 'const response = await fetch(`http://127.0.0.1:${process.env.PORT}/api/v1/capabilities`, { headers: { authorization: `Bearer ${process.env.TOKEN}` } }); process.exit(response.ok ? 0 : 1)' 2>/dev/null; then
-	    ready=true
-	    break
-	  fi
-	  sleep 0.1
-	done
-	if [[ "$ready" != true ]]; then
-	  echo "gateway did not become ready" >&2
-	  exit 1
-	fi
-	echo
-	echo "Live UI: http://127.0.0.1:{{ui_port}}/"
-	echo "The dev server below receives this session, so the URL it prints is the live one."
-	echo "Press Ctrl-C to stop the UI and gateway."
-	echo
-	npm run dev --workspace @myplanetsim/ui -- --host 127.0.0.1 --port "{{ui_port}}"
-
-# C++・Web・native live の主要ゲートを実行する
+# C++・Web のブラウザー不要ゲートを実行する
 check:
 	cmake --build --preset dev
 	ctest --preset dev --output-on-failure
 	cmake --build build/dev --target format-check
-	cd "{{web_dir}}" && npm run lint && npm run test && npm run build
-	cd "{{web_dir}}" && npm run test:live --workspace @myplanetsim/gateway
-	cd "{{web_dir}}" && npm run test:browser --workspace @myplanetsim/ui
+	cd "{{web_dir}}" && npm run lint && npm run typecheck && npm run test && npm run build
+	cd "{{web_dir}}" && MPS_VISUAL_DATASET="{{root}}/build/dev/output/phase15-viewer-rest-n4/viewer" npm run test:cli-dataset --workspace @myplanetsim/protocol

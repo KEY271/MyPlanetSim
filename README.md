@@ -2,15 +2,15 @@
 
 MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形を変更できる、C++ 製の架空惑星向け全球大気シミュレーターを段階的に開発するプロジェクトです。水平格子には cubed-sphere、鉛直座標には hybrid sigma-pressure 座標を採用します。
 
-最初から完全な GCM を作るのではなく、cubed-sphere 上の球面輸送、全球 shallow-water、乾燥 3D 力学、地形、理想化物理の順に、解析解・標準テスト・保存則を通過した機能だけを積み上げます。初期の到達目標は、乾燥・静水圧・全球大気力学コアと理想化強制です。湿潤過程、放射、化学、海洋結合はその後の拡張対象です。
+最初から完全な GCM を作るのではなく、cubed-sphere 上の球面輸送、乾燥 3D 力学、地形、理想化物理の順に、解析解・標準テスト・保存則を通過した機能だけを積み上げます。初期検証に使った全球 shallow-water は Phase 15 で廃止しました。現在の対象は乾燥・湿潤の静水圧全球大気コア、理想化物理と、その保存済み結果の可視化です。
 
 ## ドキュメント
 
 - [開発・検証計画](docs/plan.md): 数値方式の初期方針、開発段階、各段階の検証項目、完了条件、参考文献
 - [Phase 0 実装計画](docs/phase-0-plan.md): 科学・ソフトウェア基盤をコミット単位に分けた作業順と受け入れ条件
 - [Phase 1 実装計画](docs/phase-1-plan.md): cubed-sphere 幾何と球面輸送をコミット単位に分けた作業順と受け入れ条件
-- [Phase 2 実装計画](docs/phase-2-plan.md): 全球 shallow-water、標準試験、水平離散化比較の作業順と受け入れ条件
-- [Phase 3 実装計画](docs/phase-3-plan.md): C++ 制御付き独立 Web UI、初期条件編集、3D/2D cubed-sphere 表示の設計とコミット列
+- [Phase 2 実装計画（履歴）](docs/phase-2-plan.md): 廃止済み全球 shallow-water の標準試験と水平離散化比較
+- [Phase 3 実装計画（履歴）](docs/phase-3-plan.md): 廃止済み対話実行経路と初期 Web UI の設計
 - [Phase 4 実装計画](docs/phase-4-plan.md): 鉛直 1D の C++ column core と、C++ 検証後に行う offline profile 可視化
 - [Phase 5 実装計画](docs/phase-5-plan.md): 地形なし乾燥 3D 静水圧コアを C++ で先に完成し、最後に live visualizer を更新する設計
 - [Phase 6 実装計画](docs/phase-6-plan.md): 固定地形、傾いた hybrid 面の pressure gradient、山岳 benchmark と最小の地形入力設計
@@ -22,12 +22,12 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 12 実装計画](docs/phase-12-plan.md): 既存モデルを参考にした乾燥対流調節・境界層、陰的地表交換、過程別収支と検証順序
 - [Phase 13 実装計画](docs/phase-13-plan.md): 複数 tracer、希薄水蒸気・蒸発・即時降水、SBM 型対流、陸面 bucket と水・潜熱収支の設計
 - [Phase 14 実装計画](docs/phase-14-plan.md): RHS 評価削減、物理の頻度分離、OpenMP、flux 融合、配列・SIMD・tile 最適化の比較と採用基準
-- [Phase 15 実装計画](docs/phase-15-plan.md): shallow-water・対話実行・Chromium テストの廃止、地形と月平均などの期間平均場を閲覧する visualizer への整理（計画）
+- [Phase 15 実装計画](docs/phase-15-plan.md): shallow-water・対話実行・Chromium テストの廃止、地形と期間平均場を閲覧する viewer への整理
 - [科学・数値規約](docs/conventions.md): 単位、座標、添字、符号、誤差・保存量の共通定義
 - [Phase 0 検証報告](docs/validation/phase-0.md): toolchain、テスト、時間収束、restart の検証結果
 - [Phase 1 検証報告](docs/validation/phase-1.md): cubed-sphere 幾何、演算子、球面輸送の検証結果
-- [Phase 2 検証報告](docs/validation/phase-2.md): shallow-water 標準試験、保存量、方式比較の検証結果
-- [Phase 3 検証報告](docs/validation/phase-3.md): native gateway、Web UI、control protocol の検証結果と既知 gap
+- [Phase 2 検証報告（履歴）](docs/validation/phase-2.md): 廃止前の shallow-water 標準試験、保存量、方式比較
+- [Phase 3 検証報告（履歴）](docs/validation/phase-3.md): 廃止前の native gateway、Web UI、control protocol
 - [Phase 4 検証報告](docs/validation/phase-4.md): hybrid 鉛直 column、診断、restart の検証結果
 - [Phase 5 検証報告](docs/validation/phase-5.md): 乾燥 3D 静水圧コアの検証結果と production gap
 - [Phase 6 検証報告](docs/validation/phase-6.md): 固定地形と山岳 benchmark の検証結果と production gap
@@ -37,9 +37,12 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [Phase 10 検証報告](docs/validation/phase-10.md): semi-implicit 実装の固定 baseline と段階的検証結果
 - [Phase 11 検証報告](docs/validation/phase-11.md): 灰色放射の解析・再開検証、全球比較、1200日 pilot と適用範囲
 - [Phase 12 検証報告](docs/validation/phase-12.md): 乾燥対流調節・境界層の column 検証、地表細分化格子、4通り比較と1200日 pilot
+- [Phase 13 検証報告](docs/validation/phase-13.md): 希薄水蒸気、SBM 型対流、陸面 bucket と長期 pilot
+- [Phase 14 検証報告](docs/validation/phase-14.md): RHS・物理・並列化候補の性能比較と採否
+- [Phase 15 検証報告](docs/validation/phase-15.md): 期間平均 dataset、restart、viewer、削除内容とブラウザー不要 gate
 - [cubed-sphere panel ADR](docs/adr/0001-cubed-sphere-panel-conventions.md): panel、edge、向き、flux 符号規約
-- [shallow-water state ADR](docs/adr/0002-shallow-water-state-and-staggering.md): 予報変数、staggering、flux/source 分割
-- [水平離散化 ADR](docs/adr/0003-shallow-water-horizontal-discretization.md): 基準 Rusanov 法と compatible 候補の比較と採否
+- [shallow-water state ADR（廃止済み）](docs/adr/0002-shallow-water-state-and-staggering.md): Phase 2 の予報変数、staggering、flux/source 分割の履歴
+- [水平離散化 ADR（廃止済み）](docs/adr/0003-shallow-water-horizontal-discretization.md): Phase 2 の Rusanov 法と compatible 候補の比較履歴
 - [鉛直座標 ADR](docs/adr/0005-hybrid-vertical-coordinate-and-column-state.md): hybrid `A/B`、column state、鉛直 mass flux の規約
 - [乾燥 3D 結合 ADR](docs/adr/0006-dry-hydrostatic-state-and-coupling.md): 3D state、水平・鉛直 flux、pressure gradient、実装順序の規約
 - [固定地形 ADR](docs/adr/0008-fixed-orography-and-lower-boundary.md): 不変な surface geopotential、下部境界、地形 source と I/O 境界
@@ -49,6 +52,7 @@ MyPlanetSim は、惑星定数・自転・大気組成・加熱条件・地形�
 - [平衡初期場 ADR](docs/adr/0013-balanced-benchmark-initial-states.md): `steady` の定義、UMJS14/JW06 の惑星整合、DCMIP 座標の修復
 - [低散逸・reference balance ADR](docs/adr/0014-low-dissipation-and-reference-balanced-dry-core.md): Lamb CFL と移流散逸の分離、DCMIP terrain rest の離散保存
 - [重力波 semi-implicit ADR](docs/adr/0016-semi-implicit-gravity-wave-integration.md): fast/slow 分割、反復法、solver failure、30分超の探索契約
+- [期間平均 visual dataset ADR](docs/adr/0028-period-mean-visual-dataset.md): 受理 step の時間平均、保存形式、restart と読み取り専用 viewer
 
 ## ビルドと実行
 
@@ -67,16 +71,12 @@ cmake --build build/dev --target format-check
 `release` と `asan-ubsan` preset も同じ configure/build/test 手順で使用できます。
 
 実行ファイルは `experiment.kind` に応じて、Phase 0 の製造 ODE、Phase 1 の
-全球 cubed-sphere tracer 輸送、Phase 2 の全球 shallow-water、Phase 4 の独立した
-hybrid 鉛直 column、Phase 5 の乾燥 3D 静水圧コア、および Phase 7 の
-Held--Suarez 強制を実行します。
-輸送ケースは診断を標準出力へ、cell snapshot を `output.directory/tracer.csv`
-へ出力します。shallow-water ケースは診断と保存量 drift、計算コストを標準
-出力へ、cell snapshot を `output.directory/shallow_water.csv`、区間診断を
-`output.directory/diagnostics.csv` へ出力します。
+全球 cubed-sphere tracer 輸送、Phase 4 の独立した hybrid 鉛直 column、Phase 5 以降の
+乾燥・湿潤 3D 静水圧コアと理想化物理を実行します。輸送ケースは診断を標準出力へ、
+cell snapshot を `output.directory/tracer.csv` へ出力します。乾燥・湿潤コアでは既存の
+診断 CSV、checkpoint と進捗・停止処理を維持しています。
 
 ```sh
-./build/dev/my_planet_sim --config configs/phase2_williamson2.cfg
 ./build/dev/my_planet_sim --config configs/phase4_isothermal.cfg
 ./build/dev/my_planet_sim --config configs/phase4_manufactured_transport.cfg
 ./build/dev/my_planet_sim --config configs/phase5_isothermal_rest.cfg
@@ -99,10 +99,10 @@ Earth data ではありません。この境界と production matrix の保留�
 
 ## 開発状況
 
-Phase 9 までの限定した実装・検証範囲は完了しています。球面輸送、全球 shallow-water、
-乾燥 3D 静水圧コア、固定地形、理想化乾燥物理、惑星・軌道・陸海 surface、Web 可視化に加え、
-演算子・CFL・平衡初期場の修正と静的 cache・性能 gate を実装しています。詳細と再現手順は
-[Phase 9 検証報告](docs/validation/phase-9.md)を参照してください。
+Phase 15 までの限定した実装・検証範囲は完了しています。球面輸送、乾燥・湿潤 3D
+静水圧コア、固定地形、理想化物理、惑星・軌道・陸海 surface と期間平均 viewer を実装済みです。
+初期の shallow-water と対話実行 gateway は履歴文書だけを残して廃止しました。現在の状態と
+再現手順は [Phase 15 検証報告](docs/validation/phase-15.md)を参照してください。
 
 Phase 10 では、乾燥静水圧コアの高速な Lamb・重力波だけを semi-implicit に扱い、陽に残る移流 CFL を
 守りながら長い時間刻みを可能にしました。`N=12`, `K=20` の Held--Suarez は通常 1800 秒で進み、
@@ -118,95 +118,38 @@ explicit 200 秒に対して 5.78 倍の速度を示しました。反復停止�
 reference-state pressure force で離散保存され、移流散逸は Lamb CFL から分離されましたが、
 現時点の結果を production climate validation として扱わないでください。
 
-### Web UI と native gateway
+### 地形・期間平均 viewer
 
-[`just`](https://github.com/casey/just) が利用できる場合、repository root から次の1コマンドで
-native gateway と live UI を起動できます。必要な C++ build または `node_modules` がなければ
-初回だけ自動セットアップし、接続用URLを標準出力へ表示します。終了は `Ctrl-C` です。
+viewer はシミュレーターを起動せず、通常 CLI が保存した `VisualDatasetV1` をローカルで読みます。
+小格子の例は次のコマンドで生成できます。
 
 ```sh
+just dataset
+# just を使わない場合
+./build/dev/my_planet_sim --config configs/phase15_viewer_rest_n4.cfg --progress-interval-s 0
+```
+
+出力先は `output/phase15-viewer-rest-n4/viewer/` です。`manifest.json`、`terrain.bin` と
+`means/period_*.bin` を含みます。集計は受理 step の終端値を実時間で重み付けし、
+`statistics.start_time_s` と `statistics.period_s` が定める半開区間ごとに保存します。
+途中終了した期間は coverage と `complete=false` を持つため、完全な期間平均と区別できます。
+
+viewer の依存関係と開発 server は次のように準備します。
+
+```sh
+just setup
 just dev
+# または: cd web && npm ci && npm run dev --workspace @myplanetsim/ui
 ```
 
-既定portを変更する場合は `just dev 9876 5174`、offline/mock UIだけなら `just ui`、
-gatewayだけなら `just gateway` を使用します。全検証は `just check` で実行できます。
-
-`just` を使わない場合、UI は C++ を必要としない mock/offline preview として起動できます。
+表示された URL を開き、dataset の `viewer` フォルダーを選択してください。地形、集計期間、
+変数、model level と cell を切り替えられ、2D map・3D globe・鉛直 profile が選択を共有します。
+計算開始、初期条件編集、瞬時 frame の再生は行いません。全自動 gate は Node と CTest で
+ファイル契約・数値処理を検証し、Canvas/WebGL の実描画は手動 smoke の対象です。
 
 ```sh
-cd web
-npm ci
-npm run build
-npm run dev --workspace @myplanetsim/ui
+just check
 ```
-
-native simulator を local gateway から制御する場合は、gateway 起動時に binary と
-allowlist preset を固定します。起動時に表示される JSON の `port` と `token` を
-API request に使います。
-
-```sh
-MPS_SIMULATOR_BINARY="$PWD/../build/dev/my_planet_sim" \
-MPS_REST_PRESET="$PWD/../configs/phase3_rest_n4.cfg" \
-MPS_DRY_PRESETS="$PWD/../configs/phase5_visualizer_rest_n4.cfg" \
-MPS_RUN_ROOT="$PWD/../.runs" \
-npm run start --workspace @myplanetsim/gateway
-```
-
-`MPS_DRY_PRESETS` は任意で、comma 区切りの config path を取ります。指定すると capabilities が
-Phase 5 の dry hydrostatic preset を additive に返し、UI の preset selector に現れます。
-`just` 経由の場合は `configs/interactive_dry_presets.txt` の一覧が使われます。この一覧の
-提供対象は静止解 `phase5_visualizer_rest_n4` のみで、live gate は「一切変化しないこと」を
-検査します。gateway は
-起動時に `--describe-control` と preset descriptor の compatibility を検査し、preset ごとの
-N 上限、edit 可否、累積 published byte 予算 (既定 256 MiB) を強制します。shallow-water
-preset は Phase 3 の FrameV1 と Gaussian edit を維持し、dry hydrostatic preset は FrameV2 を
-publish して edit を拒否します。
-
-gateway API は loopback と Bearer token を要求します。run request を送信した後、
-`POST /api/v1/runs/{id}/cancel` で停止し、`GET /api/v1/runs/{id}/bundle` で request、
-control text、event log、diagnostics をまとめて取得できます。frame は
-`GET /api/v1/runs/{id}/frames/{sequence}` で `frame.ready` event 後に取得します。
-実際の small N=4 run、frame 0/後続 frame、cancel の再現は次で検証できます。
-
-```sh
-npm run test:live --workspace @myplanetsim/gateway
-```
-
-UI を実ブラウザで開いて gateway 接続・preset・model level・column profile まで確認する
-gate も用意しています。Chromium が未取得なら skip します。
-
-```sh
-npx playwright install chromium
-npm run test:browser --workspace @myplanetsim/ui
-```
-
-`just dev` は gateway の session を dev server にも渡すため、**Vite が表示する
-`http://127.0.0.1:5173/` をそのまま開けば live gateway に接続します**。URL fragment は不要です。
-
-`just ui` や、session なしで dev server だけを起動した場合は offline/mock にフォールバックし、
-UI 上部にその旨のバナーが出ます。gateway を別途起動した場合は、表示された `port` と `token` を
-URL fragment へ指定して接続できます。fragment はclient生成後にURLから除去され、token は
-gateway 以外へ送信されません。
-
-```text
-http://localhost:5173/#token=<token>&gateway=http%3A%2F%2F127.0.0.1%3A<port>
-```
-
-dry hydrostatic preset を選ぶと、UI は model level selector、surface pressure/pressure/
-potential temperature/temperature/tracer/wind speed の field selector、選択 column の
-対数 pressure profile、選択 cell の inspector を表示します。level slice は 2D map と 3D globe が
-共有し、cell click は edit ではなく column selection になります。
-
-鉛直解像度 `K` は N と同様に run ごとに指定できます（`K (vertical resolution)`）。
-[ADR 0007](docs/adr/0007-interactive-vertical-resolution-override.md) により、preset が
-uniform sigma の hybrid 座標を使っている場合に限り、preset の model top を保ったまま
-`A_pa[k] = p_top*(1-k/K)`, `B[k] = k/K` を再生成します。stretched な座標を持つ preset は
-黙って平坦化されず拒否されます。K を変えた run は fingerprint が変わる別 configuration です。
-UI の `Model level` slider は表示する層を選ぶ view 設定で、`K` は run 設定です。
-
-tokenを指定しない場合は安全なoffline/mock clientを使用します。offline/mock client は
-shallow-water preset のみを提供し、dry hydrostatic は native gateway を必要とします。Chromium/Firefox/WebKitの
-自動matrixは次の拡張対象です。
 
 ## 将来のファイル構成
 
@@ -220,7 +163,7 @@ MyPlanetSim/
 ├── apps/                   # 実行プログラム
 ├── tests/                  # unit / convergence / regression テスト
 ├── configs/                # 再現可能な実験設定
-├── web/                    # 独立 UI、local C++ control gateway、共有 protocol
+├── web/                    # 読み取り専用 viewer と保存 dataset protocol
 └── tools/                  # 可視化・比較などの補助ツール
 ```
 

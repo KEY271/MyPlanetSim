@@ -1,4 +1,6 @@
+#include <array>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -62,6 +64,16 @@ MPS_TEST_CASE("visual dataset writes terrain, means, manifest, and restart sidec
                                   mps::config_fingerprint(parameters));
   MPS_CHECK(std::filesystem::exists(directory / "terrain.bin"));
   MPS_CHECK(std::filesystem::exists(directory / "manifest.json"));
+  {
+    std::ifstream terrain(directory / "terrain.bin", std::ios::binary);
+    std::array<unsigned char, 24> header{};
+    terrain.read(reinterpret_cast<char*>(header.data()),
+                 static_cast<std::streamsize>(header.size()));
+    std::uint64_t value_count = 0;
+    for (unsigned int byte = 0; byte < 8; ++byte)
+      value_count |= static_cast<std::uint64_t>(header[16 + byte]) << (8 * byte);
+    MPS_CHECK_EQ(value_count, 5U * driver.grid().cell_count());
+  }
   writer.publish({.index = 0,
                   .scheduled_start_s = 0,
                   .scheduled_end_s = .5,
