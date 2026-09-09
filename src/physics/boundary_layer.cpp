@@ -598,8 +598,9 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
       Real value_upper = residual(bracket_upper);
       if (!(value_lower <= 0.0 && value_upper >= 0.0))
         throw std::runtime_error("implicit surface-water flux is not bracketed");
+      Real candidate = 0.5 * (bracket_lower + bracket_upper);
       for (std::size_t iteration = 0; iteration < 100; ++iteration) {
-        solved_flux = 0.5 * (bracket_lower + bracket_upper);
+        solved_flux = candidate;
         const Real value = residual(solved_flux);
         ++surface_water_iterations;
         if (std::abs(value) <= 1e-14 + 1e-11 * std::abs(solved_flux)) break;
@@ -607,6 +608,22 @@ void implicit_boundary_layer_column(const BoundaryLayerColumnInput& input,
           bracket_lower = solved_flux;
         else
           bracket_upper = solved_flux;
+        candidate = 0.5 * (bracket_lower + bracket_upper);
+        if (input.surface_water_root_solver ==
+            SurfaceWaterRootSolver::safeguarded_newton) {
+          const Real scale = std::max(1e-4, std::abs(solved_flux));
+          const Real difference_step =
+              std::sqrt(std::numeric_limits<Real>::epsilon()) * scale;
+          const Real left = std::max(bracket_lower, solved_flux - difference_step);
+          const Real right = std::min(bracket_upper, solved_flux + difference_step);
+          if (right > left) {
+            const Real derivative = (residual(right) - residual(left)) / (right - left);
+            const Real newton = solved_flux - value / derivative;
+            if (std::isfinite(newton) && newton > bracket_lower &&
+                newton < bracket_upper)
+              candidate = newton;
+          }
+        }
         if (iteration == 99)
           throw std::runtime_error("implicit surface-water flux did not converge");
       }

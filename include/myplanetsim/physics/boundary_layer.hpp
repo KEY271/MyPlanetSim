@@ -61,6 +61,8 @@ struct BoundaryLayerBulkResult {
   BoundaryLayerBulkDiagnostics diagnostics;
 };
 
+enum class SurfaceWaterRootSolver { bisection, safeguarded_newton };
+
 void diagnose_boundary_layer_column(const BoundaryLayerBulkInput& input,
                                     BoundaryLayerBulkResult& result);
 
@@ -95,6 +97,7 @@ struct BoundaryLayerColumnInput {
   Real surface_water_conductance_land_kg_m2_s = 0.0;
   Real surface_water_conductance_ocean_kg_m2_s = 0.0;
   DiluteMoistThermodynamics moist_thermodynamics{};
+  SurfaceWaterRootSolver surface_water_root_solver = SurfaceWaterRootSolver::bisection;
 };
 
 struct BoundaryLayerColumnDiagnostics {

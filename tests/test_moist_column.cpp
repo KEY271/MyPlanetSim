@@ -282,6 +282,18 @@ MPS_TEST_CASE("smooth moist column coupling is first order in time") {
   MPS_CHECK(std::log2(errors[1] / errors[2]) >= 0.8);
 }
 
+MPS_TEST_CASE("BL candidate intervals retain moist column constraints") {
+  for (const double dt : {75.0, 150.0, 300.0, 600.0, 900.0}) {
+    const auto result = run_column(20, dt);
+    MPS_CHECK(std::isfinite(result.mean_temperature_k));
+    MPS_CHECK(std::isfinite(result.surface_temperature_k));
+    MPS_CHECK(result.precipitable_water_kg_m2 > 0.0);
+    MPS_CHECK(result.water_residual_kg_m2 <= 1e-10);
+    MPS_CHECK(result.maximum_supersaturation <= 1e-12);
+    MPS_CHECK_NEAR(result.maximum_local_heat_residual_j_m2, 0.0, 1e-3);
+  }
+}
+
 MPS_TEST_CASE("surface-refined moist columns remain bounded at K20 K40 K80") {
   const auto k20 = run_column(20, 75.0);
   const auto k40 = run_column(40, 75.0);

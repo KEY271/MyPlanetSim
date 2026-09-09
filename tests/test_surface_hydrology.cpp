@@ -1,4 +1,5 @@
 #include <cmath>
+#include <utility>
 #include <vector>
 
 #include "myplanetsim/physics/boundary_layer.hpp"
@@ -58,6 +59,15 @@ struct MoistColumn {
   }
 };
 
+[[nodiscard]] std::pair<mps::BoundaryLayerColumnResult, mps::BoundaryLayerColumnResult>
+solve_with_both_root_solvers(mps::BoundaryLayerColumnInput input) {
+  input.surface_water_root_solver = mps::SurfaceWaterRootSolver::bisection;
+  auto bisection = mps::implicit_boundary_layer_column(input);
+  input.surface_water_root_solver = mps::SurfaceWaterRootSolver::safeguarded_newton;
+  auto newton = mps::implicit_boundary_layer_column(input);
+  return {std::move(bisection), std::move(newton)};
+}
+
 }  // namespace
 
 MPS_TEST_CASE("ocean evaporation cools the surface and moistens one implicit column") {
@@ -106,6 +116,26 @@ MPS_TEST_CASE("empty and nearly empty land buckets enforce the supply constraint
   MPS_CHECK(time_step * limited.land_water_flux_kg_m2_s <= initial_water);
   MPS_CHECK(limited.land_water_kg_m2 >= 0.0);
   MPS_CHECK_NEAR(limited.diagnostics.water_budget_residual_kg_m2, 0.0, 1e-11);
+}
+
+MPS_TEST_CASE("safeguarded surface-water Newton matches bisection") {
+  MoistColumn evaporation;
+  MoistColumn dew;
+  dew.surface_temperature = 280.0;
+  dew.theta = {290.0, 290.0};
+  dew.vapor = {0.015, 0.015};
+  for (auto input : {evaporation.input(0.0, 0.0, 0.0, 0.0, 0.01, 900.0),
+                     evaporation.input(1.0, 1e-3, 150.0, 10.0, 0.0, 900.0),
+                     dew.input(1.0, 1.0, 1.0, 0.01, 0.0, 900.0)}) {
+    const auto [bisection, newton] = solve_with_both_root_solvers(input);
+    MPS_CHECK_NEAR(newton.surface_water_flux_kg_m2_s,
+                   bisection.surface_water_flux_kg_m2_s, 1e-12);
+    MPS_CHECK_NEAR(newton.land_water_kg_m2, bisection.land_water_kg_m2, 1e-9);
+    MPS_CHECK_NEAR(newton.surface_temperature_k, bisection.surface_temperature_k, 1e-9);
+    MPS_CHECK_NEAR(newton.diagnostics.water_budget_residual_kg_m2, 0.0, 1e-11);
+    MPS_CHECK(newton.diagnostics.surface_water_iterations <=
+              bisection.diagnostics.surface_water_iterations);
+  }
 }
 
 MPS_TEST_CASE("mixed land ocean precipitation fills the bucket then routes runoff") {
