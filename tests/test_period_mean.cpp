@@ -41,13 +41,10 @@ MPS_TEST_CASE("period means handle one accepted step spanning several windows") 
 MPS_TEST_CASE("period means reject bad accepted-step notifications") {
   mps::diagnostics::PeriodMeanAccumulator mean(1, 0.0, 2.0);
   mean.observe(0.0, 1.0, std::array{1.0});
-  MPS_CHECK_THROWS_AS(mean.observe(0.5, 1.5, std::array{1.0}),
-                      std::invalid_argument);
-  MPS_CHECK_THROWS_AS(mean.observe(2.0, 1.0, std::array{1.0}),
-                      std::invalid_argument);
+  MPS_CHECK_THROWS_AS(mean.observe(0.5, 1.5, std::array{1.0}), std::invalid_argument);
+  MPS_CHECK_THROWS_AS(mean.observe(2.0, 1.0, std::array{1.0}), std::invalid_argument);
   MPS_CHECK_THROWS_AS(
-      mean.observe(1.0, 2.0,
-                   std::array{std::numeric_limits<double>::quiet_NaN()}),
+      mean.observe(1.0, 2.0, std::array{std::numeric_limits<double>::quiet_NaN()}),
       std::invalid_argument);
 }
 

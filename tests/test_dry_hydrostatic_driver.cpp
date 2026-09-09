@@ -379,13 +379,12 @@ MPS_TEST_CASE("accepted-step observer is independent of diagnostic sampling") {
   const mps::DryHydrostaticDriver driver(parameters);
   auto state = driver.initial_state();
   std::vector<std::array<mps::Real, 2>> intervals;
-  driver.advance(
-      state, 0.05, {}, {},
-      [&intervals](const mps::DryHydrostaticState& accepted,
-                   const mps::Real start_s, const mps::Real end_s) {
-        MPS_CHECK_EQ(accepted.time_s, end_s);
-        intervals.push_back({start_s, end_s});
-      });
+  driver.advance(state, 0.05, {}, {},
+                 [&intervals](const mps::DryHydrostaticState& accepted,
+                              const mps::Real start_s, const mps::Real end_s) {
+                   MPS_CHECK_EQ(accepted.time_s, end_s);
+                   intervals.push_back({start_s, end_s});
+                 });
   MPS_CHECK_EQ(intervals.size(), state.step);
   MPS_CHECK_EQ(intervals.front()[0], 0.0);
   MPS_CHECK_EQ(intervals.back()[1], state.time_s);

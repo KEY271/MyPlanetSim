@@ -204,6 +204,13 @@ struct DiagnosticsParameters {
   std::uint64_t interval_steps = 1;
 };
 
+struct StatisticsParameters {
+  bool enabled = false;
+  Real start_time_s = 0.0;
+  Real period_s = 0.0;
+  std::vector<std::string> fields{};
+};
+
 struct PhysicsParameters {
   PhysicsKind kind = PhysicsKind::kNone;
   ForcingGeometry geometry = ForcingGeometry::kAxisymmetric;
@@ -300,6 +307,7 @@ struct ExperimentConfig {
   MoistureParameters moisture{};
   BoundaryLayerParameters boundary_layer{};
   DiagnosticsParameters diagnostics{};
+  StatisticsParameters statistics{};
   std::string output_directory{};
   // Runtime-only origin used to resolve portable config-relative inputs.
   std::filesystem::path source_directory{};

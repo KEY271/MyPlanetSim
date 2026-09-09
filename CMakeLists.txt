@@ -96,6 +96,7 @@ add_library(
   src/io/checkpoint.cpp
   src/io/frame.cpp
   src/io/run_metadata.cpp
+  src/io/visual_dataset.cpp
   src/phase0/ode_experiment.cpp
   src/physics/held_suarez.cpp
   src/physics/physics_schedule.cpp

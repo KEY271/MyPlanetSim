@@ -34,6 +34,7 @@ set_tests_properties(phase10.semi_implicit_shallow_water PROPERTIES LABELS phase
 mps_add_test(unit.reductions test_reductions.cpp)
 mps_add_test(unit.shallow_water_diagnostics test_shallow_water_diagnostics.cpp)
 mps_add_test(unit.run_metadata test_run_metadata.cpp)
+mps_add_test(unit.visual_dataset test_visual_dataset.cpp)
 mps_add_test(unit.checkpoint test_checkpoint.cpp)
 mps_add_test(unit.frame test_frame.cpp)
 mps_add_test(unit.shallow_water_state test_shallow_water_state.cpp)

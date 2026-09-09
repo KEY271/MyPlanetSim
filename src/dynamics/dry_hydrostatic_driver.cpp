@@ -1193,10 +1193,10 @@ void DryHydrostaticDriver::rhs_with_components(
   result.diffusion_kinetic_energy_rate_w = diffusion_rate;
   finish_region(7);
 }
-void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
-                                   const DryHydrostaticObserver& obs,
-                                   const DryHydrostaticCancel& cancel,
-                                   const DryHydrostaticAcceptedStepObserver& accepted_step) const {
+void DryHydrostaticDriver::advance(
+    DryHydrostaticState& s, const Real end, const DryHydrostaticObserver& obs,
+    const DryHydrostaticCancel& cancel,
+    const DryHydrostaticAcceptedStepObserver& accepted_step) const {
   const std::uint64_t initial_observer_step = s.step;
   std::uint64_t last_sampled_step = initial_observer_step;
   const auto observe = [&](const DryHydrostaticState& state,

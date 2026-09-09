@@ -200,8 +200,8 @@ Web のテストが shallow-water のダミーデータに依存する場合は�
 | 順番 | 作業単位 | 主な変更先 | 受け入れ条件 |
 |---|---|---|---|
 | P15.01 | 依存整理と集計契約の固定（完了） | 共通 numerics、config 設計、dataset schema/ADR | dry core の拡散処理を分離。平均則・暦・配列順・互換方針を固定 |
-| P15.02 | セル・層ごとの逐次期間平均 | `diagnostics/period_mean.*`、driver の受理 step hook | 定数場・可変 dt・複数窓・spin-up・retry 除外の数値テストが通る |
-| P15.03 | 通常 CLI の集計出力・地形出力・継続 | `io/visual_dataset.*`、CLI、config、集計 sidecar | 地形だけで出力可能。乾燥/湿潤とも期間平均を出力し、restart 前後で一致 |
+| P15.02 | セル・層ごとの逐次期間平均（完了） | `diagnostics/period_mean.*`、driver の受理 step hook | 定数場・可変 dt・複数窓・spin-up・retry 除外の数値テストが通る |
+| P15.03 | 通常 CLI の集計出力・地形出力・継続（完了） | `io/visual_dataset.*`、CLI、config、集計 sidecar | 地形だけで出力可能。乾燥/湿潤とも期間平均を出力し、restart 前後で一致 |
 | P15.04 | TypeScript の保存データ読込 | protocol の dataset/mean API、loader、fixtures | C++ 出力と値・shape・セル順・期間情報が一致し、破損を検出 |
 | P15.05 | viewer を地形・期間平均へ移行 | main、Map2D、Globe3D、ColumnProfile、閲覧状態 | 地形だけ/平均場の両方を開け、期間・層・セルの選択が連動 |
 | P15.06 | 対話実行と旧 frame を除去 | gateway、control、editor、clients、frame I/O、設定 | viewer と通常 CLI の置換経路が成立し、旧制御・瞬時 frame 参照が消える |

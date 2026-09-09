@@ -26,6 +26,7 @@
 #include "myplanetsim/diagnostics/climate_statistics.hpp"
 #include "myplanetsim/diagnostics/dry_hydrostatic_diagnostics.hpp"
 #include "myplanetsim/diagnostics/moist_diagnostics.hpp"
+#include "myplanetsim/diagnostics/period_mean.hpp"
 #include "myplanetsim/diagnostics/reductions.hpp"
 #include "myplanetsim/diagnostics/vertical_column_diagnostics.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_driver.hpp"
@@ -37,6 +38,7 @@
 #include "myplanetsim/io/checkpoint.hpp"
 #include "myplanetsim/io/frame.hpp"
 #include "myplanetsim/io/run_metadata.hpp"
+#include "myplanetsim/io/visual_dataset.hpp"
 #include "myplanetsim/phase0/ode_experiment.hpp"
 #include "myplanetsim/transport/spherical_transport.hpp"
 #include "myplanetsim/vertical/hydrostatic_column.hpp"
@@ -1768,6 +1770,36 @@ int main(const int argc, const char* const argv[]) {
       if (config.moisture.kind == mps::MoistureKind::kDiluteWater)
         moist_diagnostics.emplace(config, driver.grid(),
                                   driver.surface_boundary()->land_fraction());
+      const auto visual_fields =
+          mps::dry_visual_fields(config, driver.grid().cell_count(),
+                                 static_cast<std::size_t>(config.vertical.levels),
+                                 !state.surface_temperature_k.empty());
+      const std::span<const mps::Real> visual_land_fraction =
+          driver.surface_boundary().has_value()
+              ? driver.surface_boundary()->land_fraction()
+              : std::span<const mps::Real>{};
+      mps::VisualDatasetWriter visual_writer(
+          std::filesystem::path(config.output_directory) / "viewer", config,
+          driver.grid(), driver.orography(), visual_land_fraction, visual_fields,
+          fingerprint);
+      std::optional<mps::diagnostics::PeriodMeanAccumulator> period_mean;
+      if (config.statistics.enabled) {
+        if (command_line.restart_path.has_value() &&
+            std::filesystem::exists(
+                mps::statistics_sidecar_path(*command_line.restart_path))) {
+          const auto sidecar = mps::read_statistics_sidecar_file(
+              mps::statistics_sidecar_path(*command_line.restart_path),
+              mps::file_fnv1a64(*command_line.restart_path), state.time_s, state.step,
+              visual_writer.value_count(), config.statistics.start_time_s,
+              config.statistics.period_s);
+          visual_writer.set_periods(sidecar.periods);
+          period_mean.emplace(sidecar.accumulator);
+        } else {
+          period_mean.emplace(visual_writer.value_count(),
+                              config.statistics.start_time_s,
+                              config.statistics.period_s);
+        }
+      }
       std::vector<SurfaceDiagnosticsRow> surface_diagnostics;
       std::vector<RadiationDiagnosticsRow> radiation_diagnostics;
       std::vector<SemiImplicitDiagnosticsRow> semi_implicit_diagnostics;
@@ -1869,12 +1901,27 @@ int main(const int argc, const char* const argv[]) {
             return g_cancel_requested.load() ||
                    (command_line.stop_after_step.has_value() &&
                     state.step >= *command_line.stop_after_step);
+          },
+          [&period_mean, &visual_writer, &visual_fields, &config, &driver](
+              const mps::DryHydrostaticState& accepted, const mps::Real step_start_s,
+              const mps::Real step_end_s) {
+            if (!period_mean.has_value()) return;
+            const auto derived = driver.diagnose(accepted);
+            const auto values = mps::dry_visual_values(config, driver.grid(), accepted,
+                                                       derived, visual_fields);
+            period_mean->observe(step_start_s, step_end_s, values);
+            for (const auto& completed : period_mean->take_completed())
+              visual_writer.publish(completed);
           });
       const bool reached_end_time = state.time_s >= config.run.end_time_s;
       const bool was_cancelled = g_cancel_requested.load();
       const std::string_view result_status =
           reached_end_time ? "complete" : (was_cancelled ? "cancelled" : "stopped");
       progress.finish(state, result_status);
+      if (period_mean.has_value()) {
+        if (const auto partial = period_mean->partial(); partial.has_value())
+          visual_writer.publish(*partial);
+      }
       if (physics_diagnostics.has_value()) physics_diagnostics->write();
       if (moist_diagnostics.has_value()) moist_diagnostics->write();
       if (climate_statistics.has_value()) {
@@ -1987,6 +2034,15 @@ int main(const int argc, const char* const argv[]) {
                      : std::string(has_surface
                                        ? mps::kDryHydrostaticSurfaceCheckpointLayout
                                        : mps::kDryHydrostaticCheckpointLayout)});
+        if (period_mean.has_value()) {
+          mps::write_statistics_sidecar_file(
+              mps::statistics_sidecar_path(*command_line.checkpoint_path),
+              {.checkpoint_hash = mps::file_fnv1a64(*command_line.checkpoint_path),
+               .checkpoint_time_s = state.time_s,
+               .checkpoint_step = state.step,
+               .accumulator = period_mean->state(),
+               .periods = visual_writer.periods()});
+        }
       }
       const auto derived = driver.diagnose(state);
       if (config.physics.kind == mps::PhysicsKind::kGrayRadiation)

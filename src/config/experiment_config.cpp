@@ -462,6 +462,14 @@ void assign_value(ExperimentConfig& config, const std::string_view key,
     config.shallow_water.maximum_velocity_m_s = parse_real(value, line, key);
   } else if (key == "diagnostics.interval_steps") {
     config.diagnostics.interval_steps = parse_seed(value, line, key);
+  } else if (key == "statistics.enabled") {
+    config.statistics.enabled = parse_bool(value, line, key);
+  } else if (key == "statistics.start_time_s") {
+    config.statistics.start_time_s = parse_real(value, line, key);
+  } else if (key == "statistics.period_s") {
+    config.statistics.period_s = parse_real(value, line, key);
+  } else if (key == "statistics.fields") {
+    config.statistics.fields = parse_name_list(value, line, key);
   } else if (key == "vertical.test_case") {
     if (value == "isothermal") {
       config.vertical.test_case = VerticalTestCase::kIsothermal;
@@ -1397,6 +1405,22 @@ void ExperimentConfig::validate() const {
   if (output_directory.find_first_of("\r\n") != std::string::npos) {
     throw std::invalid_argument("output.directory must be a single line");
   }
+  if (statistics.enabled) {
+    if (kind != ExperimentKind::kDryHydrostatic)
+      throw std::invalid_argument("statistics are supported only for dry_hydrostatic");
+    require_finite(statistics.start_time_s, "statistics.start_time_s");
+    require_positive(statistics.period_s, "statistics.period_s");
+    if (statistics.start_time_s < run.start_time_s)
+      throw std::invalid_argument(
+          "statistics.start_time_s must not precede run.start_time_s");
+    std::set<std::string, std::less<>> unique_fields;
+    for (const auto& field : statistics.fields) {
+      if (field.empty() || field.find_first_of("\r\n") != std::string::npos)
+        throw std::invalid_argument("statistics field IDs must be nonempty lines");
+      if (!unique_fields.insert(field).second)
+        throw std::invalid_argument("statistics.fields contains a duplicate");
+    }
+  }
 }
 
 ExperimentConfig parse_experiment_config(std::istream& input) {
@@ -2048,6 +2072,19 @@ void write_experiment_config(std::ostream& output, const ExperimentConfig& confi
                << config.orography.input_fingerprint_fnv1a64 << '\n'
                << "orography.smoothing_passes = " << config.orography.smoothing_passes
                << '\n';
+    }
+  }
+  if (config.statistics.enabled) {
+    output << "statistics.enabled = true\n"
+           << "statistics.start_time_s = " << config.statistics.start_time_s << '\n'
+           << "statistics.period_s = " << config.statistics.period_s << '\n';
+    if (!config.statistics.fields.empty()) {
+      output << "statistics.fields = ";
+      for (std::size_t index = 0; index < config.statistics.fields.size(); ++index) {
+        if (index != 0) output << ',';
+        output << config.statistics.fields[index];
+      }
+      output << '\n';
     }
   }
   output << "output.directory = " << config.output_directory << '\n';

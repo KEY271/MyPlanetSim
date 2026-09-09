@@ -723,4 +723,25 @@ MPS_TEST_CASE("orography configuration is bounded and conditionally canonical") 
   MPS_CHECK_THROWS_AS(parse(absolute), std::invalid_argument);
 }
 
+MPS_TEST_CASE("period statistics configuration is optional and canonical") {
+  const auto configured =
+      parse(std::string(kValidDryHydrostaticConfig) +
+            "statistics.enabled = true\n"
+            "statistics.start_time_s = 2\n"
+            "statistics.period_s = 4\n"
+            "statistics.fields = temperature,pressure,wind_speed\n");
+  MPS_CHECK(configured.statistics.enabled);
+  MPS_CHECK_EQ(configured.statistics.fields.size(), 3U);
+  std::ostringstream output;
+  mps::write_experiment_config(output, configured);
+  const auto round_trip = parse(output.str());
+  MPS_CHECK_EQ(round_trip.statistics.start_time_s, 2.0);
+  MPS_CHECK_EQ(round_trip.statistics.period_s, 4.0);
+  MPS_CHECK(round_trip.statistics.fields == configured.statistics.fields);
+  MPS_CHECK_THROWS_AS(parse(std::string(kValidDryHydrostaticConfig) +
+                            "statistics.enabled = true\nstatistics.start_time_s = 0\n"
+                            "statistics.period_s = 0\n"),
+                      std::invalid_argument);
+}
+
 int main() { return mps::test::run_all(); }
