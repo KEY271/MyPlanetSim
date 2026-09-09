@@ -2,8 +2,8 @@
 
 状態: P14.01–P14.12 を実装。P14.02 の ARK2 IMEX は自然な構成で ICI2 より高コストのため不採用。
 P14.03–P14.11 の scheduler、SBM/BL、OpenMP、fusion、view、modal batch、tile を実装。
-P14.12 で統合候補 preset を登録し、初期場と発達後 checkpoint の1日比較を測定した。
-30日・1200日は利用者が foreground で実行する。
+P14.12 で統合候補 preset を登録し、1日・30日比較を測定した。30日では候補の差が
+baseline 手法自身の内部変動の内側にあり採否を決められないため、300日以上の block 平均が要る。
 速度の数値目標を満たすための diffusion、残差許容値、物理パラメータの調整は行わない。
 
 ## P14.01: 計測基盤
