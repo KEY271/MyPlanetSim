@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted for staged integration.
+Accepted and integrated for local moist processes. Radiation integration remains
+staged separately.
 
 ## Context
 
@@ -37,4 +38,7 @@ necessary reference state and invalidation metadata.
   600, 900, 1200 and 1800 s.
 - A 450 s dynamics step shortens all larger configured intervals to 450 s.
 - Event construction is independent of accepted step count and is deterministic.
-- Driver integration, rollback and cache serialization remain separate commits.
+- The driver executes BL and SBM deadlines through the event union. A failed event
+  restores the complete state and accepted diagnostics before bisecting all processes
+  due at that event.
+- Radiation remains in the RHS until its cached-flux update is integrated separately.

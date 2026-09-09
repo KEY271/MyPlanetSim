@@ -184,6 +184,33 @@ MPS_TEST_CASE("explicit and semi-implicit drivers accept subcycled moist steps")
   }
 }
 
+MPS_TEST_CASE("process scheduler applies independent accepted intervals") {
+  auto config = moist_config(false);
+  config.physics_schedule = {
+      .kind = mps::PhysicsScheduleKind::kProcessIntervals,
+      .boundary_layer_maximum_update_interval_s = 200.0,
+      .convection_diagnostic_interval_s = 300.0,
+      .convection_update_mode = mps::ConvectionUpdateMode::kIntermittent,
+      .radiation_diagnostic_interval_s = 600.0};
+  config.validate();
+  const mps::DryHydrostaticDriver driver(config);
+  auto state = driver.initial_state();
+  const double initial_water = water_inventory(driver, state);
+  mps::DryHydrostaticStepDiagnostics accepted;
+  driver.advance(state, config.run.end_time_s,
+                 [&](const auto& sampled, const auto*, const auto& step) {
+                   if (sampled.step > 0) accepted = step;
+                 });
+  MPS_CHECK_EQ(accepted.physics_substep_count, 4U);
+  MPS_CHECK_EQ(accepted.boundary_layer_column_call_count,
+               3U * driver.grid().cell_count());
+  MPS_CHECK_EQ(accepted.convection_column_call_count,
+               4U * driver.grid().cell_count());
+  MPS_CHECK_EQ(accepted.physics_retry_count, 0U);
+  MPS_CHECK_NEAR(water_inventory(driver, state), initial_water,
+                 2e-12 * initial_water);
+}
+
 MPS_TEST_CASE("moist checkpoint preserves bucket and accepted ledgers") {
   const auto config = moist_config(false);
   const mps::DryHydrostaticDriver driver(config);

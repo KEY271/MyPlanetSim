@@ -9,6 +9,7 @@ MPS_TEST_CASE("legacy physics schedule is one ordered event") {
   MPS_CHECK_EQ(events.size(), 1U);
   MPS_CHECK_NEAR(events[0].end_time_offset_s, 225.0, 0.0);
   MPS_CHECK_NEAR(events[0].interval_s, 225.0, 0.0);
+  MPS_CHECK_NEAR(events[0].boundary_layer_interval_s, 225.0, 0.0);
   MPS_CHECK(events[0].radiation);
   MPS_CHECK(events[0].boundary_layer);
   MPS_CHECK(events[0].convection);
@@ -34,10 +35,13 @@ MPS_TEST_CASE("process intervals form a deterministic event union") {
   MPS_CHECK(events[1].convection);
   MPS_CHECK_NEAR(events[2].end_time_offset_s, 1200.0, 0.0);
   MPS_CHECK(events[2].boundary_layer);
+  MPS_CHECK_NEAR(events[2].boundary_layer_interval_s, 600.0, 0.0);
   MPS_CHECK_NEAR(events[3].end_time_offset_s, 1800.0, 0.0);
   MPS_CHECK(events[3].boundary_layer);
   MPS_CHECK(events[3].convection);
   MPS_CHECK(events[3].radiation);
+  MPS_CHECK_NEAR(events[3].convection_interval_s, 900.0, 0.0);
+  MPS_CHECK_NEAR(events[3].radiation_interval_s, 1800.0, 0.0);
 }
 
 MPS_TEST_CASE("process intervals terminate at a short dynamics boundary") {

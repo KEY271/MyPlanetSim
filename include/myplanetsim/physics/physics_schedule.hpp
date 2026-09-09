@@ -9,6 +9,9 @@ namespace mps {
 struct PhysicsEvent {
   Real end_time_offset_s = 0.0;
   Real interval_s = 0.0;
+  Real radiation_interval_s = 0.0;
+  Real boundary_layer_interval_s = 0.0;
+  Real convection_interval_s = 0.0;
   bool radiation = false;
   bool boundary_layer = false;
   bool convection = false;

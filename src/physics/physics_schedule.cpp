@@ -60,6 +60,9 @@ std::vector<PhysicsEvent> make_physics_events(
   std::vector<PhysicsEvent> result;
   result.reserve(deadlines.size());
   Real previous = 0.0;
+  Real previous_radiation = 0.0;
+  Real previous_boundary_layer = 0.0;
+  Real previous_convection = 0.0;
   for (const Real time : deadlines) {
     const bool legacy = schedule.kind == PhysicsScheduleKind::kLegacy;
     const bool radiation = radiation_active &&
@@ -75,12 +78,21 @@ std::vector<PhysicsEvent> make_physics_events(
                           dynamics_interval_s));
     result.push_back({.end_time_offset_s = time,
                       .interval_s = time - previous,
+                      .radiation_interval_s =
+                          radiation ? time - previous_radiation : 0.0,
+                      .boundary_layer_interval_s =
+                          boundary_layer ? time - previous_boundary_layer : 0.0,
+                      .convection_interval_s =
+                          convection ? time - previous_convection : 0.0,
                       .radiation = radiation,
                       .boundary_layer = boundary_layer,
                       .convection = convection,
                       .saturation_adjustment =
                           moisture_active && (radiation || boundary_layer || convection)});
     previous = time;
+    if (radiation) previous_radiation = time;
+    if (boundary_layer) previous_boundary_layer = time;
+    if (convection) previous_convection = time;
   }
   return result;
 }

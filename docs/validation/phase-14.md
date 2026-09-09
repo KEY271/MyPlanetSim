@@ -131,4 +131,7 @@ python3 tools/compare_phase14_ici.py --output output/phase14/ici-with-ark2
 [ADR 0022](../adr/0022-phase14-physics-scheduler.md) に legacy と過程別 event union、
 力学step末での端数処理、同時刻の順序、旧共通 substep との競合エラーを固定した。
 `make_physics_events` の 1800秒（BL 600 / SBM 900 / radiation 1800）と450秒の
-短縮を unit test で確認した。この段階では driver の legacy 経路は変更していない。
+短縮を unit test で確認した。driver の legacy 経路は既存 substep 数と呼出し順を維持する。
+過程別経路では BL 200秒、SBM 300秒、力学600秒の event union が4イベント、BL 3回に
+なること、retryなし、水 inventory 保存を explicit driver で確認した。失敗イベントは
+state、bucket、累積台帳、step診断をまとめて戻してから due process を二分する。
