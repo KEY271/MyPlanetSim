@@ -1,5 +1,7 @@
 #pragma once
 
+#include <exception>
+
 #include "myplanetsim/dynamics/dry_hydrostatic_coupling.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_reconstruction.hpp"
 #include "myplanetsim/dynamics/dry_hydrostatic_sources.hpp"
@@ -19,6 +21,9 @@ struct DryHydrostaticWorkspace {
   std::vector<Real> column_potential_temperature;
 
   DryHydrostaticTransportTendency horizontal_tendency;
+  std::vector<DryHydrostaticEdgeFlux> edge_flux;
+  std::vector<Real> edge_tracer_flux;
+  std::vector<std::exception_ptr> edge_flux_failures;
   std::vector<Real> face_fast_wave_speed_length;
   std::vector<Real> face_advective_speed_length;
   DryHydrostaticReconstruction reconstruction;
