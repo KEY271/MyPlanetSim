@@ -1,4 +1,6 @@
 #pragma once
+#include <exception>
+
 #include "myplanetsim/dynamics/dry_hydrostatic_state.hpp"
 #include "myplanetsim/vertical/vertical_transport.hpp"
 namespace mps {
@@ -14,7 +16,7 @@ struct DryHydrostaticCoupling {
   std::vector<Real> interface_mass_flux_kg_m2_s;
   Real maximum_continuity_residual_pa_s = 0;
 };
-struct DryHydrostaticCouplingWorkspace {
+struct DryHydrostaticCouplingColumnWorkspace {
   VerticalMassFlux mass_flux;
   std::vector<Real> interface_coordinate;
   std::vector<Real> center_coordinate;
@@ -23,6 +25,11 @@ struct DryHydrostaticCouplingWorkspace {
   std::vector<Real> rhs;
   std::vector<Real> component;
   std::vector<Real> horizontal_component;
+};
+struct DryHydrostaticCouplingWorkspace {
+  std::vector<DryHydrostaticCouplingColumnWorkspace> columns;
+  std::vector<Real> continuity_residual_pa_s;
+  std::vector<std::exception_ptr> failures;
 };
 [[nodiscard]] DryHydrostaticCoupling couple_dry_hydrostatic_columns(
     const DryHydrostaticState& state, const DryHydrostaticDerived& derived,
