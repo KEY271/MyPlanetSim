@@ -27,9 +27,12 @@ saturation adjustment, then precipitation transfer. Saturation adjustment remain
 eligible after every temperature or moisture update.
 
 The old `moisture.maximum_physics_substep_s` and process-interval keys are mutually
-exclusive. This prevents a config from silently selecting one of two clocks. The
-`cached_relaxation` spelling is reserved but rejected until the SBM cache owns the
-necessary reference state and invalidation metadata.
+exclusive. This prevents a config from silently selecting one of two clocks.
+`cached_relaxation` keeps a cell-local SBM reference within one dynamics step and
+applies relaxation at intervening events. It re-diagnoses when bottom temperature
+changes by more than 0.5 K, bottom vapor by more than `max(0.1 q, 1e-5)`, or surface
+pressure by more than 1%. The cache is restored on an event retry and discarded at the
+next dynamics-step boundary, so it is not checkpoint state.
 
 ## Consequences
 

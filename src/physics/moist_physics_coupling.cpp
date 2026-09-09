@@ -9,6 +9,12 @@
 
 namespace mps {
 
+void reset_sbm_reference_cache(MoistPhysicsCouplingWorkspace& workspace,
+                               const std::size_t cells) {
+  workspace.convection_cache.clear();
+  workspace.convection_cache.resize(cells);
+}
+
 void apply_moist_column_physics(
     const CubedSphereGrid& grid, const AtmosphericHybridCoordinate& coordinate,
     const SurfaceBoundary& boundary, DryHydrostaticState& state,
@@ -16,7 +22,7 @@ void apply_moist_column_physics(
     const PlanetParameters& planet, const MoistureParameters& moisture,
     const ConvectionParameters& convection, const SurfaceParameters& surface,
     const Real time_step_s, MoistPhysicsStepDiagnostics& diagnostics,
-    MoistPhysicsCouplingWorkspace& workspace) {
+    MoistPhysicsCouplingWorkspace& workspace, const SbmExecution sbm_execution) {
   const std::size_t cells = derived.cells;
   const std::size_t levels = derived.levels;
   if (cells != grid.cell_count() || levels == 0 ||
@@ -44,7 +50,8 @@ void apply_moist_column_physics(
     for (std::size_t level = 0; level < levels; ++level)
       initial_atmospheric_water += state.tracer_mass_kg_m2[vapor_begin + level];
     Real convective_rain = 0.0;
-    if (convection.kind == ConvectionKind::kSimpleBettsMiller) {
+    if (convection.kind == ConvectionKind::kSimpleBettsMiller &&
+        sbm_execution != SbmExecution::kSkip) {
       std::vector<Real> vapor(levels);
       for (std::size_t level = 0; level < levels; ++level)
         vapor[level] = state.tracer_mass_kg_m2[vapor_begin + level] / mass[level];
@@ -61,9 +68,46 @@ void apply_moist_column_physics(
           .time_step_s = time_step_s,
           .minimum_temperature_k = 150.0,
           .thermodynamics = thermodynamics};
-      diagnose_sbm_reference(sbm_input, workspace.convection_reference);
-      apply_sbm_relaxation(sbm_input, workspace.convection_reference,
-                           workspace.convection);
+      const SimpleBettsMillerReference* reference = nullptr;
+      if (sbm_execution == SbmExecution::kDiagnoseAndApply) {
+        diagnose_sbm_reference(sbm_input, workspace.convection_reference);
+        reference = &workspace.convection_reference;
+        ++diagnostics.sbm_diagnostic_column_count;
+      } else {
+        if (workspace.convection_cache.size() != cells)
+          throw std::invalid_argument("SBM cache is not initialized for this grid");
+        auto& cache = workspace.convection_cache[cell];
+        const Real bottom_temperature = sbm_input.temperature_k.back();
+        const Real bottom_vapor = sbm_input.vapor_mixing_ratio.back();
+        const bool state_invalidates =
+            cache.valid &&
+            (std::abs(bottom_temperature - cache.bottom_temperature_k) > 0.5 ||
+             std::abs(bottom_vapor - cache.bottom_vapor_mixing_ratio) >
+                 std::max(0.1 * cache.bottom_vapor_mixing_ratio, 1e-5) ||
+             std::abs(state.surface_pressure_pa[cell] - cache.surface_pressure_pa) /
+                     cache.surface_pressure_pa >
+                 0.01);
+        if (sbm_execution == SbmExecution::kDiagnoseCacheAndApply ||
+            state_invalidates) {
+          diagnose_sbm_reference(sbm_input, cache.reference);
+          cache.bottom_temperature_k = bottom_temperature;
+          cache.bottom_vapor_mixing_ratio = bottom_vapor;
+          cache.surface_pressure_pa = state.surface_pressure_pa[cell];
+          cache.valid = true;
+          ++diagnostics.sbm_diagnostic_column_count;
+        }
+        if (cache.valid) reference = &cache.reference;
+      }
+      if (reference == nullptr) {
+        workspace.convection = {};
+        workspace.convection.temperature_k.assign(sbm_input.temperature_k.begin(),
+                                                  sbm_input.temperature_k.end());
+        workspace.convection.vapor_mixing_ratio.assign(
+            sbm_input.vapor_mixing_ratio.begin(), sbm_input.vapor_mixing_ratio.end());
+      } else {
+        apply_sbm_relaxation(sbm_input, *reference, workspace.convection);
+        ++diagnostics.sbm_relaxation_column_count;
+      }
       convective_rain = workspace.convection.diagnostics.convective_rain_kg_m2;
       const auto& convective = workspace.convection.diagnostics;
       diagnostics.cape_area_time_integral_j_m2_s_kg +=

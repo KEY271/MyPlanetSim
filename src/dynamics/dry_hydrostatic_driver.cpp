@@ -379,6 +379,8 @@ void accumulate_moist_physics_diagnostics(MoistPhysicsStepDiagnostics& total,
   total.deep_column_count += local.deep_column_count;
   total.shallow_column_count += local.shallow_column_count;
   total.inactive_column_count += local.inactive_column_count;
+  total.sbm_diagnostic_column_count += local.sbm_diagnostic_column_count;
+  total.sbm_relaxation_column_count += local.sbm_relaxation_column_count;
 }
 
 void resize_zero_rhs_term(DryHydrostaticRhsTerm& term, const std::size_t cells,
@@ -1247,6 +1249,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     convection_diagnostics = {};
     moist_diagnostics = {};
     scheduled_radiation = {};
+    if (config_.physics_schedule.convection_update_mode ==
+        ConvectionUpdateMode::kCachedRelaxation)
+      reset_sbm_reference_cache(workspace_.moist_workspace, grid_.cell_count());
     bool has_convection_diagnostics = false;
     constexpr std::size_t kMaximumPhysicsSubstepRefinements = 10;
     struct PendingPhysicsInterval {
@@ -1287,6 +1292,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
         const auto saved_radiation_stable = scheduled_radiation.stable_time_step_s;
         const auto saved_radiation_surface =
             scheduled_radiation.surface_temperature_after_update;
+        const auto saved_sbm_cache = workspace_.moist_workspace.convection_cache;
         const bool saved_has_convection = has_convection_diagnostics;
         ++physics_substeps;
         try {
@@ -1399,16 +1405,23 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
             diagnose_and_validate(stage);
           }
           if (interval.saturation_adjustment) {
-            auto convection = config_.convection;
-            if (!interval.convection) convection.kind = ConvectionKind::kNone;
+            SbmExecution sbm_execution = SbmExecution::kSkip;
+            if (interval.convection)
+              sbm_execution = config_.physics_schedule.convection_update_mode ==
+                                      ConvectionUpdateMode::kCachedRelaxation
+                                  ? SbmExecution::kDiagnoseCacheAndApply
+                                  : SbmExecution::kDiagnoseAndApply;
+            else if (config_.physics_schedule.convection_update_mode ==
+                     ConvectionUpdateMode::kCachedRelaxation)
+              sbm_execution = SbmExecution::kApplyCached;
             MoistPhysicsStepDiagnostics local;
             apply_moist_column_physics(
                 grid_, coordinate_, *surface_boundary_, stage, workspace_.derived,
-                *water_vapor_tracer, config_.planet, config_.moisture, convection,
-                *config_.surface,
+                *water_vapor_tracer, config_.planet, config_.moisture,
+                config_.convection, *config_.surface,
                 interval.convection ? interval.convection_interval_s
                                     : interval.event_interval_s,
-                local, workspace_.moist_workspace);
+                local, workspace_.moist_workspace, sbm_execution);
             accumulate_moist_physics_diagnostics(moist_diagnostics, local);
             diagnose_and_validate(stage);
           }
@@ -1421,6 +1434,7 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
           scheduled_radiation.stable_time_step_s = saved_radiation_stable;
           scheduled_radiation.surface_temperature_after_update =
               saved_radiation_surface;
+          workspace_.moist_workspace.convection_cache = saved_sbm_cache;
           has_convection_diagnostics = saved_has_convection;
           if (interval.refinement == kMaximumPhysicsSubstepRefinements) throw;
           ++physics_retries;

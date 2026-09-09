@@ -148,4 +148,12 @@ checkpointへ持ち越さず、旧 moist layout のまま legacy/過程別 × ex
 `diagnose_sbm_reference` と `apply_sbm_relaxation` に parcel ascent/CAPE/reference と
 有限 backward-Euler increment の責務を分けた。最初の結合では同一呼出し内で両者を実行し、
 Phase 13 の inactive/deep/shallow fixture の温度、湿度、参照場、支持率、雨量、enthalpy を
-旧APIと byte 一致させた。cache と診断周期の変更は次のコミットで行う。
+旧APIと byte 一致させた。
+
+`cached_relaxation` は力学step内の cell別 reference を保持し、放射/BL event では安い
+relaxationだけを適用する。最下層の `|Delta T|>0.5 K`、
+`|Delta q|>max(0.1q,1e-5)`、`|Delta ps|/ps>0.01` で即時再診断する。cache は
+step開始時に無効化し、失敗eventではstate/台帳と一緒に復元するため checkpoint schemaを
+増やさない。600秒の小規模結合試験（radiation 200 / SBM診断 300 / BL 600）では
+各cellあたり重い診断2回、relaxation 3回となり、explicit/semi-implicit とも retry 0、
+水保存を満たした。benchmark は両 call 数を別々に出力する。

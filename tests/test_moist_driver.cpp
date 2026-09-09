@@ -189,10 +189,10 @@ MPS_TEST_CASE("process scheduler applies independent accepted intervals") {
     auto config = moist_config(semi_implicit);
     config.physics_schedule = {
         .kind = mps::PhysicsScheduleKind::kProcessIntervals,
-        .boundary_layer_maximum_update_interval_s = 200.0,
+        .boundary_layer_maximum_update_interval_s = 600.0,
         .convection_diagnostic_interval_s = 300.0,
-        .convection_update_mode = mps::ConvectionUpdateMode::kIntermittent,
-        .radiation_diagnostic_interval_s = 600.0};
+        .convection_update_mode = mps::ConvectionUpdateMode::kCachedRelaxation,
+        .radiation_diagnostic_interval_s = 200.0};
     config.validate();
     const mps::DryHydrostaticDriver driver(config);
     auto state = driver.initial_state();
@@ -203,11 +203,14 @@ MPS_TEST_CASE("process scheduler applies independent accepted intervals") {
                      if (sampled.step > 0) accepted = step;
                    });
     MPS_CHECK_EQ(accepted.physics_substep_count, 4U);
-    MPS_CHECK_EQ(accepted.radiation_column_call_count, driver.grid().cell_count());
-    MPS_CHECK_EQ(accepted.boundary_layer_column_call_count,
-                 3U * driver.grid().cell_count());
+    MPS_CHECK_EQ(accepted.radiation_column_call_count, 3U * driver.grid().cell_count());
+    MPS_CHECK_EQ(accepted.boundary_layer_column_call_count, driver.grid().cell_count());
     MPS_CHECK_EQ(accepted.convection_column_call_count,
-                 4U * driver.grid().cell_count());
+                 2U * driver.grid().cell_count());
+    MPS_CHECK_EQ(accepted.moisture.sbm_diagnostic_column_count,
+                 2U * driver.grid().cell_count());
+    MPS_CHECK_EQ(accepted.moisture.sbm_relaxation_column_count,
+                 3U * driver.grid().cell_count());
     MPS_CHECK_EQ(accepted.physics_retry_count, 0U);
     MPS_CHECK(std::isfinite(accepted.radiation_budget.toa_net_upward_energy_j));
     MPS_CHECK_NEAR(water_inventory(driver, state), initial_water,

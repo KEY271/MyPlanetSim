@@ -293,6 +293,8 @@ int main(int argc, char** argv) {
     std::size_t physics_retries = 0;
     std::size_t boundary_layer_calls = 0;
     std::size_t convection_calls = 0;
+    std::size_t sbm_diagnostic_calls = 0;
+    std::size_t sbm_relaxation_calls = 0;
     double accepted_seconds = 0.0;
     double toa_net_upward_energy_j = 0.0;
     double maximum_water_residual_kg = 0.0;
@@ -324,6 +326,8 @@ int main(int argc, char** argv) {
             physics_retries += step.physics_retry_count;
             boundary_layer_calls += step.boundary_layer_column_call_count;
             convection_calls += step.convection_column_call_count;
+            sbm_diagnostic_calls += step.moisture.sbm_diagnostic_column_count;
+            sbm_relaxation_calls += step.moisture.sbm_relaxation_column_count;
             toa_net_upward_energy_j += step.radiation_budget.toa_net_upward_energy_j;
             maximum_water_residual_kg =
                 std::max(maximum_water_residual_kg,
@@ -460,6 +464,8 @@ int main(int argc, char** argv) {
         << "physics_retries=" << physics_retries << '\n'
         << "boundary_layer_column_calls=" << boundary_layer_calls << '\n'
         << "convection_column_calls=" << convection_calls << '\n'
+        << "sbm_diagnostic_column_calls=" << sbm_diagnostic_calls << '\n'
+        << "sbm_relaxation_column_calls=" << sbm_relaxation_calls << '\n'
         << "dry_mass_relative_drift="
         << (final_dry.dry_mass_kg - initial_dry.dry_mass_kg) / initial_dry.dry_mass_kg
         << '\n'

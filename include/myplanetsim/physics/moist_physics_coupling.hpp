@@ -32,13 +32,34 @@ struct MoistPhysicsStepDiagnostics {
   std::size_t deep_column_count = 0;
   std::size_t shallow_column_count = 0;
   std::size_t inactive_column_count = 0;
+  std::size_t sbm_diagnostic_column_count = 0;
+  std::size_t sbm_relaxation_column_count = 0;
+};
+
+enum class SbmExecution {
+  kDiagnoseAndApply,
+  kDiagnoseCacheAndApply,
+  kApplyCached,
+  kSkip
+};
+
+struct SbmReferenceCache {
+  SimpleBettsMillerReference reference;
+  Real bottom_temperature_k = 0.0;
+  Real bottom_vapor_mixing_ratio = 0.0;
+  Real surface_pressure_pa = 0.0;
+  bool valid = false;
 };
 
 struct MoistPhysicsCouplingWorkspace {
   SimpleBettsMillerReference convection_reference;
+  std::vector<SbmReferenceCache> convection_cache;
   SimpleBettsMillerResult convection;
   HybridPressureGeometry vertical_geometry;
 };
+
+void reset_sbm_reference_cache(MoistPhysicsCouplingWorkspace& workspace,
+                               std::size_t cells);
 
 void apply_moist_column_physics(
     const CubedSphereGrid& grid, const AtmosphericHybridCoordinate& coordinate,
@@ -47,6 +68,7 @@ void apply_moist_column_physics(
     const PlanetParameters& planet, const MoistureParameters& moisture,
     const ConvectionParameters& convection, const SurfaceParameters& surface,
     Real time_step_s, MoistPhysicsStepDiagnostics& diagnostics,
-    MoistPhysicsCouplingWorkspace& workspace);
+    MoistPhysicsCouplingWorkspace& workspace,
+    SbmExecution sbm_execution = SbmExecution::kDiagnoseAndApply);
 
 }  // namespace mps

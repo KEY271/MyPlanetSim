@@ -1146,9 +1146,10 @@ void ExperimentConfig::validate() const {
       require_positive(physics_schedule.radiation_diagnostic_interval_s,
                        "radiation.diagnostic_interval_s");
       if (physics_schedule.convection_update_mode ==
-          ConvectionUpdateMode::kCachedRelaxation)
+              ConvectionUpdateMode::kCachedRelaxation &&
+          convection.kind != ConvectionKind::kSimpleBettsMiller)
         throw std::invalid_argument(
-            "cached_relaxation requires the Phase 14 SBM cache implementation");
+            "cached_relaxation requires simple_betts_miller convection");
     }
     require_finite(dry_hydrostatic.cfl, "dry_hydrostatic.cfl");
     if (!(dry_hydrostatic.cfl > 0.0 && dry_hydrostatic.cfl <= 1.0))
