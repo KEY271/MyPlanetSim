@@ -1,8 +1,13 @@
 #include "myplanetsim/dynamics/dry_hydrostatic_state.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
+
+#if defined(MPS_ENABLE_OPENMP)
+#include <omp.h>
+#endif
 
 namespace mps {
 namespace {
@@ -11,6 +16,22 @@ namespace {
 // alarm, so nonnegativity is checked to roundoff, the way tangency already is. A tracer
 // that is genuinely being driven negative fails this by many orders of magnitude.
 constexpr Real kTracerRoundoffTolerance = 1e-12;
+
+[[nodiscard]] std::size_t diagnosis_worker_count() {
+#if defined(MPS_ENABLE_OPENMP)
+  return static_cast<std::size_t>(std::max(1, omp_get_max_threads()));
+#else
+  return 1;
+#endif
+}
+
+[[nodiscard]] std::size_t diagnosis_worker_index() {
+#if defined(MPS_ENABLE_OPENMP)
+  return static_cast<std::size_t>(omp_get_thread_num());
+#else
+  return 0;
+#endif
+}
 
 void require_shape(const DryHydrostaticState& state, const std::size_t levels) {
   const auto cells = state.surface_pressure_pa.size();
@@ -357,6 +378,82 @@ void diagnose_dry_hydrostatic_state(
       out.geopotential_m2_s2[dry_hydrostatic_offset(c, k, out.levels)] =
           hydro.geopotential_full_m2_s2[k];
   }
+}
+
+void diagnose_dry_hydrostatic_state(
+    const DryHydrostaticState& state, const AtmosphericHybridCoordinate& coordinate,
+    const PlanetParameters& planet,
+    const std::span<const Real> surface_geopotential_m2_s2, DryHydrostaticDerived& out,
+    DryHydrostaticDiagnosisWorkspace& workspace) {
+  require_shape(state, coordinate.levels());
+  if (!surface_geopotential_m2_s2.empty() &&
+      surface_geopotential_m2_s2.size() != state.surface_pressure_pa.size())
+    throw std::invalid_argument("surface orography shape does not match state");
+  out.cells = state.surface_pressure_pa.size();
+  out.levels = coordinate.levels();
+  out.tracer_count = state.tracer_count;
+  const auto volume = out.cells * out.levels;
+  out.pressure_pa.resize(volume);
+  out.exner_half.resize(out.cells * (out.levels + 1));
+  out.exner_full.resize(volume);
+  out.air_mass_kg_m2.resize(volume);
+  out.velocity_m_s.resize(volume);
+  out.potential_temperature_k.resize(volume);
+  out.tracer_mixing_ratio.resize(state.tracer_count * volume);
+  out.temperature_k.resize(volume);
+  out.geopotential_m2_s2.resize(volume);
+  workspace.columns.resize(diagnosis_worker_count());
+  for (auto& column : workspace.columns)
+    column.potential_temperature.resize(out.levels);
+  workspace.failures.resize(out.cells);
+#if defined(MPS_ENABLE_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+  for (std::ptrdiff_t cell_index = 0;
+       cell_index < static_cast<std::ptrdiff_t>(out.cells); ++cell_index) {
+    const auto cell = static_cast<std::size_t>(cell_index);
+    auto& column = workspace.columns[diagnosis_worker_index()];
+    workspace.failures[cell] = nullptr;
+    try {
+      coordinate.geometry(state.surface_pressure_pa[cell], planet.gravity_m_s2,
+                          planet.gas_constant_j_kg_k, planet.heat_capacity_cp_j_kg_k,
+                          planet.reference_pressure_pa, column.geometry);
+      std::copy(column.geometry.exner_half.begin(), column.geometry.exner_half.end(),
+                out.exner_half.begin() +
+                    static_cast<std::ptrdiff_t>(cell * (out.levels + 1)));
+      for (std::size_t level = 0; level < out.levels; ++level) {
+        const auto n = dry_hydrostatic_offset(cell, level, out.levels);
+        const auto mass = column.geometry.air_mass_kg_m2[level];
+        out.pressure_pa[n] = column.geometry.pressure_full_pa[level];
+        out.exner_full[n] = column.geometry.exner_full[level];
+        out.air_mass_kg_m2[n] = mass;
+        out.velocity_m_s[n] = state.horizontal_momentum_mass_kg_m_s[n] / mass;
+        column.potential_temperature[level] =
+            state.potential_temperature_mass_k_kg_m2[n] / mass;
+        out.potential_temperature_k[n] = column.potential_temperature[level];
+        for (std::size_t tracer = 0; tracer < state.tracer_count; ++tracer) {
+          const auto q =
+              dry_hydrostatic_tracer_offset(tracer, cell, level, out.cells, out.levels);
+          out.tracer_mixing_ratio[q] = state.tracer_mass_kg_m2[q] / mass;
+        }
+        out.temperature_k[n] =
+            column.potential_temperature[level] * column.geometry.exner_full[level];
+      }
+      const Real surface_geopotential =
+          surface_geopotential_m2_s2.empty() ? 0.0 : surface_geopotential_m2_s2[cell];
+      integrate_hydrostatic_column(column.geometry, column.potential_temperature,
+                                   planet.heat_capacity_cp_j_kg_k, planet.gravity_m_s2,
+                                   surface_geopotential, column.hydrostatic);
+      for (std::size_t level = 0; level < out.levels; ++level)
+        out.geopotential_m2_s2[dry_hydrostatic_offset(cell, level, out.levels)] =
+            column.hydrostatic.geopotential_full_m2_s2[level];
+    } catch (...) {
+      workspace.failures[cell] = std::current_exception();
+    }
+  }
+  for (std::size_t cell = 0; cell < out.cells; ++cell)
+    if (workspace.failures[cell] != nullptr)
+      std::rethrow_exception(workspace.failures[cell]);
 }
 
 void validate_dry_hydrostatic_state(const DryHydrostaticState& state,

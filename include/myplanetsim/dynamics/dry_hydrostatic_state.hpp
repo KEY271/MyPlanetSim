@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <exception>
 #include <span>
 #include <string>
 #include <string_view>
@@ -58,6 +59,17 @@ struct DryHydrostaticDerived {
   std::vector<Real> geopotential_m2_s2{};
 };
 
+struct DryHydrostaticDiagnosisColumnWorkspace {
+  HybridPressureGeometry geometry;
+  HydrostaticColumn hydrostatic;
+  std::vector<Real> potential_temperature;
+};
+
+struct DryHydrostaticDiagnosisWorkspace {
+  std::vector<DryHydrostaticDiagnosisColumnWorkspace> columns;
+  std::vector<std::exception_ptr> failures;
+};
+
 [[nodiscard]] constexpr std::size_t dry_hydrostatic_offset(
     const std::size_t cell, const std::size_t level,
     const std::size_t levels) noexcept {
@@ -109,6 +121,12 @@ void diagnose_dry_hydrostatic_state(
     const PlanetParameters& planet, std::span<const Real> surface_geopotential_m2_s2,
     DryHydrostaticDerived& result, HybridPressureGeometry& geometry_workspace,
     HydrostaticColumn& column_workspace, std::span<Real> theta_workspace);
+void diagnose_dry_hydrostatic_state(const DryHydrostaticState& state,
+                                    const AtmosphericHybridCoordinate& coordinate,
+                                    const PlanetParameters& planet,
+                                    std::span<const Real> surface_geopotential_m2_s2,
+                                    DryHydrostaticDerived& result,
+                                    DryHydrostaticDiagnosisWorkspace& workspace);
 void validate_dry_hydrostatic_state(const DryHydrostaticState& state,
                                     const DryHydrostaticDerived& derived,
                                     std::span<const Vec3> cell_centres,

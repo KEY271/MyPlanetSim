@@ -16,9 +16,7 @@ namespace mps {
 
 struct DryHydrostaticWorkspace {
   DryHydrostaticDerived derived;
-  HybridPressureGeometry vertical_geometry;
-  HydrostaticColumn hydrostatic_column;
-  std::vector<Real> column_potential_temperature;
+  DryHydrostaticDiagnosisWorkspace diagnosis_workspace;
 
   DryHydrostaticTransportTendency horizontal_tendency;
   std::vector<DryHydrostaticEdgeFlux> edge_flux;

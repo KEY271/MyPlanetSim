@@ -686,11 +686,9 @@ void DryHydrostaticDriver::update_semi_implicit_reference(
   // so the reference-linear operator stays close to the true Jacobian.
   const auto levels = coordinate_.levels();
   const auto cells = grid_.cell_count();
-  workspace_.column_potential_temperature.resize(levels);
-  diagnose_dry_hydrostatic_state(
-      state, coordinate_, config_.planet, orography_.surface_geopotential_m2_s2(),
-      workspace_.derived, workspace_.vertical_geometry, workspace_.hydrostatic_column,
-      workspace_.column_potential_temperature);
+  diagnose_dry_hydrostatic_state(state, coordinate_, config_.planet,
+                                 orography_.surface_geopotential_m2_s2(),
+                                 workspace_.derived, workspace_.diagnosis_workspace);
   std::vector<Real> profile(levels, 0.0);
   Real area = 0.0;
   Real surface_pressure = 0.0;
@@ -815,11 +813,9 @@ void DryHydrostaticDriver::rhs_with_components(
   };
   if (profile_enabled_) ++rhs_profile_.calls;
   auto& workspace = workspace_;
-  workspace.column_potential_temperature.resize(coordinate_.levels());
-  diagnose_dry_hydrostatic_state(
-      s, coordinate_, config_.planet, orography_.surface_geopotential_m2_s2(),
-      workspace.derived, workspace.vertical_geometry, workspace.hydrostatic_column,
-      workspace.column_potential_temperature);
+  diagnose_dry_hydrostatic_state(s, coordinate_, config_.planet,
+                                 orography_.surface_geopotential_m2_s2(),
+                                 workspace.derived, workspace.diagnosis_workspace);
   const auto& d = workspace.derived;
   auto C = d.cells, K = d.levels;
   if (components != nullptr)
@@ -907,8 +903,7 @@ void DryHydrostaticDriver::rhs_with_components(
           h.tracer_mass[q] += scale * workspace.edge_tracer_flux[edge_q];
         }
         if (compute_fast_wave_cfl)
-          face_fast_wave_speed_length[n] +=
-              e.length_m * flux.maximum_wave_speed_m_s;
+          face_fast_wave_speed_length[n] += e.length_m * flux.maximum_wave_speed_m_s;
         face_advective_speed_length[n] +=
             e.length_m * flux.maximum_dissipation_speed_m_s;
       }
@@ -1160,11 +1155,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
       obs(state, nullptr, step);
       return;
     }
-    workspace_.column_potential_temperature.resize(coordinate_.levels());
-    diagnose_dry_hydrostatic_state(
-        state, coordinate_, config_.planet, orography_.surface_geopotential_m2_s2(),
-        workspace_.derived, workspace_.vertical_geometry, workspace_.hydrostatic_column,
-        workspace_.column_potential_temperature);
+    diagnose_dry_hydrostatic_state(state, coordinate_, config_.planet,
+                                   orography_.surface_geopotential_m2_s2(),
+                                   workspace_.derived, workspace_.diagnosis_workspace);
     const auto& derived = workspace_.derived;
     last_sampled_step = state.step;
     auto sampled = step;
@@ -1228,11 +1221,9 @@ void DryHydrostaticDriver::advance(DryHydrostaticState& s, const Real end,
     }
   };
   const auto diagnose_and_validate = [&](const DryHydrostaticState& stage) {
-    workspace_.column_potential_temperature.resize(coordinate_.levels());
-    diagnose_dry_hydrostatic_state(
-        stage, coordinate_, config_.planet, orography_.surface_geopotential_m2_s2(),
-        workspace_.derived, workspace_.vertical_geometry, workspace_.hydrostatic_column,
-        workspace_.column_potential_temperature);
+    diagnose_dry_hydrostatic_state(stage, coordinate_, config_.planet,
+                                   orography_.surface_geopotential_m2_s2(),
+                                   workspace_.derived, workspace_.diagnosis_workspace);
     validate_dry_hydrostatic_state(stage, workspace_.derived, centres,
                                    config_.vertical.minimum_surface_pressure_pa,
                                    config_.vertical.maximum_surface_pressure_pa,
