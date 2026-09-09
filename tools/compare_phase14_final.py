@@ -145,6 +145,8 @@ def main():
     parser.add_argument('--binary', type=Path,
                         default=ROOT / 'build/release/tools/benchmark_moist')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--candidate-config', type=Path, default=CANDIDATE_CONFIG,
+                        help='process-interval preset to compare against the baseline')
     parser.add_argument('--days', type=float, default=1.0)
     parser.add_argument('--n', type=int, default=6)
     parser.add_argument('--levels', type=int, default=20)
@@ -173,9 +175,9 @@ def main():
     manifest = json.loads(manifest_path.read_text())
 
     points = {'baseline': (BASELINE_CONFIG, args.iterations),
-              'candidate': (CANDIDATE_CONFIG, args.iterations)}
+              'candidate': (args.candidate_config, args.iterations)}
     if args.with_ici2:
-        points['candidate-ici2'] = (CANDIDATE_CONFIG, 2)
+        points['candidate-ici2'] = (args.candidate_config, 2)
     measurements = {}
     provenance = {}
     environment = {key: value for key, value in os.environ.items()
@@ -280,8 +282,8 @@ def main():
     result = dict(
         schema_version=1,
         reference='baseline = configs/phase13_moist_pilot.cfg legacy 300 s schedule',
-        candidate='configs/phase14_moist_candidate.cfg process intervals '
-                  '(BL 600 s, SBM diagnosis 900 s cached relaxation, radiation 1800 s)',
+        candidate=str(args.candidate_config.relative_to(ROOT)
+                      if args.candidate_config.is_absolute() else args.candidate_config),
         days=args.days, grid=dict(cells_per_panel=args.n, levels=args.levels,
                                   dt_s=args.dt, iterations=args.iterations),
         applied_gate=gate_name, band_deg=args.band_deg,

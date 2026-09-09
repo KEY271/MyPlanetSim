@@ -393,7 +393,7 @@ MPS_TEST_CASE("the Phase 14 candidate preset round trips with process intervals"
   MPS_CHECK(config.moisture.kind == mps::MoistureKind::kDiluteWater);
   MPS_CHECK(config.physics_schedule.kind == mps::PhysicsScheduleKind::kProcessIntervals);
   MPS_CHECK(config.physics_schedule.convection_update_mode ==
-            mps::ConvectionUpdateMode::kCachedRelaxation);
+            mps::ConvectionUpdateMode::kIntermittent);
   MPS_CHECK_NEAR(config.physics_schedule.boundary_layer_maximum_update_interval_s,
                  600.0, 0.0);
   MPS_CHECK_NEAR(config.physics_schedule.convection_diagnostic_interval_s, 900.0, 0.0);
