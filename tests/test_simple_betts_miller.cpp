@@ -52,7 +52,8 @@ struct FixtureColumn {
 }
 
 [[nodiscard]] mps::SimpleBettsMillerResult run_fixture_column(
-    const FixtureColumn& column, const double time_step = 1800.0) {
+    const FixtureColumn& column, const double time_step = 1800.0,
+    const bool split = false) {
   constexpr mps::DiluteMoistThermodynamics moist;
   std::vector<double> mass(column.temperature.size());
   std::vector<double> exner(column.temperature.size());
@@ -82,17 +83,23 @@ struct FixtureColumn {
   for (std::size_t level = 0; level < theta.size(); ++level)
     preprocessed_temperature[level] =
         dry.adjusted_potential_temperature_k[level] * exner[level];
-  return mps::simple_betts_miller_adjustment({.temperature_k = preprocessed_temperature,
-                                              .vapor_mixing_ratio = column.vapor,
-                                              .air_mass_kg_m2 = mass,
-                                              .pressure_full_pa = column.pressure_full,
-                                              .pressure_half_pa = column.pressure_half,
-                                              .gravity_m_s2 = 9.80665,
-                                              .relative_humidity_reference = 0.8,
-                                              .relaxation_time_s = 7200.0,
-                                              .time_step_s = time_step,
-                                              .minimum_temperature_k = 150.0,
-                                              .thermodynamics = moist});
+  const mps::SimpleBettsMillerInput input{.temperature_k = preprocessed_temperature,
+                                          .vapor_mixing_ratio = column.vapor,
+                                          .air_mass_kg_m2 = mass,
+                                          .pressure_full_pa = column.pressure_full,
+                                          .pressure_half_pa = column.pressure_half,
+                                          .gravity_m_s2 = 9.80665,
+                                          .relative_humidity_reference = 0.8,
+                                          .relaxation_time_s = 7200.0,
+                                          .time_step_s = time_step,
+                                          .minimum_temperature_k = 150.0,
+                                          .thermodynamics = moist};
+  if (!split) return mps::simple_betts_miller_adjustment(input);
+  mps::SimpleBettsMillerReference reference;
+  mps::diagnose_sbm_reference(input, reference);
+  mps::SimpleBettsMillerResult result;
+  mps::apply_sbm_relaxation(input, reference, result);
+  return result;
 }
 
 [[nodiscard]] std::string branch_name(const mps::MoistConvectionBranch branch) {
@@ -109,6 +116,24 @@ MPS_TEST_CASE("fixed Phase 13 columns select none deep and shallow branches") {
   for (const auto& column : fixture) {
     const auto result = run_fixture_column(column);
     MPS_CHECK_EQ(branch_name(result.diagnostics.branch), column.expected_branch);
+  }
+}
+
+MPS_TEST_CASE("split diagnosis and relaxation preserve Phase 13 results") {
+  for (const auto& column : load_fixture()) {
+    const auto combined = run_fixture_column(column);
+    const auto split = run_fixture_column(column, 1800.0, true);
+    MPS_CHECK(split.temperature_k == combined.temperature_k);
+    MPS_CHECK(split.vapor_mixing_ratio == combined.vapor_mixing_ratio);
+    MPS_CHECK(split.reference_temperature_k == combined.reference_temperature_k);
+    MPS_CHECK(split.reference_vapor_mixing_ratio ==
+              combined.reference_vapor_mixing_ratio);
+    MPS_CHECK(split.participation_fraction == combined.participation_fraction);
+    MPS_CHECK_EQ(split.diagnostics.column_water_change_kg_m2,
+                 combined.diagnostics.column_water_change_kg_m2);
+    MPS_CHECK_EQ(split.diagnostics.moist_enthalpy_change_j_m2,
+                 combined.diagnostics.moist_enthalpy_change_j_m2);
+    MPS_CHECK(split.diagnostics.reason == combined.diagnostics.reason);
   }
 }
 

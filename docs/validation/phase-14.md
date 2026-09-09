@@ -142,3 +142,10 @@ state、bucket、累積台帳、step診断をまとめて戻してから due pro
 有限、水保存、retry 0を確認した。各力学step末で全 increment を適用し終えるため cache/時計を
 checkpointへ持ち越さず、旧 moist layout のまま legacy/過程別 × explicit/semi-implicit の
 連続1200秒と600秒再開が byte 一致する。observer の瞬時放射診断は積分状態を変更しない。
+
+## P14.04: SBM 診断頻度
+
+`diagnose_sbm_reference` と `apply_sbm_relaxation` に parcel ascent/CAPE/reference と
+有限 backward-Euler increment の責務を分けた。最初の結合では同一呼出し内で両者を実行し、
+Phase 13 の inactive/deep/shallow fixture の温度、湿度、参照場、支持率、雨量、enthalpy を
+旧APIと byte 一致させた。cache と診断周期の変更は次のコミットで行う。

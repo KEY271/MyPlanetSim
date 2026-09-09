@@ -57,6 +57,23 @@ struct SimpleBettsMillerResult {
   SimpleBettsMillerDiagnostics diagnostics;
 };
 
+struct SimpleBettsMillerReference {
+  std::vector<Real> parcel_temperature_k;
+  std::vector<Real> reference_temperature_k;
+  std::vector<Real> reference_vapor_mixing_ratio;
+  std::vector<Real> participation_fraction;
+  SimpleBettsMillerDiagnostics diagnostics;
+};
+
+// The diagnostic phase contains the parcel ascent, buoyancy and reference-profile
+// construction. The application phase is a finite, conservative backward-Euler
+// relaxation of the current column toward that fixed reference.
+void diagnose_sbm_reference(const SimpleBettsMillerInput& input,
+                            SimpleBettsMillerReference& reference);
+void apply_sbm_relaxation(const SimpleBettsMillerInput& input,
+                          const SimpleBettsMillerReference& reference,
+                          SimpleBettsMillerResult& result);
+
 void simple_betts_miller_adjustment(const SimpleBettsMillerInput& input,
                                     SimpleBettsMillerResult& result);
 

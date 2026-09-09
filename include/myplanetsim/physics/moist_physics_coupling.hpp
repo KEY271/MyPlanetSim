@@ -35,6 +35,7 @@ struct MoistPhysicsStepDiagnostics {
 };
 
 struct MoistPhysicsCouplingWorkspace {
+  SimpleBettsMillerReference convection_reference;
   SimpleBettsMillerResult convection;
   HybridPressureGeometry vertical_geometry;
 };

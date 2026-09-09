@@ -48,20 +48,22 @@ void apply_moist_column_physics(
       std::vector<Real> vapor(levels);
       for (std::size_t level = 0; level < levels; ++level)
         vapor[level] = state.tracer_mass_kg_m2[vapor_begin + level] / mass[level];
-      simple_betts_miller_adjustment(
-          {.temperature_k =
-               std::span<const Real>(derived.temperature_k).subspan(begin, levels),
-           .vapor_mixing_ratio = vapor,
-           .air_mass_kg_m2 = mass,
-           .pressure_full_pa = pressure,
-           .pressure_half_pa = workspace.vertical_geometry.pressure_half_pa,
-           .gravity_m_s2 = planet.gravity_m_s2,
-           .relative_humidity_reference = convection.reference_relative_humidity,
-           .relaxation_time_s = convection.relaxation_time_s,
-           .time_step_s = time_step_s,
-           .minimum_temperature_k = 150.0,
-           .thermodynamics = thermodynamics},
-          workspace.convection);
+      const SimpleBettsMillerInput sbm_input{
+          .temperature_k =
+              std::span<const Real>(derived.temperature_k).subspan(begin, levels),
+          .vapor_mixing_ratio = vapor,
+          .air_mass_kg_m2 = mass,
+          .pressure_full_pa = pressure,
+          .pressure_half_pa = workspace.vertical_geometry.pressure_half_pa,
+          .gravity_m_s2 = planet.gravity_m_s2,
+          .relative_humidity_reference = convection.reference_relative_humidity,
+          .relaxation_time_s = convection.relaxation_time_s,
+          .time_step_s = time_step_s,
+          .minimum_temperature_k = 150.0,
+          .thermodynamics = thermodynamics};
+      diagnose_sbm_reference(sbm_input, workspace.convection_reference);
+      apply_sbm_relaxation(sbm_input, workspace.convection_reference,
+                           workspace.convection);
       convective_rain = workspace.convection.diagnostics.convective_rain_kg_m2;
       const auto& convective = workspace.convection.diagnostics;
       diagnostics.cape_area_time_integral_j_m2_s_kg +=

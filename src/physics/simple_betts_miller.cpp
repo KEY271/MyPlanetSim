@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 #include "myplanetsim/core/validation.hpp"
 
@@ -363,6 +364,92 @@ void simple_betts_miller_adjustment(const SimpleBettsMillerInput& input,
                  std::abs(temperature_increment));
   }
   result.diagnostics.reason = MoistConvectionReason::kAdjusted;
+  result.diagnostics.column_water_change_kg_m2 = water_change;
+  result.diagnostics.convective_rain_kg_m2 =
+      result.diagnostics.branch == MoistConvectionBranch::kDeep
+          ? std::max(0.0, -water_change)
+          : 0.0;
+  result.diagnostics.moist_enthalpy_change_j_m2 = enthalpy_change;
+}
+
+void diagnose_sbm_reference(const SimpleBettsMillerInput& input,
+                            SimpleBettsMillerReference& reference) {
+  // Reuse the Phase 13 reference construction while the public split is introduced.
+  // The finite relaxation is O(K) and is discarded here; the expensive parcel ascent
+  // and buoyancy diagnosis are represented only by this call boundary.
+  SimpleBettsMillerResult diagnosed;
+  simple_betts_miller_adjustment(input, diagnosed);
+  reference.parcel_temperature_k = std::move(diagnosed.parcel_temperature_k);
+  reference.reference_temperature_k = std::move(diagnosed.reference_temperature_k);
+  reference.reference_vapor_mixing_ratio =
+      std::move(diagnosed.reference_vapor_mixing_ratio);
+  reference.participation_fraction = std::move(diagnosed.participation_fraction);
+  reference.diagnostics = diagnosed.diagnostics;
+  reference.diagnostics.convective_rain_kg_m2 = 0.0;
+  reference.diagnostics.column_water_change_kg_m2 = 0.0;
+  reference.diagnostics.moist_enthalpy_change_j_m2 = 0.0;
+  reference.diagnostics.maximum_temperature_increment_k = 0.0;
+}
+
+void apply_sbm_relaxation(const SimpleBettsMillerInput& input,
+                          const SimpleBettsMillerReference& reference,
+                          SimpleBettsMillerResult& result) {
+  input.thermodynamics.validate();
+  const std::size_t levels = input.temperature_k.size();
+  if (levels < 2 || input.vapor_mixing_ratio.size() != levels ||
+      input.air_mass_kg_m2.size() != levels ||
+      reference.reference_temperature_k.size() != levels ||
+      reference.reference_vapor_mixing_ratio.size() != levels ||
+      reference.parcel_temperature_k.size() != levels ||
+      reference.participation_fraction.size() != levels)
+    throw std::invalid_argument("Simple Betts-Miller reference shape mismatch");
+  require_positive(input.relaxation_time_s, "convection relaxation time");
+  require_positive(input.time_step_s, "convection time step");
+  require_positive(input.minimum_temperature_k, "minimum convection temperature");
+
+  result.temperature_k.assign(input.temperature_k.begin(), input.temperature_k.end());
+  result.vapor_mixing_ratio.assign(input.vapor_mixing_ratio.begin(),
+                                   input.vapor_mixing_ratio.end());
+  result.parcel_temperature_k = reference.parcel_temperature_k;
+  result.reference_temperature_k = reference.reference_temperature_k;
+  result.reference_vapor_mixing_ratio = reference.reference_vapor_mixing_ratio;
+  result.participation_fraction = reference.participation_fraction;
+  result.diagnostics = reference.diagnostics;
+  if (reference.diagnostics.reason != MoistConvectionReason::kAdjusted) return;
+
+  const Real relaxation =
+      input.time_step_s / (input.relaxation_time_s + input.time_step_s);
+  Real water_change = 0.0;
+  Real enthalpy_change = 0.0;
+  for (std::size_t level = 0; level < levels; ++level) {
+    validate_dilute_moist_state(input.temperature_k[level],
+                                input.pressure_full_pa[level],
+                                input.vapor_mixing_ratio[level], input.thermodynamics);
+    require_positive(input.air_mass_kg_m2[level], "air mass");
+    const Real fraction = reference.participation_fraction[level];
+    const Real temperature_increment =
+        relaxation * fraction *
+        (reference.reference_temperature_k[level] - input.temperature_k[level]);
+    const Real vapor_increment = relaxation * fraction *
+                                 (reference.reference_vapor_mixing_ratio[level] -
+                                  input.vapor_mixing_ratio[level]);
+    result.temperature_k[level] += temperature_increment;
+    result.vapor_mixing_ratio[level] += vapor_increment;
+    if (result.temperature_k[level] < input.minimum_temperature_k ||
+        result.vapor_mixing_ratio[level] < 0.0 ||
+        !std::isfinite(result.temperature_k[level]) ||
+        !std::isfinite(result.vapor_mixing_ratio[level]))
+      throw std::runtime_error("Simple Betts-Miller adjustment is inadmissible");
+    const Real layer_water_change = input.air_mass_kg_m2[level] * vapor_increment;
+    water_change += layer_water_change;
+    enthalpy_change +=
+        input.air_mass_kg_m2[level] *
+        (input.thermodynamics.heat_capacity_cp_j_kg_k * temperature_increment +
+         input.thermodynamics.latent_heat_vaporization_j_kg * vapor_increment);
+    result.diagnostics.maximum_temperature_increment_k =
+        std::max(result.diagnostics.maximum_temperature_increment_k,
+                 std::abs(temperature_increment));
+  }
   result.diagnostics.column_water_change_kg_m2 = water_change;
   result.diagnostics.convective_rain_kg_m2 =
       result.diagnostics.branch == MoistConvectionBranch::kDeep
