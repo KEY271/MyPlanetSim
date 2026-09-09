@@ -182,3 +182,20 @@ column workspace を OpenMP worker ごとに確保し、水平 cell を `schedul
 したがって OpenMP region を例外が横断せず、台帳の加算順は serial と同じである。
 OpenMP OFF の Release 109 tests、OpenMP ON の `OMP_NUM_THREADS=1` と4の各109 tests が成功した。
 長時間の thread scaling は未測定であり、P14.07 の利用者実行用 runner へ分離する。
+
+## P14.07: RHS OpenMP
+
+[parallel ownership ADR 0023](../adr/0023-phase14-parallel-ownership.md) に edge、
+cell、level の所有規約を固定した。horizontal flux は edge ごとに一度計算し、cell が edge ID 順に
+gather するため、atomics を使わず旧 serial の加算順を保つ。state diagnosis、vertical coupling、
+pressure/source、fast operator は worker 固有 scratch と indexed failure slot を用いる。既存の
+reconstruction にあった4 thread上限は撤去した。GMRES の反復依存と dot/norm の算術順は維持した。
+
+専用 `release-openmp` preset と foreground runner を追加した。長時間の N=48 scaling は自動実行しない。
+
+```console
+cmake --preset release-openmp
+cmake --build --preset release-openmp -j 4
+ctest --preset release-openmp --output-on-failure -j 4
+python3 tools/compare_phase14_openmp.py --n 48 --levels 40 --threads 1 2 4
+```

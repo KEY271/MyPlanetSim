@@ -35,6 +35,14 @@
       }
     },
     {
+      "name": "release-openmp",
+      "displayName": "Optimized OpenMP build",
+      "inherits": "release",
+      "cacheVariables": {
+        "MPS_ENABLE_OPENMP": "ON"
+      }
+    },
+    {
       "name": "asan-ubsan",
       "displayName": "Address and undefined behavior sanitizers",
       "inherits": "dev",
@@ -53,6 +61,10 @@
       "configurePreset": "release"
     },
     {
+      "name": "release-openmp",
+      "configurePreset": "release-openmp"
+    },
+    {
       "name": "asan-ubsan",
       "configurePreset": "asan-ubsan"
     }
@@ -68,6 +80,13 @@
     {
       "name": "release",
       "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-openmp",
+      "configurePreset": "release-openmp",
       "output": {
         "outputOnFailure": true
       }

@@ -13,15 +13,10 @@
 namespace mps {
 namespace {
 
-#if defined(MPS_ENABLE_OPENMP)
-constexpr int kMaximumReconstructionThreads = 4;
-#endif
-
 [[nodiscard]] int reconstruction_thread_count(const std::size_t levels) noexcept {
 #if defined(MPS_ENABLE_OPENMP)
-  const int available = std::min(kMaximumReconstructionThreads, omp_get_max_threads());
   return static_cast<int>(
-      std::min(levels, static_cast<std::size_t>(std::max(1, available))));
+      std::min(levels, static_cast<std::size_t>(std::max(1, omp_get_max_threads()))));
 #else
   static_cast<void>(levels);
   return 1;
